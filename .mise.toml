@@ -1,0 +1,11 @@
+[tools]
+node = "24"
+pnpm = "11"
+
+[tasks.test]
+description = "Run the unit tests"
+run = "pnpm test"
+
+[tasks.start]
+description = "Run the bot"
+run = "pnpm start"

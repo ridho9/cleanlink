@@ -1,0 +1,137 @@
+# cleanlink
+
+A Discord bot that strips trackers from share links. You DM it a link, it replies with the clean one. That's the whole product.
+
+It exists because the newer share formats (`threads.com/share/<code>`, `vm.tiktok.com/<code>`, …) hide the real target behind an opaque code. Only the server knows the mapping, so the bot resolves the redirect once and hands back the canonical URL without the tracking parameters.
+
+## Requirements
+
+Node 24 and pnpm are pinned in [.mise.toml](.mise.toml), so [mise](https://mise.jdx.dev) handles both:
+
+```sh
+mise install
+pnpm install
+```
+
+## Setup
+
+**See [SETUP.md](SETUP.md) for the full walkthrough** — invite link, the exact portal toggles, verification steps and a troubleshooting table.
+
+Short version:
+
+1. Create an application at <https://discord.com/developers/applications>.
+2. **Bot → Privileged Gateway Intents → Message Content Intent: on.** Without this the bot receives DMs with empty content and silently does nothing.
+3. **OAuth2 → URL Generator**: scope `bot`, permissions `0` — it needs no server permissions. Invite it to any server you are in (that is how Discord lets you DM a bot).
+4. Copy the token:
+
+   ```sh
+   cp .env.example .env      # then paste the token into .env
+   ```
+
+5. Run it:
+
+   ```sh
+   mise run start            # or: pnpm start
+   ```
+
+Leave it without a token and it exits with a message rather than a stack trace.
+
+## Usage
+
+DM the bot:
+
+```
+https://www.threads.com/share/BAbCdEfGhI
+```
+
+It replies:
+
+```
+https://www.threads.com/@phodhipo/post/DfPOscPD6UR
+```
+
+Behaviour:
+
+- **DMs and server channels.** In a DM it just replies. In a server channel it also removes the preview card from your message, if it has been given `Manage Messages`.
+- **Silent unless it changed something.** Links it does not handle, links with nothing to strip, and failed lookups all get no reply.
+- **Never edits or deletes text.** The only write to another message is Discord's embed-suppression flag in a server channel; the content is never touched.
+- One reply per message, up to 5 links, one per line.
+
+Server mode needs the bot's role to have **Manage Messages** (Server Settings → Roles, or a per-channel override). Without it the bot still replies, it just cannot clear the original card:
+
+```
+[guild] no Manage Messages — original embed left in place
+```
+
+Note that server mode means the bot reads message content in every channel it can see. If that is more access than you want, give it `Manage Messages` on one channel only and deny it `View Channel` everywhere else.
+
+## Supported sites
+
+| Site | Handles |
+|---|---|
+| Threads | `/share/<code>` share links, strips `xmt`, `slof` |
+| Instagram | `/share/…` links, strips `igsh`, `igshid`, `mdxt`, `psln` |
+| TikTok | `vm.` / `vt.` short links, strips `is_from_webapp`, `sender_device`, `web_id`, `_t`, … |
+| Twitter / X | strips `s`, `t`, `ref_src`, `ref_url` |
+| YouTube | strips `si`, `feature` |
+| Facebook | `fb.watch`, `/share/…`, strips `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url` |
+
+Common trackers (`utm_*`, `fbclid`, `gclid`, `twclid`, `yclid`, `mibextid`, `_ga`, `_gl`) are stripped everywhere.
+
+Reddit, Spotify and Google were removed on purpose: only fake share codes had ever been tried against them, so they sat in the table as untested. Add them back from [src/rules.js](src/rules.js) once a real link from each has been checked.
+
+## What has actually been verified
+
+Query-parameter stripping is deterministic and covered by tests for every site. Resolving the opaque share links is the fragile part, so here is what was checked against the live networks rather than a stub:
+
+| Site | Param strip | Share resolve |
+|---|---|---|
+| Threads | live | **real code** — `302` → clean post URL |
+| Instagram | live (`mdxt`, `psln`) | `/share/` still fake: `200`, no redirect → silence |
+| TikTok | live | **real code** — `vt.tiktok.com` → `/@user/video/<id>` |
+| Facebook | live (`share_url`) | **real code** — `/share/<code>` → `/posts/<id>` |
+| Twitter / X | live | n/a |
+| YouTube | live | n/a |
+
+Four of the six sites have resolved a real share link, and every cleaned URL was re-fetched to confirm it still serves the post. Twitter and YouTube need no resolution at all. If a site silently does nothing, this table is the first place to look.
+
+## Adding a site
+
+Everything site-specific is data in [src/rules.js](src/rules.js):
+
+```js
+{
+  id: 'example',
+  hosts: ['example.com'],            // subdomains match automatically
+  share: /^\/share\//i,              // optional: path that needs resolving first
+  shorten: ['ex.co'],                // optional: hosts that only ever redirect
+  drop: [/^trk$/i],                  // query params to remove
+  ua: 'Mozilla/5.0',                 // optional: user agent override
+  failure: [/example\.com\/error/],  // optional: resolved URLs meaning "bad code"
+}
+```
+
+The engine ([src/clean.js](src/clean.js)) needs no changes. Add a case to [test/clean.test.js](test/clean.test.js) with a stubbed `fetch`, then try one real link by hand.
+
+## Tests
+
+```sh
+mise run test        # or: pnpm test
+```
+
+The cleaning logic is plain functions with `fetch` injected, so the whole suite runs offline in under 100 ms with no Discord token.
+
+## Notes and limits
+
+- **Resolution costs one request, and that request is a "click."** The bot fetches the share URL once from its own IP, with no cookies and no account, to learn the target. The platform still records one share-open — it just is not you, and the link you forward no longer carries the tracker. There is no way around this: the mapping exists only server-side.
+- **The default user agent is the bare `Mozilla/5.0`, and that is deliberate.** The request exists to collect a `3xx`, and platforms that sniff for a real browser answer a browser string with their JavaScript shell (`200`, no redirect, no OpenGraph tags) instead. Evidence: Threads returns `302` to `Mozilla/5.0` and `200` to a Chrome UA; Facebook `/share/` returns `302` vs `400`; `fb.watch` returns `400` to a Chrome UA. A rule can still override it with `ua` if a site refuses anything but a browser.
+- **New share tokens keep appearing.** `mdxt` and `psln` on Instagram, `_t` on TikTok, `share_url` on Facebook — none of these existed in the first version of the rules and all were found by running real links from a real server. That is the maintenance cost of this bot, and it is one regex per token.
+- **Shorteners do not report bad codes as errors.** They redirect to their front page or a parent path, so a naive resolver hands back a useless link and looks broken. The engine rejects a target that is the site root or a path prefix of the original, plus any per-site `failure` pattern:
+  - `fb.watch/<bad>` → `facebook.com/watch/`
+  - `vm.tiktok.com/<bad>` → `tiktok.com/?_r=1`
+
+  Rejected by a generic rule (redirect landed on the site root, or the target path is a prefix of the original) plus per-site `failure` patterns where the shape is not generic.
+- **Only allowlisted hosts are ever fetched.** A hop is followed only while the current URL is a share/shortener URL belonging to a rule. Redirect targets outside the rule table are returned but never requested, which is what keeps this SSRF-safe.
+- **The bot cannot remove an embed from your message in a DM.** Suppressing embeds on a message you did not author needs `Manage Messages`, and DM channels have no permissions, so Discord answers `404` (verified). Wrap the link in angle brackets — `<https://…>` — and Discord shows no preview on your message; the bot still parses it and its own reply carries the preview.
+- Nothing is stored: no database, no cache, no message logging beyond the one `console.log` per cleaned link.
+- Limits: 4 s per hop, 3 hops, 5 links per message. A failed lookup leaves the link untouched rather than guessing.
