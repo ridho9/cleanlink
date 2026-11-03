@@ -66,7 +66,14 @@ function needsResolve(url, rule) {
 
 function stripTracking(url, rule) {
   const out = new URL(url.href);
+
+  // On a permalink, every query parameter is decoration: X's `a`/`s`/`t`,
+  // Instagram's `mdxt`/`psln`, TikTok's `_t`. Dropping the whole query there
+  // is future-proof against tokens that did not exist when the rule was
+  // written; the explicit list only has to cover every other URL shape.
+  const dropAll = rule.dropAllOn ? rule.dropAllOn.test(url.pathname) : false;
   const shouldDrop = (name) =>
+    dropAll ||
     GLOBAL_TRACKING.some((re) => re.test(name)) ||
     rule.drop.some((re) => re.test(name));
 

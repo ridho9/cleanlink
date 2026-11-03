@@ -249,3 +249,31 @@ test('facebook resolves with the generic UA, like Threads', async () => {
   await cleanUrl(share, { fetchImpl });
   assert.equal(fetchImpl.requests[0].headers['user-agent'], 'Mozilla/5.0');
 });
+
+test('drops unknown tokens on permalinks but leaves other URL shapes alone', async () => {
+  const fetchImpl = stubFetch();
+
+  // The `a=` token was invented after the rule table was written.
+  assert.equal(
+    await cleanUrl(
+      'https://x.com/vxunderground/status/2117656394396778956?a=FakeShareToken000000&s=20',
+      { fetchImpl },
+    ),
+    'https://x.com/vxunderground/status/2117656394396778956',
+  );
+
+  assert.equal(
+    await cleanUrl('https://www.instagram.com/p/DfG4ZQcM3vW/?never_seen=1', { fetchImpl }),
+    'https://www.instagram.com/p/DfG4ZQcM3vW/',
+  );
+
+  // A search URL must keep its parameters, so this is not ours to touch.
+  assert.equal(
+    await cleanUrl('https://x.com/search?q=malware&src=typed_query', { fetchImpl }),
+    null,
+  );
+  assert.equal(
+    await cleanUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ', { fetchImpl }),
+    null,
+  );
+});
