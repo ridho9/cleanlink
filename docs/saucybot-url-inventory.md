@@ -21,7 +21,7 @@ Treatment is one of four things:
 | Bluesky | `bsky.app/profile/<user>/post/<id>` | Embed | text, images, engagement; video → **rename** to `r.bskyx.app` link | working | no |
 | DeviantArt | `deviantart.com/<user>/art/<slug>-<id>` | Embed | main image + metadata | **disabled** upstream (IP rate limited) | no |
 | e621 | `e621.net/posts/<id>` | Embed | higher-res image, tags | **disabled** upstream | no |
-| E(x-)Hentai | `e[x-]hentai.org/g/<id>/<hash>` | Embed | cover, title, score | e-hentai only | no |
+| E(x-)Hentai | `e[x-]hentai.org/g/<id>/<hash>` | Embed | cover, title, score | e-hentai only | no — but `nhentai.net/g/<id>` is carded instead, from its JSON API, NSFW-gated |
 | FurAffinity | `furaffinity.net/view/<id>`, `/full/<id>` | Embed | image via the faexport API | working | no |
 | FurAffinity (alt) | same | **Rename** → `xfuraffinity.net` | plain link | alternative to the above | no |
 | HentaiFoundry | `hentai-foundry.com/pictures/user/<user>/<id>/<slug>` | Embed | image | working | no |

@@ -76,6 +76,7 @@ Note that server mode means the bot reads message content in every channel it ca
 | YouTube | on `watch` links keeps only `v`, so playlist and radio parameters go; short links lose `si`, `feature` | no, the native player is better |
 | Facebook | `fb.watch`, `/share/…`, strips `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url` | **yes** — author, text and media from the public embed iframe |
 | Pixiv | nothing to strip | **yes** — the artwork pages, re-uploaded |
+| nhentai | nothing to strip | **yes, age-restricted channels only** — title, cover, tags, counts |
 | Misskey | nothing to strip | no, Discord's own preview is complete |
 
 Common trackers (`utm_*`, `fbclid`, `gclid`, `twclid`, `yclid`, `mibextid`, `_ga`, `_gl`) are stripped everywhere.
@@ -84,10 +85,11 @@ Reddit, Spotify and Google were removed on purpose: only fake share codes had ev
 
 ## Preview cards
 
-For X, Pixiv, Threads, Facebook and TikTok the bot posts its own card, because Discord's own preview fails on all five:
+For X, Pixiv, Threads, Facebook, TikTok and nhentai the bot posts its own card, because Discord's own preview fails on all six:
 
 - **X** — Discord shows a truncated title. The bot reads `api.fxtwitter.com` and builds a card with the full text, the avatar, the reply/retweet/like/view counts, a quoted tweet as a blockquote, and one full-size embed per photo, or the video's poster frame. It never rewrites the host to a fixer domain.
 - **Pixiv** — `i.pximg.net` answers `403` unless the request carries a pixiv `Referer`, and Discord never sends one, so the native card has no image. The bot downloads up to 5 pages with that header and re-uploads them as attachments, one embed per page. Restricted works get `SPOILER_` file names.
+- **nhentai** — the gallery page sits behind a Cloudflare challenge that answers `403 Just a moment…` to every user agent, so Discord has nothing to unfurl. The JSON API is not challenged: `api/v2/galleries/<id>` returns the title, cover, page count, favourites, upload date and every tag with its type. The cover on `t.nhentai.net` fetches `200 image/webp` for Discordbot UA. **Age-restricted only:** the card is built only when Discord marks the channel as NSFW, and no request is made otherwise. Set `NSFW_IN_DM=1` if you also want it in the bot's own DMs.
 - **TikTok** — its own oEmbed returns an iframe and no metadata, and the page's `og:title` is the literal string `TikTok · TikTok`. The bot reads `tikwm.com/api`, a public keyless API, for the real caption, author, avatar, cover and counts. Video posts only: photo posts keep the plain clean link.
 - **Facebook** — the post page is a login wall and its `og:title` is a generic string, but the public embed iframe at `plugins/post.php?href=<post>&show_text=true` is not: it returns the author, the post text and the media. No token, no browser. Carded forms: `/<page>/posts/<id|pfbid>`, `/reel/<id>`, `/<page>/videos/<id>`, `/watch/?v=<id>` and `permalink.php?story_fbid=`. Posts that forbid embedding, and posts that need a login to view, answer "no longer available" and then the bot sends the plain clean link.
 - **Threads** — the page has the post text in `og:description`, **but only for a browser user agent**. Crawled as `Discordbot` it returns a 107 KB shell with no description, which is why Discord's own card shows an author and no words. The bot fetches the page once as `Mozilla/5.0`. A text-only post's `og:image` is the author's avatar, so that goes in the corner rather than across the card.
@@ -113,6 +115,7 @@ Query-parameter stripping is deterministic and covered by tests for every site. 
 | TikTok | live | **real code** — `vt.tiktok.com` → `/@user/video/<id>` | **real code** — `tikwm.com` answered for a real video, card sent and read back |
 | Threads | live | **real code** — `302` → clean post URL | **real code** — text, author and avatar from the page, card sent and read back |
 | Facebook | live | **real code** — `/share/<code>` → `/posts/<id>`, `/reel/<id>` | **real code** — text, author and image from `plugins/post.php` for a post, a reel and a watch link; cards sent and read back |
+| nhentai | n/a | n/a | **real code** — `api/v2/galleries/<id>` and a `t.nhentai.net` cover that Discord can fetch; card built and inspected, gated on NSFW |
 | Pixiv | n/a | n/a | **real code** — 2 pages fetched with a pixiv `Referer`, uploaded, embed rendered |
 
 Four of the six tracker sites have resolved a real share link, and every cleaned URL was re-fetched to confirm it still serves the post. Both cards were posted to a real channel and read back, attachment and embed intact. If a site silently does nothing, this table is the first place to look.

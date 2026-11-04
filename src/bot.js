@@ -13,6 +13,18 @@ import { sendReply } from './reply.js';
 // Shown on the incoming message while the bot works on it, removed afterwards.
 const ACK_EMOJI = '👀';
 
+/**
+ * Whether this channel is allowed to receive an adult card.
+ *
+ * Discord's rule is age-restricted channels, which a DM is not. Set
+ * NSFW_IN_DM=1 to let the bot card adult links in its own DMs as well.
+ */
+function nsfwAllowed(channel) {
+  if (!channel) return false;
+  if (channel.nsfw === true) return true;
+  return channel.type === ChannelType.DM && process.env.NSFW_IN_DM === '1';
+}
+
 const token = process.env.DISCORD_TOKEN;
 if (!token) {
   console.error('DISCORD_TOKEN is not set. Paste your bot token into .env (DISCORD_TOKEN=...).');
@@ -126,7 +138,10 @@ export async function handleMessage(message) {
     const cleaned = await cleanMessage(message.content);
     // Cards are built from the cleaned URL, so a carded link shows its clean
     // form even though it is the one being replaced by an embed.
-    const cards = await buildCards(message.content, { cleaned });
+    const cards = await buildCards(message.content, {
+      cleaned,
+      nsfw: nsfwAllowed(message.channel),
+    });
 
     if (cleaned.length === 0 && cards.length === 0) return;
 

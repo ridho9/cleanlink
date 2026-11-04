@@ -17,6 +17,7 @@ export const PIXIV_BLUE = 0x0096fa;
 export const TIKTOK_BLACK = 0x010101;
 export const THREADS_BLACK = 0x000000;
 export const FACEBOOK_BLUE = 0x1877f2;
+export const NHENTAI_RED = 0xed2553;
 
 // ---------------------------------------------------------------- utilities
 

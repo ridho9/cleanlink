@@ -1,5 +1,6 @@
 import { extractUrls, hostMatches } from '../clean.js';
 import { buildFacebookCard } from './facebook.js';
+import { buildNhentaiCard } from './nhentai.js';
 import { buildPixivCard } from './pixiv.js';
 import { buildThreadsCard } from './threads.js';
 import { buildTikTokCard } from './tiktok.js';
@@ -56,6 +57,15 @@ const CARD_SITES = [
     build: buildFacebookCard,
   },
   {
+    id: 'nhentai',
+    hosts: ['nhentai.net'],
+    // /g/<id>/ and /g/<id>/<slug>/. Adult content: the card is never built for
+    // a channel that is not age-restricted, and no request is made either.
+    match: (url) => /^\/g\/(\d{1,9})(?:\/|$)/.exec(url.pathname),
+    requiresNsfw: true,
+    build: buildNhentaiCard,
+  },
+  {
     id: 'tiktok',
     hosts: ['tiktok.com'],
     // Photo posts (/@user/photo/<id>) are not covered: tikwm's shape for them
@@ -104,9 +114,11 @@ function findCard(raw, cleanedFor) {
  * @param {object} [options]
  * @param {Array<{from: string, to: string}>} [options.cleaned] results from
  *   cleanMessage, so a card can show the cleaned URL rather than the tracked one
+ * @param {boolean} [options.nsfw] true only for a channel Discord marks as
+ *   age-restricted; builders for adult sites refuse without it
  * @returns {Promise<Array<{from: string, url: string, embeds: Array, files: Array}>>}
  */
-export async function buildCards(text, { cleaned = [], fetchImpl = fetch } = {}) {
+export async function buildCards(text, { cleaned = [], fetchImpl = fetch, nsfw = false } = {}) {
   const cleanedFor = new Map(cleaned.map(({ from, to }) => [from, to]));
   const seen = new Set();
   const cards = [];
@@ -123,6 +135,7 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch } = {})
     const hit = findCard(raw, cleanedFor);
     if (!hit) continue;
     const { url, site, match } = hit;
+    if (site.requiresNsfw && !nsfw) continue;
 
     const key = `${site.id}:${match.slice(1).join('/')}`;
     if (seen.has(key)) continue;
@@ -131,7 +144,7 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch } = {})
     try {
       const card = await site.build(
         { match, href: url.href },
-        { fetchImpl, budget: { files: filesLeft, bytes: bytesLeft } },
+        { fetchImpl, nsfw, budget: { files: filesLeft, bytes: bytesLeft } },
       );
       if (!card) {
         // Keep this: a card that silently does not appear is indistinguishable
