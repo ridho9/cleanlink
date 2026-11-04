@@ -6,6 +6,7 @@ import { fakeFetch, fixtureText } from '../../test-support/harness.js';
 
 const FACEBOOK_HTML = fixtureText('facebook-post.html');
 const FACEBOOK_REEL = fixtureText('facebook-reel.html');
+const FACEBOOK_FEED = fixtureText('facebook-feed.html');
 
 test('Facebook card reads the public embed iframe, not the login-walled page', async () => {
   const { impl, calls } = fakeFetch([['https://www.facebook.com/plugins/post.php', FACEBOOK_HTML]]);
@@ -91,6 +92,33 @@ test('Facebook card does not retry a post that refuses embedding', async () => {
 
   assert.deepEqual(cards, []);
   assert.equal(calls.length, 1, 'a refusal is final, not a hiccup');
+});
+
+test('a post that comes back as a page feed is still carded', async () => {
+  const { impl } = fakeFetch([['https://www.facebook.com/plugins/post.php', FACEBOOK_FEED]]);
+  const [card] = await buildCards(
+    'https://www.facebook.com/100064442061829/posts/1603794385111948/',
+    { fetchImpl: impl },
+  );
+
+  assert.ok(card);
+  assert.equal(card.embeds.length, 1);
+  // The feed layout has no post_message; the name is only in the avatar aria-label.
+  assert.equal(card.embeds[0].author.name, 'Videogame screenshots out of context');
+  assert.equal(card.embeds[0].author.url, 'https://www.facebook.com/Videogamesoutofcontext');
+  assert.ok(card.embeds[0].image.url.includes('/t39.30808-6/'), 'the post picture');
+  assert.ok(!card.embeds[0].image.url.includes('/t39.30808-1/'), 'not the avatar');
+  assert.equal(card.embeds[0].footer.text, 'Facebook');
+});
+
+test('a feed showing a different post is not carded', async () => {
+  const other = FACEBOOK_FEED.replace('1603794385111948', '9999999999999999');
+  const { impl } = fakeFetch([['https://www.facebook.com/plugins/post.php', other]]);
+  const cards = await buildCards(
+    'https://www.facebook.com/100064442061829/posts/1603794385111948/',
+    { fetchImpl: impl },
+  );
+  assert.deepEqual(cards, [], 'the id in the widget must be the one requested');
 });
 
 test('Facebook card is skipped for a post that forbids embedding', async () => {

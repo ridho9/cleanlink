@@ -45,7 +45,59 @@ function htmlToText(fragment) {
     .trim();
 }
 
-async function buildFacebookCard({ href }, options) {
+/**
+ * The page-feed layout, used by Facebook for some posts.
+ *
+ * It is a different DOM: `role="feed"` instead of `data-testid="post_message"`,
+ * the author name only in the avatar's `aria-label`, and the post identified by
+ * the link the widget carries back to itself. Only accepted when that link
+ * names the post we asked for, so a feed showing something else is not carded.
+ */
+function feedCard(html, match, href) {
+  if (!html.includes('role="feed"')) return null;
+
+  const id = match[1];
+  const link = /href="\/([\w.-]+)\/posts\/([0-9A-Za-z]+)/.exec(html);
+  if (!link || link[2] !== id) return null;
+
+  const name = /aria-label="([^"]+)"/.exec(html)?.[1];
+  const text = [...html.matchAll(/<p[^>]*>(.*?)<\/p>/gs)]
+    .map((paragraph) => htmlToText(paragraph[1]))
+    .filter(Boolean)
+    .join('\n\n');
+
+  const footer = { text: 'Facebook' };
+  const embed = { url: href, color: FACEBOOK_BLUE, footer };
+  if (name) {
+    embed.author = authorBlock(decodeEntities(name), link[1], {
+      url: `https://www.facebook.com/${link[1]}`,
+    });
+  }
+  if (text) embed.description = toField(text, 4096);
+
+  const images = mediaImages(html);
+  if (images[0]) embed.image = { url: images[0] };
+
+  return {
+    embeds: [embed, ...imageEmbeds(href, FACEBOOK_BLUE, footer, images.slice(1))],
+    files: [],
+  };
+}
+
+/** Post images: everything on scontent that is not an avatar. */
+function mediaImages(html) {
+  return [
+    ...new Set(
+      [...html.matchAll(/https:\/\/scontent[^"\\ ]+/g)]
+        .map((match) => decodeEntities(match[0]))
+        // `s40x40` is the avatar at thumbnail size, `t39.30808-1` the same
+        // picture at full size. Both are the page, not the post.
+        .filter((url) => !url.includes('s40x40') && !url.includes('/t39.30808-1/')),
+    ),
+  ];
+}
+
+async function buildFacebookCard({ match, href }, options) {
   // The post itself is behind a login wall. The embed iframe is not.
   const embedUrl = `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(href)}&show_text=true`;
 
@@ -58,6 +110,12 @@ async function buildFacebookCard({ href }, options) {
 
     const marker = page.html.indexOf('data-testid="post_message"');
     if (marker === -1) {
+      // Some posts come back as a page-feed widget instead of a single-post
+      // embed. The requested id is still in it, linked from the widget, so the
+      // card is built from that layout rather than dropped.
+      const feed = feedCard(page.html, match, href);
+      if (feed) return feed;
+
       const refused = /tidak tersedia|isn't available|is not available/i.test(page.html);
       // Say why: a forbidden post and an unexpected response look alike from
       // the outside, and both mean "no card".
@@ -86,14 +144,7 @@ async function buildFacebookCard({ href }, options) {
       /href="\/?([\w.-]+)\/posts\//.exec(page.html)?.[1] ||
       new URL(href).pathname.split('/')[1];
 
-    // Media, not avatars: the avatar is served at 40x40.
-    const images = [
-      ...new Set(
-        [...page.html.matchAll(/https:\/\/scontent[^"\\ ]+/g)]
-          .map((match) => decodeEntities(match[0]))
-          .filter((url) => !url.includes('s40x40')),
-      ),
-    ];
+    const images = mediaImages(page.html);
 
     const footer = { text: 'Facebook' };
     const embed = {
