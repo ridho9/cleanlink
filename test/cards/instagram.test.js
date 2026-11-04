@@ -5,6 +5,8 @@ import { buildCards } from '../../src/cards/index.js';
 import { fakeFetch, fixtureText } from '../../test-support/harness.js';
 
 const REEL_HTML = fixtureText('instagram-reel.html');
+const CAROUSEL_PAGE = fixtureText('instagram-carousel-page.html');
+const CAROUSEL_FIXER = fixtureText('instagram-carousel.html');
 const URL = 'https://www.instagram.com/reel/DcuMLVagTPh/';
 
 test('an Instagram photo post is carded from its OpenGraph tags', async () => {
@@ -25,6 +27,50 @@ test('an Instagram photo post is carded from its OpenGraph tags', async () => {
   const fields = Object.fromEntries(embed.fields.map((field) => [field.name, field.value]));
   assert.deepEqual(fields, { Likes: '1M', Comments: '11K' });
   assert.deepEqual(card.extraLines ?? [], []);
+});
+
+test('a carousel yields one embed per image, all from stable fixer URLs', async () => {
+  const { impl } = fakeFetch([
+    ['https://www.instagram.com/', CAROUSEL_PAGE],
+    ['https://vxinstagram.com/', CAROUSEL_FIXER],
+  ]);
+  const [card] = await buildCards('https://www.instagram.com/p/DfUUHeAmjwC/', { fetchImpl: impl });
+
+  assert.ok(card);
+  assert.equal(card.embeds.length, 3);
+  assert.deepEqual(
+    card.embeds.map((embed) => embed.image.url),
+    [
+      'https://vxinstagram.com/offload/DfUUHeAmjwC/0',
+      'https://vxinstagram.com/offload/DfUUHeAmjwC/1',
+      'https://vxinstagram.com/offload/DfUUHeAmjwC/2',
+    ],
+    'signed CDN URLs expire; the fixer paths do not',
+  );
+  assert.deepEqual(
+    card.embeds.map((embed) => embed.footer.text),
+    ['Instagram · 1/3', 'Instagram · 2/3', 'Instagram · 3/3'],
+  );
+
+  // The account comes from the canonical URL, because /p/<id>/ has no handle.
+  assert.equal(card.embeds[0].author.name, 'Event Organizer Padang (@kaluma.organizer)');
+  assert.equal(card.embeds[0].author.url, 'https://www.instagram.com/kaluma.organizer/');
+  assert.ok(card.embeds[0].description.startsWith('Let the reveals begin!'));
+  // Counts come from Instagram's description prefix, not the fixer page.
+  assert.deepEqual(
+    card.embeds[0].fields.map((field) => `${field.name}=${field.value}`),
+    ['Likes=12', 'Comments=0'],
+  );
+  assert.equal(card.embeds[1].author, undefined, 'the rest are images only');
+});
+
+test('a single-image post falls back to the page image and has no page counter', async () => {
+  const { impl } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
+  const [card] = await buildCards('https://www.instagram.com/p/AbCdEf12345/', { fetchImpl: impl });
+
+  assert.equal(card.embeds.length, 1);
+  assert.equal(card.embeds[0].footer.text, 'Instagram');
+  assert.ok(card.embeds[0].image.url.startsWith('https://scontent.cdninstagram.com/'));
 });
 
 test('a reel gets no card, because an embed would suppress Discord\'s player', async () => {

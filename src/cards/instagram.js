@@ -1,11 +1,17 @@
-// Instagram: the page serves a full set of OpenGraph tags, but Discord shows
-// nothing for the link — a bare URL posted to a real channel came back with
-// zero embeds, verified. So the card is built from the tags ourselves.
+// Instagram, split by media type because Discord treats the two differently.
 //
-// Same shape as Threads: one page fetch with a browser user agent, then
-// og:title / og:description / og:image / og:url. The reel poster on
-// scontent.cdninstagram.com is fetchable by Discord, so the image is
-// referenced, never uploaded.
+// Photo posts get a card built from the page's OpenGraph tags — Discord renders
+// nothing for the link on its own (verified: a raw post produced zero embeds).
+//
+// Video posts get no card at all: Discord only plays a video it unfurls itself,
+// an embed in the same message suppresses that unfurl, and an MP4 handed to an
+// embed's `video` field is dropped. So a reel is the clean link plus a bare
+// `vxinstagram.com` link, and Discord draws the player.
+//
+// Carousels are why the photo path reads the fixer page rather than Instagram's:
+// Instagram's own page carries a single `og:image`, while the fixer page lists
+// every image in order, and `vxinstagram.com/offload/<id>/<n>` serves each one
+// as a stable, proxied URL that Discord fetches happily.
 
 import {
   authorBlock,
@@ -15,31 +21,49 @@ import {
   toField,
 } from './shared.js';
 
-/** "1M likes, 11K comments - abdulelsayed on August 31, 2026: …" */
-const ENGAGEMENT = /^([\d.,]+[KMB]?)\s+likes?,\s+([\d.,]+[KMB]?)\s+comments?/i;
+// The two pages describe a post differently, so both shapes are parsed.
+//
+//   instagram.com  og:title       `Name on Instagram: "caption"`
+//                  og:description `1M likes, 11K comments - handle on date: "caption"`
+//   vxinstagram    og:title       `Name (@handle)`
+//                  og:description caption, with `❤️ 1150843   💬 11338` appended
+//                                 when the post has counts
+const CAPTION_IN_TITLE = /on Instagram:\s*"?(.*?)"?$/s;
+const COUNT_PREFIX = /^([\d.,]+[KMB]?)\s+likes?,\s+([\d.,]+[KMB]?)\s+comments?\s*-\s*/i;
+const COUNT_SUFFIX = /❤️\s*([\d.,]+[KMB]?)\s*💬\s*([\d.,]+[KMB]?)/;
+
+/** Instagram allows 20 images per carousel; Discord allows 10 embeds a message. */
+const MAX_IMAGES = 10;
 
 export async function buildInstagramCard({ href }, options) {
-  // A reel or a TV post is a video, and Discord only plays one it unfurls
-  // itself — an embed of ours in the same message suppresses that unfurl
-  // entirely (verified). So a video post gets no card: the clean link plus the
-  // fixer link, and Discord draws the player with the caption and counts.
+  // A reel or a TV post is a video. No card, or Discord never unfurls it.
   const video = fixerLink(href);
   if (video) return { embeds: [], files: [], extraLines: [video] };
 
-  const page = await getHtml(href, options);
-  if (!page) return null;
+  const url = new URL(href);
+  // Two pages, for two different reasons: instagram.com carries the counts and
+  // the caption as Discord users expect them, and the fixer page lists every
+  // carousel image. Either one alone is still enough to build something.
+  const [page, fixer] = await Promise.all([
+    getHtml(href, options),
+    getHtml(`https://vxinstagram.com${url.pathname}`, options),
+  ]);
+  const source = page?.html ?? fixer?.html;
+  if (!source) return null;
 
-  const title = metaContent(page.html, 'og:title');
+  const title = metaContent(source, 'og:title');
   if (!title) return null;
 
-  // og:title is `<Name> on Instagram: "<caption>"`.
-  const named = /^(.*?)\s+on Instagram:\s*"?(.*?)"?$/s.exec(title);
-  const name = named ? named[1] : '';
-  const caption = named ? named[2] : title;
+  const rawDescription = metaContent(source, 'og:description') ?? '';
+  const prefix = COUNT_PREFIX.exec(rawDescription);
+  const suffix = COUNT_SUFFIX.exec(rawDescription);
 
-  // The canonical URL carries the handle: instagram.com/<handle>/reel/<id>/.
-  const canonical = metaContent(page.html, 'og:url') ?? href;
-  const handle = new URL(canonical).pathname.split('/')[1] ?? '';
+  const caption =
+    CAPTION_IN_TITLE.exec(title)?.[1] ??
+    rawDescription.replace(COUNT_PREFIX, '').replace(COUNT_SUFFIX, '');
+  const name = title.replace(/\s*on Instagram:.*$/s, '').replace(/\s*\(@[\w.]+\)$/, '');
+  const canonical = metaContent(source, 'og:url') ?? href;
+  const handle = handleOf(title, canonical, rawDescription);
 
   const embed = {
     url: canonical,
@@ -51,36 +75,80 @@ export async function buildInstagramCard({ href }, options) {
     embed.author = authorBlock(
       [name, handle && `(@${handle})`].filter(Boolean).join(' '),
       'Instagram',
-      { url: handle ? `https://www.instagram.com/${handle}/` : canonical },
+      { url: handle ? `https://www.instagram.com/${handle}/` : embed.url },
     );
   }
 
   if (caption.trim()) embed.description = toField(caption.trim(), 4096);
 
-  const image = metaContent(page.html, 'og:image');
-  if (image) embed.image = { url: image };
-
-  // The count prefix is the only structured data on the page. It is dropped
-  // from the caption above and shown as fields instead.
-  const description = metaContent(page.html, 'og:description');
-  const engagement = description ? ENGAGEMENT.exec(description) : null;
-  if (engagement) {
+  const counts = prefix ?? suffix;
+  if (counts) {
     embed.fields = [
-      { name: 'Likes', value: engagement[1], inline: true },
-      { name: 'Comments', value: engagement[2], inline: true },
+      { name: 'Likes', value: counts[1], inline: true },
+      { name: 'Comments', value: counts[2], inline: true },
     ];
   }
 
-  return { embeds: [embed], files: [] };
+  // Carousel first, from stable fixer URLs; otherwise the post's single image.
+  const images = fixer ? carouselImages(fixer.html, url.pathname) : [];
+  if (images.length === 0) {
+    const single = metaContent(source, 'og:image');
+    if (single) images.push(single);
+  }
+  if (images.length > 0) {
+    embed.image = { url: images[0] };
+    if (images.length > 1) embed.footer = { text: `Instagram · 1/${images.length}` };
+  }
+
+  const embeds = [embed, ...images.slice(1).map((image, index) => ({
+    url: embed.url,
+    color: INSTAGRAM_PINK,
+    image: { url: image },
+    footer: { text: `Instagram · ${index + 2}/${images.length}` },
+  }))];
+
+  return { embeds, files: [] };
 }
 
 /**
- * The fixer link for a video post, or null.
+ * Every image of the post, in order, as stable fixer URLs.
  *
- * Derived from the incoming URL, not from `og:url`: the canonical path carries
- * the handle (`/abdulelsayed/reel/<id>/`) while vxinstagram takes
- * `/reel/<id>/`.
+ * The fixer page lists one `<img>` per carousel entry, so the distinct image
+ * URLs in document order give the indices that `/offload/<id>/<n>` expects.
+ * Signed Instagram CDN URLs are avoided on purpose: they expire.
  */
+function carouselImages(html, pathname) {
+  const id = pathname.split('/').filter(Boolean).pop();
+  if (!id) return [];
+
+  const seen = new Set();
+  for (const match of html.matchAll(/https:\/\/scontent[^"\\ ]+/g)) {
+    seen.add(match[0]);
+    if (seen.size >= MAX_IMAGES) break;
+  }
+  if (seen.size === 0) return [];
+
+  return [...seen.keys()].map((_, index) => `https://vxinstagram.com/offload/${id}/${index}`);
+}
+
+/**
+ * The account handle: `(@handle)` on the fixer page, the first path segment of
+ * the canonical URL on Instagram's, or worst case the name in the description.
+ * `/p/<id>/` has no handle in its path, which is why the canonical URL is used
+ * and not the incoming one.
+ */
+function handleOf(title, canonical, description) {
+  const inline = /\(@([\w.]+)\)/.exec(title)?.[1];
+  if (inline) return inline;
+
+  const reserved = new Set(['p', 'reel', 'reels', 'tv', 'share']);
+  const first = new URL(canonical).pathname.split('/').filter(Boolean)[0];
+  if (first && !reserved.has(first)) return first;
+
+  return /-\s+([\w.]+)\s+on\s+/i.exec(description)?.[1] ?? '';
+}
+
+/** The fixer link for a video post, or null. */
 function fixerLink(href) {
   const url = new URL(href);
   if (!/(?:^|\/)(?:reel|reels|tv)\//.test(url.pathname)) return null;
