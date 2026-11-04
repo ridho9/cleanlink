@@ -224,6 +224,20 @@ journalctl --user -u cleanlink -o cat        # message text without metadata
 
 The journal on this host is persistent (`/var/log/journal` exists), so logs survive a reboot. Every card miss is logged with its reason (`[card] facebook … post refuses embedding`, `[resolve] … failed twice`, `[clean] … failed`), which is what makes "the bot ignored my link" diagnosable without guessing.
 
+### Optional: yt-dlp
+
+Facebook refuses some videos to anonymous requests but not to yt-dlp. If `yt-dlp` is on the service's `PATH`, the bot downloads such a video and attaches it; without it, the bot sends an author-only card instead. Nothing else uses it, and it is not a dependency of the package.
+
+```sh
+command -v yt-dlp || nix profile install nixpkgs#yt-dlp
+```
+
+The unit needs to see it:
+
+```ini
+Environment="PATH=/etc/profiles/per-user/<user>/bin:/run/current-system/sw/bin:/usr/bin:/bin"
+```
+
 ### Update
 
 ```sh

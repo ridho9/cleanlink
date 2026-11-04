@@ -2,11 +2,18 @@
 // /plugins/post.php is not. It answers "unavailable" for posts that forbid
 // embedding, which is simply no card.
 
+import { execFile } from 'node:child_process';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
+
 import {
   authorBlock,
   decodeEntities,
   getHtml,
   imageEmbeds,
+  MAX_ATTACH_BYTES,
   toField,
   FACEBOOK_BLUE,
 } from './shared.js';
@@ -111,6 +118,57 @@ function blockedVideoCard(html, href) {
   };
 }
 
+const run = promisify(execFile);
+
+/**
+ * Download an unplayable Facebook video with yt-dlp and attach it.
+ *
+ * Facebook serves the player only to a browser that runs its JavaScript, so an
+ * anonymous fetch sees "this video cannot be played" while a logged-out browser
+ * plays it fine. yt-dlp speaks the same API and can hand back the file.
+ *
+ * Optional by design: no yt-dlp, a video it cannot parse, or a file larger than
+ * the message budget all mean no attachment, and the caller falls back to the
+ * author-only card. Nothing here is on the path for any other site.
+ */
+async function downloadVideo(href, options) {
+  if (!/\/(?:reel|videos|watch)\b/.test(new URL(href).pathname)) return null;
+  const budget = options.budget ?? {};
+  if ((budget.files ?? 1) <= 0) return null;
+
+  const dir = await mkdtemp(join(tmpdir(), 'cleanlink-'));
+  const file = join(dir, 'video.mp4');
+  try {
+    await run('yt-dlp', [
+      '--no-warnings',
+      '--no-playlist',
+      '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
+      '--merge-output-format', 'mp4',
+      '-o', file,
+      href,
+    ], { timeout: 30_000 });
+
+    const buffer = await readFile(file);
+    const cap = Math.min(MAX_ATTACH_BYTES, budget.bytes ?? MAX_ATTACH_BYTES);
+    if (buffer.length === 0 || buffer.length > cap) return null;
+
+    return {
+      embeds: [{
+        url: href,
+        color: FACEBOOK_BLUE,
+        footer: { text: 'Facebook' },
+      }],
+      files: [{ attachment: buffer, name: 'video.mp4' }],
+    };
+  } catch (error) {
+    // Missing binary, unparseable video, size limit: all the same outcome.
+    console.log(`[card] facebook video via yt-dlp: ${error.shortMessage ?? error.message}`);
+    return null;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 /** Post images: everything on scontent that is not an avatar. */
 function mediaImages(html) {
   return [
@@ -144,12 +202,22 @@ async function buildFacebookCard({ match, href }, options) {
       if (feed) return feed;
 
       // A video that Facebook will not play for an anonymous viewer still
-      // names its owner. That is worth a card: Discord's own preview for such
-      // a link is the generic "Log in or sign up to view".
+      // names its owner, and yt-dlp can often still reach the file. Discord's
+      // own preview for such a link is the generic "Log in or sign up to view".
       const blocked = blockedVideoCard(page.html, href);
+
+      // Only spend the yt-dlp call on a video: either the blocked-player
+      // layout said so, or the link is a video path and the post was refused.
+      const refused = /tidak tersedia|isn't available|is not available/i.test(page.html);
+      if (blocked || refused) {
+        const video = await downloadVideo(href, options);
+        if (video) {
+          if (blocked?.embeds[0].author) video.embeds[0].author = blocked.embeds[0].author;
+          return video;
+        }
+      }
       if (blocked) return blocked;
 
-      const refused = /tidak tersedia|isn't available|is not available/i.test(page.html);
       // Say why, as far as the answer allows: an anonymous request cannot tell
       // a deleted post from a private one or an age-restricted one — Facebook
       // returns the same "no longer available" page for all three, and the
