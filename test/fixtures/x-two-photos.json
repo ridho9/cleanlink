@@ -1,0 +1,39 @@
+{
+  "code": 200,
+  "message": "OK",
+  "tweet": {
+    "id": "2117605067968930228",
+    "url": "https://x.com/EspokunCity/status/2117605067968930228",
+    "text": "But to be fair to Suzuka, if we take a photo at this angle, then it looks good, doesn't it? She looks like a mysterious beauty.  \n\nSo it's matter of perspective guys!",
+    "author": {
+      "name": "Espy",
+      "screen_name": "EspokunCity",
+      "url": "https://x.com/EspokunCity",
+      "avatar_url": "https://pbs.twimg.com/profile_images/2091358868907679744/P7d_wrIq_200x200.jpg",
+      "id": "1518431149835849728"
+    },
+    "media": {
+      "all": [
+        {
+          "type": "photo",
+          "url": "https://pbs.twimg.com/media/HWM-kKrbQAIcdi3.jpg?name=orig",
+          "width": 1600,
+          "height": 2560
+        },
+        {
+          "type": "photo",
+          "url": "https://pbs.twimg.com/media/HWM-kpLaQAAw1Ji.jpg?name=orig",
+          "width": 1536,
+          "height": 2048
+        }
+      ]
+    },
+    "replies": 24,
+    "retweets": 651,
+    "likes": 16318,
+    "views": 229352,
+    "created_timestamp": 1793711366,
+    "quote": null,
+    "possibly_sensitive": false
+  }
+}

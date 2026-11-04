@@ -86,8 +86,8 @@ Reddit, Spotify and Google were removed on purpose: only fake share codes had ev
 
 For X and Pixiv the bot posts its own card, because Discord's own preview fails on both:
 
-- **X** — Discord shows a truncated title. The bot reads `api.fxtwitter.com` and builds a card with the full text, the avatar, the reply/retweet/like/view counts, a quoted tweet as a blockquote, and either the photo or the video's poster frame. It never rewrites the host to a fixer domain.
-- **Pixiv** — `i.pximg.net` answers `403` unless the request carries a pixiv `Referer`, and Discord never sends one, so the native card has no image. The bot downloads up to 5 pages with that header and re-uploads them as attachments. Each page gets its own embed, so a multi-page work reads as one card that continues, not as a loose image above a card. Restricted works get `SPOILER_` file names.
+- **X** — Discord shows a truncated title. The bot reads `api.fxtwitter.com` and builds a card with the full text, the avatar, the reply/retweet/like/view counts, a quoted tweet as a blockquote, and the media: a photo as the large image, a second photo as the thumbnail, a video's poster frame when there is no photo. Photos past the second are attached. It never rewrites the host to a fixer domain.
+- **Pixiv** — `i.pximg.net` answers `403` unless the request carries a pixiv `Referer`, and Discord never sends one, so the native card has no image. The bot downloads up to 5 pages with that header and re-uploads them as attachments. One card holds the work: the first page is the large image, the second is the thumbnail, and pages 3 to 5 stay attached below. Restricted works get `SPOILER_` file names.
 
 Why the other six sites get no card: Threads, Instagram and Misskey already answer Discord's crawler with complete OpenGraph tags, including an image that fetches, so a card we build would say less. TikTok's oEmbed returns an iframe only. YouTube has a native player. Facebook's oEmbed needs an app token. Evidence for each is in [docs/saucybot-url-inventory.md](docs/saucybot-url-inventory.md).
 
@@ -151,4 +151,4 @@ The cleaning logic is plain functions with `fetch` injected, so the whole suite 
 - **The bot cannot remove an embed from your message in a DM.** Suppressing embeds on a message you did not author needs `Manage Messages`, and DM channels have no permissions, so Discord answers `404` (verified). Wrap the link in angle brackets — `<https://…>` — and Discord shows no preview on your message; the bot still parses it and its own reply carries the preview.
 - Nothing is stored: no database, no cache, no message logging beyond the one `console.log` per cleaned link.
 - Limits: 4 s per hop, 3 hops, 5 links per message. A failed lookup leaves the link untouched rather than guessing.
-- Card limits, shared by every card in the message: 10 embeds, 10 files, 5 Pixiv pages per work, 8 MB of attachments, 6 s per request. A card that does not fit the budget is skipped whole, and a card that cannot be built leaves the plain cleaned reply — never an error.
+- Card limits, shared by every card in the message: 10 attachments, 5 Pixiv pages per work, 8 MB of attachments, 6 s per request. A card that does not fit the budget is skipped whole, and a card that cannot be built leaves the plain cleaned reply — never an error.
