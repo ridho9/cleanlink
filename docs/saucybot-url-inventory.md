@@ -25,7 +25,7 @@ Treatment is one of four things:
 | FurAffinity | `furaffinity.net/view/<id>`, `/full/<id>` | Embed | image via the faexport API | working | no |
 | FurAffinity (alt) | same | **Rename** → `xfuraffinity.net` | plain link | alternative to the above | no |
 | HentaiFoundry | `hentai-foundry.com/pictures/user/<user>/<id>/<slug>` | Embed | image | working | no |
-| **Instagram** | `instagram.com/(p\|reel\|reels)/<id>` | **Rename** → `vxinstagram.com` | plain link | **disabled** upstream (broken) | **params only** — we strip trackers, we do not rename the host (renderer dead) |
+| **Instagram** | `instagram.com/(p\|reel\|reels)/<id>` | **Rename** → `vxinstagram.com` | plain link | **disabled** upstream (broken) | **params + card** — we strip trackers and build the card from the page's OpenGraph tags |
 | Misskey | `misskey.io` / `misskey.design` / `oekakiskey.com` + `/notes/<id>` | Embed | text, images, NSFW gate | misskey.io only | no card — Discord's own preview already shows author, text and image |
 | Newgrounds | `newgrounds.com/art/view/<user>/<slug>` | Embed | image + rating | **broken** upstream | no |
 | Pixiv | `pixiv.net/…/artworks/<id>` | **Attach** | up to 5 images; ugoira → mp4 via ffmpeg | working (needs cookie) | **attach** — built; up to 5 pages re-uploaded, because `i.pximg.net` is 403 without a Referer |
@@ -51,7 +51,7 @@ So the domain-rename trick is used on **four** sites, and every one of those ren
 Overlaps with SaucyBot: **Twitter / X** and **Instagram**. Ours alone: **Threads**, **TikTok**, **YouTube**, **Facebook**.
 
 - **Twitter / X** — built. `api.fxtwitter.com` answers `200 application/json` for a real status, so the card carries author, avatar, full text, QRT text, stats and a still.
-- **Instagram** — nothing to take. The rename renderer is dead, and Discord's own unfurl is now complete: the post page serves `og:title`, `og:description` and an `og:image` on `scontent.cdninstagram.com` that fetches `200`. Parameter stripping is the whole of our contribution.
+- **Instagram** — built, without borrowing SaucyBot's approach. Its rename renderer is dead, but Discord unfurls nothing for the link (verified: zero embeds), while the page serves `og:title`, `og:description` and an `og:image` that fetches `200`. Reading those tags gives the card SaucyBot's dead renderer was supposed to produce.
 - **Threads** — built, and SaucyBot has nothing to teach here. Its OpenGraph tags do carry the post text, but only for a browser user agent: `Discordbot` gets a 107 KB shell without `og:description`. That is why Discord's own card is wordless, and one `Mozilla/5.0` fetch fixes it.
 - **TikTok** — nothing found. The native card shows a generated share-card image and a generic title; oEmbed now returns an iframe with no metadata.
 - **YouTube** — nothing needed. The native player is the best result already.

@@ -1,5 +1,6 @@
 import { extractUrls, hostMatches } from '../clean.js';
 import { buildFacebookCard } from './facebook.js';
+import { buildInstagramCard } from './instagram.js';
 import { buildNhentaiCard } from './nhentai.js';
 import { buildPixivCard } from './pixiv.js';
 import { buildThreadsCard } from './threads.js';
@@ -32,6 +33,14 @@ const CARD_SITES = [
     hosts: ['pixiv.net'],
     match: (url) => /^\/(?:[a-z]{2}\/)?artworks\/(\d{1,12})/i.exec(url.pathname),
     build: buildPixivCard,
+  },
+  {
+    id: 'instagram',
+    hosts: ['instagram.com', 'instagr.am'],
+    // /p/, /reel/, /reels/ and /tv/. A /share/ link is resolved by the cleaner
+    // first, so the card sees the permalink.
+    match: (url) => /^\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]{5,})/.exec(url.pathname),
+    build: buildInstagramCard,
   },
   {
     id: 'threads',

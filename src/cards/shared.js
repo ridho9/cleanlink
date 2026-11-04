@@ -18,6 +18,7 @@ export const TIKTOK_BLACK = 0x010101;
 export const THREADS_BLACK = 0x000000;
 export const FACEBOOK_BLUE = 0x1877f2;
 export const NHENTAI_RED = 0xed2553;
+export const INSTAGRAM_PINK = 0xe1306c;
 
 // ---------------------------------------------------------------- utilities
 
@@ -95,6 +96,15 @@ export function decodeEntities(text) {
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&');
+}
+
+/** Pull one meta tag out of a page. */
+export function metaContent(html, property) {
+  const match = new RegExp(
+    `<meta[^>]+(?:property|name)="${property}"[^>]+content="([^"]*)"`,
+    'i',
+  ).exec(html);
+  return match ? decodeEntities(match[1]) : null;
 }
 
 /**

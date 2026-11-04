@@ -5,18 +5,10 @@ import {
   authorBlock,
   decodeEntities,
   getHtml,
+  metaContent,
   THREADS_BLACK,
   toField,
 } from './shared.js';
-
-/** Pull one meta tag out of a page. */
-function metaContent(html, property) {
-  const match = new RegExp(
-    `<meta[^>]+(?:property|name)="${property}"[^>]+content="([^"]*)"`,
-    'i',
-  ).exec(html);
-  return match ? decodeEntities(match[1]) : null;
-}
 
 async function buildThreadsCard({ href }, options) {
   const page = await getHtml(href, options);
