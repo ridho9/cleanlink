@@ -54,16 +54,33 @@ export function toField(text, max) {
   return clip(escapeMarkdown(text), max);
 }
 
-/** One request, with the headers and timeout every builder needs. */
-function request(url, { fetchImpl = fetch, accept, headers = {} } = {}) {
-  return fetchImpl(url, {
+/**
+ * One request, with the headers and timeout every builder needs.
+ *
+ * Retried once when the request itself fails — a connect error or a timeout —
+ * because a dropped connection there costs the whole card. An HTTP error status
+ * is not retried: that is an answer, not a hiccup.
+ */
+async function request(url, { fetchImpl = fetch, accept, headers = {} } = {}) {
+  const init = {
     headers: {
       'user-agent': BROWSER_UA,
       ...(accept ? { accept } : {}),
       ...headers,
     },
     signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
+  };
+
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await fetchImpl(url, init);
+    } catch (error) {
+      if (attempt === 1) {
+        console.log(`[card] ${new URL(url).host} failed twice: ${error.message}`);
+        throw error;
+      }
+    }
+  }
 }
 
 export async function getJson(url, options) {

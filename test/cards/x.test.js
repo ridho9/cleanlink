@@ -7,6 +7,7 @@ import { fakeFetch, fixture, imageResponse } from '../../test-support/harness.js
 const X_VIDEO = fixture('x-video.json');
 const X_TEXT = fixture('x-text.json');
 const X_TWO_PHOTOS = fixture('x-two-photos.json');
+const X_QUOTE_PHOTOS = fixture('x-quote-photos.json');
 
 test('X card carries text, author, still, stats and timestamp', async () => {
   const { impl } = fakeFetch([['https://api.fxtwitter.com/', X_VIDEO]]);
@@ -121,6 +122,48 @@ test('X card keeps every photo of a four-photo post', async () => {
     four.tweet.media.all.map((photo) => photo.url),
   );
   assert.deepEqual(card.files, []);
+});
+
+test('a quote tweet\'s photos join the card, after the main tweet\'s', async () => {
+  const { impl } = fakeFetch([['https://api.fxtwitter.com/', X_QUOTE_PHOTOS]]);
+  const [card] = await buildCards('https://x.com/someone/status/2117268467812331634', {
+    fetchImpl: impl,
+  });
+
+  const expected = [
+    ...X_QUOTE_PHOTOS.tweet.media.all.map((item) => item.url),
+    ...X_QUOTE_PHOTOS.tweet.quote.media.all.map((item) => item.url),
+  ];
+  assert.equal(card.embeds.length, 4);
+  assert.deepEqual(card.embeds.map((embed) => embed.image.url), expected);
+  assert.deepEqual(
+    card.embeds.map((embed) => embed.footer.text),
+    ['Twitter · 1/4', 'Twitter · 2/4', 'Twitter · 3/4', 'Twitter · 4/4'],
+  );
+  // The quoted words are already a blockquote, so the pictures follow it.
+  assert.match(card.embeds[0].description, /> \*\*Quoting Meituan LongCat \(@Meituan\\_LongCat\)\*\*/);
+  assert.equal(card.embeds[1].description, undefined, 'later embeds stay images only');
+});
+
+test('a counted footer only appears when there is more than one image', async () => {
+  const { impl } = fakeFetch([['https://api.fxtwitter.com/', X_VIDEO]]);
+  const [card] = await buildCards('https://x.com/someone/status/2117280148445962692', { fetchImpl: impl });
+  assert.equal(card.embeds.length, 1);
+  assert.equal(card.embeds[0].footer.text, 'Twitter');
+});
+
+test('a dropped request is retried once before the card is lost', async () => {
+  const { impl } = fakeFetch([['https://api.fxtwitter.com/', X_TEXT]]);
+  let attempts = 0;
+  const flaky = async (url, init) => {
+    attempts += 1;
+    if (attempts === 1) throw new TypeError('fetch failed');
+    return impl(url, init);
+  };
+
+  const [card] = await buildCards('https://x.com/jack/status/20', { fetchImpl: flaky });
+  assert.ok(card, 'the retry recovered the card');
+  assert.equal(attempts, 2);
 });
 
 test('X card is skipped when the API fails', async () => {

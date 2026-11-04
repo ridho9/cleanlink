@@ -19,12 +19,11 @@ async function buildXCard({ match, href }, options) {
 
   const tweet = data.tweet;
   const author = tweet.author ?? {};
-  const media = tweet.media?.all ?? [];
-  const photos = media.filter((item) => item.type === 'photo').map((item) => item.url);
 
-  // A video tweet still gets a card, using the poster frame. Discord cannot
-  // play X video either way, and the frame plus the text beats a bare link.
-  const still = media.find((item) => item.thumbnail_url)?.thumbnail_url;
+  // The main tweet's picture first, then the quoted tweet's. A quote can carry
+  // photos of its own and they were being dropped; the API exposes them as
+  // `quote.media.all`, same shape as `media.all`.
+  const images = [...stills(tweet.media?.all), ...stills(tweet.quote?.media?.all)];
 
   const parts = [];
   if (tweet.text) parts.push(escapeMarkdown(tweet.text));
@@ -55,12 +54,11 @@ async function buildXCard({ match, href }, options) {
 
   if (parts.length > 0) embed.description = clip(parts.join('\n\n'), 4096);
 
-  // One embed per photo. A Discord embed has a single `image` field and a
+  // One embed per image. A Discord embed has a single `image` field and a
   // single `thumbnail` field, so two images cannot share a card at full size;
   // SaucyBot solves the same limit the same way (one embed per photo in
   // `FxTwitter.cs`). The first embed carries the text, the rest are images.
-  if (photos[0]) embed.image = { url: photos[0] };
-  else if (still) embed.image = { url: still };
+  if (images[0]) embed.image = { url: images[0] };
   if (tweet.created_timestamp) {
     embed.timestamp = new Date(tweet.created_timestamp * 1000).toISOString();
   }
@@ -73,10 +71,33 @@ async function buildXCard({ match, href }, options) {
   ]);
   if (fields) embed.fields = fields;
 
-  // pbs.twimg.com is fetchable by Discord, so extra photos cost nothing here.
-  const embeds = [embed, ...imageEmbeds(embed.url, X_BLUE, embed.footer, photos.slice(1))];
+  // pbs.twimg.com is fetchable by Discord, so extra images cost nothing here.
+  const footer = images.length > 1 ? { text: `Twitter · 1/${images.length}` } : embed.footer;
+  if (images.length > 1) embed.footer = footer;
+
+  const embeds = [
+    embed,
+    ...images.slice(1).map((image, index) => ({
+      url: embed.url,
+      color: X_BLUE,
+      image: { url: image },
+      footer: { text: `Twitter · ${index + 2}/${images.length}` },
+    })),
+  ];
 
   return { embeds, files: [] };
+}
+
+/**
+ * Every image in a media list, full size.
+ *
+ * A photo contributes its `url`; a video or GIF contributes its poster frame —
+ * Discord cannot play X video, so the frame plus the text beats a bare link.
+ */
+function stills(media = []) {
+  return media
+    .map((item) => (item.type === 'photo' ? item.url : item.thumbnail_url))
+    .filter(Boolean);
 }
 
 export { buildXCard };

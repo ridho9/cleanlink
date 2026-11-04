@@ -1,0 +1,61 @@
+{
+  "code": 200,
+  "message": "OK",
+  "tweet": {
+    "id": "2117268467812331634",
+    "url": "https://x.com/PetalSoI/status/2117268467812331634",
+    "text": "These small time devs made an AI called LongCat and its MOGGING Claude, OpenAI and every other LLM \n\nThey have a Git and need the money https://github.com/meituan-longcat\nhttps://x.com/Meituan_LongCat/status/2117264311714537633?s=20",
+    "author": {
+      "name": "petal",
+      "screen_name": "PetalSoI",
+      "url": "https://x.com/PetalSoI",
+      "avatar_url": "https://pbs.twimg.com/profile_images/2070840695934337024/evJt-8IK_200x200.jpg",
+      "id": "93505837"
+    },
+    "media": {
+      "all": [
+        {
+          "type": "photo",
+          "url": "https://pbs.twimg.com/media/HWIMcwnW8AAOtI9.jpg?name=orig",
+          "width": 1200,
+          "height": 881
+        }
+      ]
+    },
+    "replies": 11,
+    "retweets": 2,
+    "likes": 8,
+    "views": 4952,
+    "created_timestamp": 1793631114,
+    "possibly_sensitive": false,
+    "quote": {
+      "text": "Introducing LongCat-2.5, our latest natively multimodal agentic model with 1.6T total parameters and ~48B active.\n\nBuilt for long-horizon agentic tasks, it brings stronger visual understanding and agentic coding to work ranging from complex coding projects to visual coding such as creative design and 3D tasks.\n\nLearn more about LongCat-2.5: https://longcat.ai/blog/longcat-2.5/",
+      "author": {
+        "name": "Meituan LongCat",
+        "screen_name": "Meituan_LongCat"
+      },
+      "media": {
+        "all": [
+          {
+            "type": "photo",
+            "url": "https://pbs.twimg.com/media/HWIIqOSbAAAeW8v.jpg?name=orig",
+            "width": 901,
+            "height": 1200
+          },
+          {
+            "type": "photo",
+            "url": "https://pbs.twimg.com/media/HWIIqORaQAAr7tz.jpg?name=orig",
+            "width": 1200,
+            "height": 881
+          },
+          {
+            "type": "photo",
+            "url": "https://pbs.twimg.com/media/HWIIqOhawAAUzOZ.jpg?name=orig",
+            "width": 1199,
+            "height": 439
+          }
+        ]
+      }
+    }
+  }
+}
