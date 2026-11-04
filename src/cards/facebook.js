@@ -117,11 +117,13 @@ async function buildFacebookCard({ match, href }, options) {
       if (feed) return feed;
 
       const refused = /tidak tersedia|isn't available|is not available/i.test(page.html);
-      // Say why: a forbidden post and an unexpected response look alike from
-      // the outside, and both mean "no card".
+      // Say why, as far as the answer allows: an anonymous request cannot tell
+      // a deleted post from a private one or an age-restricted one — Facebook
+      // returns the same "no longer available" page for all three, and the
+      // words "age" and "login" appear in every response's scripts.
       console.log(
         `[card] facebook ${page.status} ${page.html.length}B attempt ${attempt + 1}: ` +
-          (refused ? 'post refuses embedding' : 'unexpected response'),
+          (refused ? 'post unavailable (deleted, private, or age-restricted)' : 'unexpected response'),
       );
       if (refused) return null;
       continue;
