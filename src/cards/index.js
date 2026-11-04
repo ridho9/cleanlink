@@ -148,7 +148,7 @@ function findCard(raw, cleanedFor, explicit) {
  *   cleanMessage, so a card can show the cleaned URL rather than the tracked one
  * @returns {Promise<Array<{from: string, url: string, embeds: Array, files: Array}>>}
  */
-export async function buildCards(text, { cleaned = [], fetchImpl = fetch, downloadVideo } = {}) {
+export async function buildCards(text, { cleaned = [], fetchImpl = fetch, downloadVideo, videoUrl } = {}) {
   const cleanedFor = new Map(cleaned.map(({ from, to }) => [from, to]));
   const seen = new Set();
   const cards = [];
@@ -175,7 +175,7 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch, downlo
         { match, href: url.href },
         // `downloadVideo` is injectable so tests can decide whether a video
         // arrives, without running yt-dlp.
-        { fetchImpl, downloadVideo, budget: { files: filesLeft, bytes: bytesLeft } },
+        { fetchImpl, downloadVideo, videoUrl, budget: { files: filesLeft, bytes: bytesLeft } },
       );
       if (!card) {
         // Keep this: a card that silently does not appear is indistinguishable

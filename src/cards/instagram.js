@@ -21,6 +21,7 @@ import {
   downloadVideo,
   metaContent,
   toField,
+  videoUrl,
 } from './shared.js';
 
 // The two pages describe a post differently, so both shapes are parsed.
@@ -109,6 +110,12 @@ export async function buildInstagramCard({ href }, options) {
       delete embed.image;
       return { embeds: [embed], files };
     }
+
+    // Too large to attach. The card still goes out, and the video follows as a
+    // second message whose bare URL Discord unfurls into its own proxied
+    // player — no size limit, and nothing downloaded here.
+    const direct = await (options.videoUrl ?? videoUrl)(href, options);
+    if (direct) return { embeds: [embed], files: [], followUps: [direct] };
   }
 
   const embeds = [embed, ...images.slice(1).map((image, index) => ({

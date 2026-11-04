@@ -89,6 +89,34 @@ test('a reel keeps its card and carries the video as an attachment', async () =>
   assert.equal(card.extraLines, undefined, 'no label, no fixer link');
 });
 
+test('a reel too large to attach sends the video as a follow-up URL', async () => {
+  const { impl } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
+  const direct = 'https://instagram.fpku7-1.fna.fbcdn.net/o1/v/t2/big.mp4';
+
+  const [card] = await buildCards(URL, {
+    fetchImpl: impl,
+    downloadVideo: async () => null,
+    videoUrl: async () => direct,
+  });
+
+  assert.ok(card);
+  assert.equal(card.embeds.length, 1, 'the card still goes out');
+  assert.ok(card.embeds[0].image, 'with its poster frame');
+  assert.deepEqual(card.followUps, [direct], 'and the video follows in its own message');
+});
+
+test('a reel with no downloadable file and no direct URL keeps the poster', async () => {
+  const { impl } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
+  const [card] = await buildCards(URL, {
+    fetchImpl: impl,
+    downloadVideo: async () => null,
+    videoUrl: async () => null,
+  });
+
+  assert.ok(card.embeds[0].image);
+  assert.equal(card.followUps, undefined);
+});
+
 test('a reel with no downloadable file keeps its poster frame', async () => {
   const { impl } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
   const [card] = await buildCards(URL, { fetchImpl: impl, downloadVideo: async () => null });

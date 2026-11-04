@@ -215,3 +215,28 @@ export async function downloadVideo(href, options = {}, format = {}) {
     await rm(dir, { recursive: true, force: true });
   }
 }
+
+/**
+ * The direct media URL for a page, via yt-dlp, or null.
+ *
+ * Used only when the file is too large to attach: Discord unfurls a bare mp4
+ * into its own proxied player, so a second message can carry a video of any
+ * size without this process moving the bytes.
+ */
+export async function videoUrl(href) {
+  try {
+    const { stdout } = await run('yt-dlp', [
+      '--no-warnings',
+      '--no-playlist',
+      '--skip-download',
+      '-f', 'best',
+      '--get-url',
+      href,
+    ], { timeout: 25_000 });
+    const url = stdout.trim().split('\n')[0];
+    return url.startsWith('https://') ? url : null;
+  } catch (error) {
+    console.log(`[card] video url via yt-dlp failed for ${new URL(href).host}: ${(error.shortMessage ?? error.message).split('\n')[0]}`);
+    return null;
+  }
+}
