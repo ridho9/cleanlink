@@ -35,7 +35,7 @@ Treatment is one of four things:
 | **Threads** | `threads.com/share/<code>`, `threads.net/t/<code>`, `threads.com/@user/post/<id>` | — (not handled) | — | — | **yes** — resolves `/share/` and `/t/` to the post, strips `xmt`, `slof` and the whole query on permalinks; **card** from the page's OpenGraph tags (browser UA only) |
 | **TikTok** | `vm.tiktok.com/<code>`, `vt.tiktok.com/<code>`, `tiktok.com/@user/video/<id>` | — (not handled) | — | — | **yes** — resolves the shortener to the video, drops `_t` and the app-share tokens; **card** from `tikwm.com` (caption, author, cover, counts) |
 | **YouTube** | `youtube.com/watch?v=<id>`, `youtu.be/<id>` | — (not handled) | — | — | **yes** — drops `si`, `feature`; native player does the rest |
-| **Facebook** | `facebook.com/share/<code>`, `fb.watch/<code>`, `/posts/`, `/permalink/`, `/videos/`, `/reel/` | — (not handled) | — | — | **yes** — unwraps `/share/` and `fb.watch`, drops `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url`; **card** from the public `plugins/post.php` iframe (author, text, media) |
+| **Facebook** | `facebook.com/share/<code>`, `fb.watch/<code>`, `/posts/`, `/permalink/`, `/videos/`, `/reel/` | — (not handled) | — | — | **yes** — unwraps `/share/` and `fb.watch`, drops `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url`; **card** from the public `plugins/post.php` iframe (author, text, media) for posts, reels, videos and watch links |
 
 ## Counts
 

@@ -71,10 +71,15 @@ export const CARD_SITES = [
   {
     id: 'facebook',
     hosts: ['facebook.com', 'fb.com', 'fb.watch'],
-    // Post permalinks only. /watch/ and /reel/ were not verified against the
-    // embed endpoint, so they keep the plain clean link.
+    // Permalinks, reels and watch links all answer on the embed endpoint.
+    // A /share/ link resolves into one of these before the card is built.
     match: (url) =>
       /^\/[^/]+\/posts\/([0-9]{6,}|pfbid[0-9A-Za-z]{10,})/.exec(url.pathname) ??
+      /^\/reel\/(\d{6,})/.exec(url.pathname) ??
+      /^\/[^/]+\/videos\/(\d{6,})/.exec(url.pathname) ??
+      (/^\/watch\/?$/.test(url.pathname) && url.searchParams.get('v')
+        ? ['watch', url.searchParams.get('v')]
+        : null) ??
       (/^\/permalink\.php$/.test(url.pathname) && url.searchParams.get('story_fbid')
         ? ['permalink']
         : null),
@@ -356,9 +361,11 @@ async function buildFacebookCard({ href }, options) {
     description: toField(text, 4096),
   };
 
-  // The avatar carries the author name in aria-label. The page handle comes
-  // from the permalink path, or from the link the iframe puts in the post.
-  const author = /aria-label="([^"]+)"/.exec(html)?.[1];
+  // The avatar is the one `<img role="img">` that carries the author name in
+  // aria-label. Picking the first aria-label in the document is not the same
+  // thing: a reel page puts "Putar video" there first.
+  const avatar = [...html.matchAll(/<img\b[^>]*>/gi)].find((tag) => tag[0].includes('role="img"'));
+  const author = avatar ? /aria-label="([^"]+)"/.exec(avatar[0])?.[1] : null;
   // The iframe's own permalink is authoritative: a post can sit on a vanity
   // path that differs from the page that owns it.
   const handle =

@@ -15,6 +15,7 @@ const PIXIV_PAGES = fixture('pixiv-pages.json');
 const TIKWM = fixture('tikwm-video.json');
 const THREADS_HTML = readFileSync(new URL('./fixtures/threads-post.html', import.meta.url), 'utf8');
 const FACEBOOK_HTML = readFileSync(new URL('./fixtures/facebook-post.html', import.meta.url), 'utf8');
+const FACEBOOK_REEL = readFileSync(new URL('./fixtures/facebook-reel.html', import.meta.url), 'utf8');
 
 /** A fetch stub that answers by URL prefix and records what it was asked. */
 function fakeFetch(routes) {
@@ -329,6 +330,40 @@ test('Facebook card reads the public embed iframe, not the login-walled page', a
   assert.ok(card.embeds[0].image.url.startsWith('https://scontent'));
   assert.ok(!card.embeds[0].image.url.includes('s40x40'), 'the avatar is not the post image');
   assert.equal(card.embeds[0].footer.text, 'Facebook');
+});
+
+test('Facebook card reads a reel and a watch link, and ignores UI labels', async () => {
+  // A reel page carries several aria-labels ("Putar video", "Putar Cerita …");
+  // only the avatar <img role="img"> holds the author name.
+  const reel = FACEBOOK_REEL.replace(
+    '<body>',
+    '<body><span aria-label="Putar video"></span><span aria-label="Putar Cerita yang belum dilihat"></span>',
+  );
+  const { impl } = fakeFetch([['https://www.facebook.com/plugins/post.php', reel]]);
+
+  for (const url of [
+    'https://www.facebook.com/reel/1543457311150597/',
+    'https://www.facebook.com/watch/?v=1543457311150597',
+    'https://www.facebook.com/someone/videos/1543457311150597',
+  ]) {
+    const [card] = await buildCards(url, { fetchImpl: impl });
+    assert.ok(card, url);
+    assert.equal(card.embeds[0].author.name, 'Lingua Forge', url);
+    assert.ok(card.embeds[0].description.startsWith('Siapa bilang persiapan'), url);
+    assert.ok(card.embeds[0].image, url);
+  }
+});
+
+test('Facebook card resolves from a /share/ link through the cleaned URL', async () => {
+  const { impl } = fakeFetch([['https://www.facebook.com/plugins/post.php', FACEBOOK_REEL]]);
+  const raw = 'https://www.facebook.com/share/r/1RrEeLlSsX/';
+  const [card] = await buildCards(raw, {
+    fetchImpl: impl,
+    cleaned: [{ from: raw, to: 'https://www.facebook.com/reel/1543457311150597/' }],
+  });
+
+  assert.ok(card);
+  assert.equal(card.url, 'https://www.facebook.com/reel/1543457311150597/');
 });
 
 test('Facebook card is skipped for a post that forbids embedding', async () => {
