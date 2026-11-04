@@ -53,6 +53,43 @@ test('a transient resolution failure is retried once', async () => {
   assert.equal(attempts, 2);
 });
 
+test('a YouTube watch link keeps only the video id', async () => {
+  const fetchImpl = stubFetch();
+  const cases = [
+    [
+      'https://www.youtube.com/watch?v=O_tWg-56evA&list=RDO_tWg-56evA&start_radio=1',
+      'https://www.youtube.com/watch?v=O_tWg-56evA',
+    ],
+    [
+      'https://www.youtube.com/watch?v=O_tWg-56evA&si=abc&feature=share&pp=ygU',
+      'https://www.youtube.com/watch?v=O_tWg-56evA',
+    ],
+    [
+      'https://music.youtube.com/watch?v=O_tWg-56evA&list=RDAMVM',
+      'https://music.youtube.com/watch?v=O_tWg-56evA',
+    ],
+  ];
+  for (const [from, to] of cases) {
+    assert.equal(await cleanUrl(from, { fetchImpl }), to, from);
+  }
+});
+
+test('YouTube paths that are not watch links keep their parameters', async () => {
+  const fetchImpl = stubFetch();
+  // Nothing to strip on either: a search and a playlist are not a permalink,
+  // and `v` is not a parameter they use.
+  assert.equal(
+    await cleanUrl('https://www.youtube.com/results?search_query=cats', { fetchImpl }),
+    null,
+  );
+  assert.equal(await cleanUrl('https://www.youtube.com/playlist?list=PL123', { fetchImpl }), null);
+  // A short link already carries the id in the path.
+  assert.equal(
+    await cleanUrl('https://youtu.be/O_tWg-56evA?si=abc', { fetchImpl }),
+    'https://youtu.be/O_tWg-56evA',
+  );
+});
+
 test('ruleFor matches subdomains but not lookalike hosts', () => {
   assert.equal(ruleFor(new URL('https://www.threads.com/@a/post/b')).id, 'threads');
   assert.equal(ruleFor(new URL('https://vm.tiktok.com/abc')).id, 'tiktok');

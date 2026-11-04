@@ -61,6 +61,11 @@ export const RULES = [
     id: 'youtube',
     hosts: ['youtube.com', 'youtu.be'],
     drop: [/^si$/i, /^feature$/i],
+    // A watch link carries the video in `v` and nothing else that matters:
+    // `list`, `index`, `start_radio`, `pp` and `ab_channel` are all decoration.
+    // Scoped to the watch path so `youtube.com/results?search_query=…` and
+    // `/playlist?list=…` keep their parameters.
+    keepOnly: { path: /^\/watch\/?$/, keep: [/^v$/i] },
   },
   {
     id: 'facebook',

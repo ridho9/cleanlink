@@ -72,10 +72,19 @@ function stripTracking(url, rule) {
   // is future-proof against tokens that did not exist when the rule was
   // written; the explicit list only has to cover every other URL shape.
   const dropAll = rule.dropAllOn ? rule.dropAllOn.test(url.pathname) : false;
+
+  // The mirror image: a URL shape whose identity is one named parameter.
+  // YouTube's `watch?v=…` is the case — the video is `v`, everything else is
+  // playlist or radio state.
+  const keepOnly =
+    rule.keepOnly && rule.keepOnly.path.test(url.pathname) ? rule.keepOnly.keep : null;
+
   const shouldDrop = (name) =>
-    dropAll ||
-    GLOBAL_TRACKING.some((re) => re.test(name)) ||
-    rule.drop.some((re) => re.test(name));
+    keepOnly
+      ? !keepOnly.some((re) => re.test(name))
+      : dropAll ||
+        GLOBAL_TRACKING.some((re) => re.test(name)) ||
+        rule.drop.some((re) => re.test(name));
 
   for (const name of [...out.searchParams.keys()]) {
     if (shouldDrop(name)) out.searchParams.delete(name);

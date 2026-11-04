@@ -73,7 +73,7 @@ Note that server mode means the bot reads message content in every channel it ca
 | Instagram | `/share/…` links, strips `igsh`, `igshid`, `mdxt`, `psln` | no, Discord's own preview is complete |
 | TikTok | `vm.` / `vt.` short links, strips `is_from_webapp`, `sender_device`, `web_id`, `_t`, … | **yes** — caption, author, cover, counts from `tikwm.com` |
 | Twitter / X | strips `s`, `t`, `ref_src`, `ref_url` | **yes** — text, avatar, stats, quote, still |
-| YouTube | strips `si`, `feature` | no, the native player is better |
+| YouTube | on `watch` links keeps only `v`, so playlist and radio parameters go; short links lose `si`, `feature` | no, the native player is better |
 | Facebook | `fb.watch`, `/share/…`, strips `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url` | **yes** — author, text and media from the public embed iframe |
 | Pixiv | nothing to strip | **yes** — the artwork pages, re-uploaded |
 | Misskey | nothing to strip | no, Discord's own preview is complete |
@@ -128,6 +128,7 @@ Everything site-specific is data in [src/rules.js](src/rules.js):
   share: /^\/share\//i,              // optional: path that needs resolving first
   shorten: ['ex.co'],                // optional: hosts that only ever redirect
   drop: [/^trk$/i],                  // query params to remove
+  keepOnly: { path: /^\/watch$/, keep: [/^v$/i] },  // optional: keep only these params
   ua: 'Mozilla/5.0',                 // optional: user agent override
   failure: [/example\.com\/error/],  // optional: resolved URLs meaning "bad code"
 }
