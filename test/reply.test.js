@@ -55,7 +55,8 @@ test('extra lines a card asks for land after the bracketed link', async () => {
 
   assert.equal(
     message.sent[0].content,
-    '<https://www.instagram.com/reel/X/>\nhttps://vxinstagram.com/reel/X/',
+    '<https://www.instagram.com/reel/X/> https://vxinstagram.com/reel/X/',
+    'the extra link shares the card line',
   );
 });
 

@@ -46,13 +46,11 @@ function hasContent(embed) {
 export async function sendReply(message, { lines, cards }) {
   const carded = new Set(cards.map((card) => card.from));
   const content = fitLines([
-    // Angle brackets stop Discord from unfurling the link a second time next
-    // to the card we built from it.
-    ...cards.map((card) => `<${card.url}>`),
-    // Bare links a builder asked for: Discord unfurls these itself, which is
-    // how a playable video gets in — an MP4 in an embed's video field is
-    // dropped by Discord.
-    ...cards.flatMap((card) => card.extraLines ?? []),
+    // One line per card: the bracketed link, then anything the builder asked to
+    // have beside it. Angle brackets stop Discord from unfurling the carded
+    // link a second time; the extra links are meant to unfurl (that is how a
+    // playable video gets in, since an embed's video field is dropped).
+    ...cards.map((card) => [`<${card.url}>`, ...(card.extraLines ?? [])].join(' ')),
     ...lines.filter(({ from }) => !carded.has(from)).map(({ to }) => to),
   ]).join('\n');
 
