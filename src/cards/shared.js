@@ -94,7 +94,13 @@ async function request(url, { fetchImpl = fetch, accept, headers = {} } = {}) {
 export async function getJson(url, options) {
   const res = await request(url, { ...options, accept: 'application/json' });
   if (!res.ok) return null;
-  return res.json();
+  try {
+    return await res.json();
+  } catch {
+    // A JSON endpoint answering HTML is an error page, not a card.
+    console.log(`[card] ${new URL(url).host} answered non-JSON`);
+    return null;
+  }
 }
 
 export async function getHtml(url, options) {

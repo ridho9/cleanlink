@@ -17,6 +17,7 @@
 import {
   authorBlock,
   getHtml,
+  getJson,
   INSTAGRAM_PINK,
   metaContent,
   toField,
@@ -41,13 +42,17 @@ export async function buildInstagramCard({ href }, options) {
   const video = isVideo(url.pathname);
 
 
-  // Two Instagram pages, both first party: the post page carries the author,
-  // caption and counts as OpenGraph tags, and `/embed/captioned/` carries the
-  // media — `video_url` for a reel, one `display_url` per carousel image.
+  // Three first-party sources, each for what only it has:
+  //   the post page   — display name and counts, as OpenGraph tags
+  //   oEmbed          — the full caption, the handle, and a thumbnail that is
+  //                     neither square-cropped nor stamped with a play button
+  //   embed/captioned — one `display_url` per carousel image
   const shortcode = url.pathname.split('/').filter(Boolean).pop();
-  const [page, embedPage] = await Promise.all([
+  const oembedUrl = `https://www.instagram.com/api/v1/oembed/?url=${encodeURIComponent(href)}`;
+  const [page, embedPage, oembed] = await Promise.all([
     getHtml(href, options),
     getHtml(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, options),
+    getJson(oembedUrl, options),
   ]);
   const source = page?.html ?? embedPage?.html;
   if (!source) return null;
@@ -59,12 +64,14 @@ export async function buildInstagramCard({ href }, options) {
   const prefix = COUNT_PREFIX.exec(rawDescription);
   const suffix = COUNT_SUFFIX.exec(rawDescription);
 
+  // oEmbed's `title` is the caption in full; the OpenGraph one is clipped.
   const caption =
-    CAPTION_IN_TITLE.exec(title)?.[1] ??
+    (oembed?.title ?? '').trim() ||
+    CAPTION_IN_TITLE.exec(title)?.[1] ||
     rawDescription.replace(COUNT_PREFIX, '').replace(COUNT_SUFFIX, '');
   const name = title.replace(/\s*on Instagram:.*$/s, '').replace(/\s*\(@[\w.]+\)$/, '');
   const canonical = metaContent(source, 'og:url') ?? href;
-  const handle = handleOf(title, canonical, rawDescription);
+  const handle = oembed?.author_name || handleOf(title, canonical, rawDescription);
 
   const embed = {
     url: canonical,
@@ -95,7 +102,10 @@ export async function buildInstagramCard({ href }, options) {
   const media = embedMedia(embedPage?.html ?? '');
   const images = media.images.slice(0, MAX_IMAGES);
   if (images.length === 0) {
-    const single = metaContent(source, 'og:image');
+    // Single image or a video still: oEmbed's thumbnail keeps the aspect ratio
+    // (640×800 rather than a 640×640 crop) and carries no play button. `og:image`
+    // is the last resort.
+    const single = oembed?.thumbnail_url ?? metaContent(source, 'og:image');
     if (single) images.push(single);
   }
   if (images.length > 0) {

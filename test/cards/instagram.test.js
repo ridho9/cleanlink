@@ -2,12 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { buildCards } from '../../src/cards/index.js';
-import { fakeFetch, fixtureText } from '../../test-support/harness.js';
+import { fakeFetch, fixture, fixtureText } from '../../test-support/harness.js';
 
 const REEL_HTML = fixtureText('instagram-reel.html');
 const CAROUSEL_PAGE = fixtureText('instagram-carousel-page.html');
 const EMBED_CAROUSEL = fixtureText('instagram-embed-carousel.html');
 const EMBED_VIDEO = fixtureText('instagram-embed-video.html');
+const OEMBED = fixture('instagram-oembed.json');
+const SINGLE_PAGE = fixtureText('instagram-single.html');
 
 // The reel's frame, as each page reports it.
 const EMBED_FRAME = /"display_url":"([^"]+)"/.exec(EMBED_VIDEO.replace(/\\/g, ''))[1];
@@ -71,6 +73,26 @@ test('a single-image post falls back to the page image and has no page counter',
   assert.equal(card.embeds.length, 1);
   assert.equal(card.embeds[0].footer.text, 'Instagram');
   assert.ok(card.embeds[0].image.url.startsWith('https://scontent.cdninstagram.com/'));
+});
+
+test('oEmbed supplies the full caption, the handle and an uncropped thumbnail', async () => {
+  const { impl } = fakeFetch([
+    ['https://www.instagram.com/api/v1/oembed/', OEMBED],
+    ['https://www.instagram.com/', SINGLE_PAGE],
+  ]);
+  const [card] = await buildCards('https://www.instagram.com/p/DeeC3rrBqAK/', { fetchImpl: impl });
+
+  assert.ok(card);
+  const embed = card.embeds[0];
+  // The handle comes from oEmbed, so no path guessing is needed.
+  assert.match(embed.author.name, /\(@chinese\\_mandarin\\_zest\)$/, 'the handle is escaped for markdown');
+  assert.match(embed.author.name, /^Mandarin Zest/, 'the display name comes from the page');
+  assert.equal(embed.author.url, 'https://www.instagram.com/chinese_mandarin_zest/');
+  // The OpenGraph caption is clipped; oEmbed's is not.
+  assert.ok(embed.description.startsWith('✡️ How do you talk about Judaism in Chinese?'));
+  // The thumbnail keeps its aspect ratio instead of a square crop.
+  assert.equal(embed.image.url, OEMBED.thumbnail_url);
+  assert.ok(!embed.image.url.includes('s640x640'), 'not the square crop');
 });
 
 test('a reel is carded like a photo post, with a clean frame and no link', async () => {
