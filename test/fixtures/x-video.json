@@ -1,0 +1,225 @@
+{
+  "code": 200,
+  "message": "OK",
+  "tweet": {
+    "id": "2117280148445962692",
+    "url": "https://x.com/0x0SojalSec/status/2117280148445962692",
+    "text": "Stop chatting with AI.\nStart building tools with it.\n\nDeepSeek just dropped Creator Mode you describe an idea and it becomes a working plugin in your workspace.\n\nDesign tools, games, 3D LLM visualizers whatever you want, Everything is a plugin now.\n\nYour harness, You define it. From a countdown timer to a full video editor if you can describe it, you can build it. https://x.com/DeepSeekHarness/status/2117256196227019194/video/1",
+    "author": {
+      "name": "Md Ismail Šojal 🕷️",
+      "screen_name": "0x0SojalSec",
+      "url": "https://x.com/0x0SojalSec",
+      "avatar_url": "https://pbs.twimg.com/profile_images/2007035104158482432/yKGFeKJD_200x200.jpg",
+      "id": "1445347022555340805"
+    },
+    "media": {
+      "all": [
+        {
+          "id": "2117255528309227520",
+          "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/1920x1080/6IWmgERSPGcaMT8S.mp4?tag=29",
+          "thumbnail_url": "https://pbs.twimg.com/amplify_video_thumb/2117255528309227520/img/bcnmVclr5ToXKbxg.jpg",
+          "duration": 99.381,
+          "width": 1920,
+          "height": 1080,
+          "format": "video/mp4",
+          "type": "video",
+          "formats": [
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/pl/zkD5iu2PktGIAvjj.m3u8?tag=29&v=cfc",
+              "container": "m3u8"
+            },
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/480x270/6mjlbVwJy23ChR2-.mp4?tag=29",
+              "bitrate": 256000,
+              "container": "mp4",
+              "codec": "h264"
+            },
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/640x360/CixPNPaqllYjQD-K.mp4?tag=29",
+              "bitrate": 832000,
+              "container": "mp4",
+              "codec": "h264"
+            },
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/1280x720/XWSyD7yPHJjqycmK.mp4?tag=29",
+              "bitrate": 2176000,
+              "container": "mp4",
+              "codec": "h264"
+            },
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/1920x1080/6IWmgERSPGcaMT8S.mp4?tag=29",
+              "bitrate": 10368000,
+              "container": "mp4",
+              "codec": "h264"
+            }
+          ],
+          "publisher": {
+            "screen_name": "DeepSeekHarness",
+            "url": "https://x.com/DeepSeekHarness",
+            "id": "2067518374469640193",
+            "followers": 77880,
+            "following": 2,
+            "likes": 8,
+            "media_count": 1,
+            "statuses": 7,
+            "name": "DeepSeek Harness",
+            "description": "Everything is a plugin.",
+            "raw_description": {
+              "text": "Everything is a plugin.",
+              "facets": []
+            },
+            "location": "",
+            "banner_url": "https://pbs.twimg.com/profile_banners/2067518374469640193/1790669311",
+            "avatar_url": "https://pbs.twimg.com/profile_images/2105141374123495424/_om7PZyR_normal.jpg",
+            "joined": "Thu Jun 18 08:07:33 +0000 2026",
+            "protected": false,
+            "website": {
+              "url": "https://www.deepseek.com/en/harness/?utm_source=twitter&utm_medium=social",
+              "display_url": "deepseek.com/en/harness/?ut…"
+            },
+            "verification": {
+              "verified": true,
+              "verified_at": null,
+              "type": "individual"
+            },
+            "type": "profile"
+          },
+          "variants": [
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/pl/zkD5iu2PktGIAvjj.m3u8?tag=29&v=cfc",
+              "bitrate": 0,
+              "content_type": "application/x-mpegURL"
+            },
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/480x270/6mjlbVwJy23ChR2-.mp4?tag=29",
+              "bitrate": 256000,
+              "content_type": "video/mp4"
+            },
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/640x360/CixPNPaqllYjQD-K.mp4?tag=29",
+              "bitrate": 832000,
+              "content_type": "video/mp4"
+            },
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/1280x720/XWSyD7yPHJjqycmK.mp4?tag=29",
+              "bitrate": 2176000,
+              "content_type": "video/mp4"
+            },
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/1920x1080/6IWmgERSPGcaMT8S.mp4?tag=29",
+              "bitrate": 10368000,
+              "content_type": "video/mp4"
+            }
+          ]
+        }
+      ],
+      "videos": [
+        {
+          "id": "2117255528309227520",
+          "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/1920x1080/6IWmgERSPGcaMT8S.mp4?tag=29",
+          "thumbnail_url": "https://pbs.twimg.com/amplify_video_thumb/2117255528309227520/img/bcnmVclr5ToXKbxg.jpg",
+          "duration": 99.381,
+          "width": 1920,
+          "height": 1080,
+          "format": "video/mp4",
+          "type": "video",
+          "formats": [
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/pl/zkD5iu2PktGIAvjj.m3u8?tag=29&v=cfc",
+              "container": "m3u8"
+            },
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/480x270/6mjlbVwJy23ChR2-.mp4?tag=29",
+              "bitrate": 256000,
+              "container": "mp4",
+              "codec": "h264"
+            },
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/640x360/CixPNPaqllYjQD-K.mp4?tag=29",
+              "bitrate": 832000,
+              "container": "mp4",
+              "codec": "h264"
+            },
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/1280x720/XWSyD7yPHJjqycmK.mp4?tag=29",
+              "bitrate": 2176000,
+              "container": "mp4",
+              "codec": "h264"
+            },
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/1920x1080/6IWmgERSPGcaMT8S.mp4?tag=29",
+              "bitrate": 10368000,
+              "container": "mp4",
+              "codec": "h264"
+            }
+          ],
+          "publisher": {
+            "screen_name": "DeepSeekHarness",
+            "url": "https://x.com/DeepSeekHarness",
+            "id": "2067518374469640193",
+            "followers": 77880,
+            "following": 2,
+            "likes": 8,
+            "media_count": 1,
+            "statuses": 7,
+            "name": "DeepSeek Harness",
+            "description": "Everything is a plugin.",
+            "raw_description": {
+              "text": "Everything is a plugin.",
+              "facets": []
+            },
+            "location": "",
+            "banner_url": "https://pbs.twimg.com/profile_banners/2067518374469640193/1790669311",
+            "avatar_url": "https://pbs.twimg.com/profile_images/2105141374123495424/_om7PZyR_normal.jpg",
+            "joined": "Thu Jun 18 08:07:33 +0000 2026",
+            "protected": false,
+            "website": {
+              "url": "https://www.deepseek.com/en/harness/?utm_source=twitter&utm_medium=social",
+              "display_url": "deepseek.com/en/harness/?ut…"
+            },
+            "verification": {
+              "verified": true,
+              "verified_at": null,
+              "type": "individual"
+            },
+            "type": "profile"
+          },
+          "variants": [
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/pl/zkD5iu2PktGIAvjj.m3u8?tag=29&v=cfc",
+              "bitrate": 0,
+              "content_type": "application/x-mpegURL"
+            },
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/480x270/6mjlbVwJy23ChR2-.mp4?tag=29",
+              "bitrate": 256000,
+              "content_type": "video/mp4"
+            },
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/640x360/CixPNPaqllYjQD-K.mp4?tag=29",
+              "bitrate": 832000,
+              "content_type": "video/mp4"
+            },
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/1280x720/XWSyD7yPHJjqycmK.mp4?tag=29",
+              "bitrate": 2176000,
+              "content_type": "video/mp4"
+            },
+            {
+              "url": "https://video.twimg.com/amplify_video/2117255528309227520/vid/avc1/1920x1080/6IWmgERSPGcaMT8S.mp4?tag=29",
+              "bitrate": 10368000,
+              "content_type": "video/mp4"
+            }
+          ]
+        }
+      ]
+    },
+    "replies": 1,
+    "retweets": 3,
+    "likes": 28,
+    "views": 2634,
+    "created_timestamp": 1793633899,
+    "quote": null,
+    "possibly_sensitive": false
+  }
+}

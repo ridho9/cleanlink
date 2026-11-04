@@ -53,9 +53,9 @@ https://www.threads.com/@phodhipo/post/DfPOscPD6UR
 Behaviour:
 
 - **DMs and server channels.** In a DM it just replies. In a server channel it also removes the preview card from your message, if it has been given `Manage Messages`.
-- **Silent unless it changed something.** Links it does not handle, links with nothing to strip, and failed lookups all get no reply.
+- **Silent unless it changed something.** Links it does not handle, links with nothing to strip, and failed lookups all get no reply. A link that gets a card is an exception: it is answered even when it had nothing to strip, because the card itself is the reply.
 - **Never edits or deletes text.** The only write to another message is Discord's embed-suppression flag in a server channel; the content is never touched.
-- One reply per message, up to 5 links, one per line.
+- One reply per message, up to 5 links, one per line, plus at most one card.
 
 Server mode needs the bot's role to have **Manage Messages** (Server Settings → Roles, or a per-channel override). Without it the bot still replies, it just cannot clear the original card:
 
@@ -67,33 +67,49 @@ Note that server mode means the bot reads message content in every channel it ca
 
 ## Supported sites
 
-| Site | Handles |
-|---|---|
-| Threads | `/share/<code>` share links, strips `xmt`, `slof` |
-| Instagram | `/share/…` links, strips `igsh`, `igshid`, `mdxt`, `psln` |
-| TikTok | `vm.` / `vt.` short links, strips `is_from_webapp`, `sender_device`, `web_id`, `_t`, … |
-| Twitter / X | strips `s`, `t`, `ref_src`, `ref_url` |
-| YouTube | strips `si`, `feature` |
-| Facebook | `fb.watch`, `/share/…`, strips `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url` |
+| Site | Handles | Card |
+|---|---|---|
+| Threads | `/share/<code>` share links, strips `xmt`, `slof` | no, Discord's own preview is complete |
+| Instagram | `/share/…` links, strips `igsh`, `igshid`, `mdxt`, `psln` | no, Discord's own preview is complete |
+| TikTok | `vm.` / `vt.` short links, strips `is_from_webapp`, `sender_device`, `web_id`, `_t`, … | no, no public metadata API |
+| Twitter / X | strips `s`, `t`, `ref_src`, `ref_url` | **yes** — text, avatar, stats, quote, still |
+| YouTube | strips `si`, `feature` | no, the native player is better |
+| Facebook | `fb.watch`, `/share/…`, strips `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url` | no, its oEmbed needs an app token |
+| Pixiv | nothing to strip | **yes** — the artwork pages, re-uploaded |
+| Misskey | nothing to strip | no, Discord's own preview is complete |
 
 Common trackers (`utm_*`, `fbclid`, `gclid`, `twclid`, `yclid`, `mibextid`, `_ga`, `_gl`) are stripped everywhere.
 
 Reddit, Spotify and Google were removed on purpose: only fake share codes had ever been tried against them, so they sat in the table as untested. Add them back from [src/rules.js](src/rules.js) once a real link from each has been checked.
 
+## Preview cards
+
+For X and Pixiv the bot posts its own card, because Discord's own preview fails on both:
+
+- **X** — Discord shows a truncated title. The bot reads `api.fxtwitter.com` and builds a card with the full text, the avatar, the reply/retweet/like/view counts, a quoted tweet as a blockquote, and either the photo or the video's poster frame. It never rewrites the host to a fixer domain.
+- **Pixiv** — `i.pximg.net` answers `403` unless the request carries a pixiv `Referer`, and Discord never sends one, so the native card has no image. The bot downloads up to 5 pages with that header and re-uploads them as attachments. Restricted works get `SPOILER_` file names.
+
+Why the other six sites get no card: Threads, Instagram and Misskey already answer Discord's crawler with complete OpenGraph tags, including an image that fetches, so a card we build would say less. TikTok's oEmbed returns an iframe only. YouTube has a native player. Facebook's oEmbed needs an app token. Evidence for each is in [docs/saucybot-url-inventory.md](docs/saucybot-url-inventory.md).
+
+A carded link appears in the message wrapped in angle brackets, `<https://…>`, so Discord does not unfurl it a second time next to the card. A card is decoration and degrades: a rejected attachment falls back to the embed alone, and a missing **Embed Links** permission falls back to the plain clean link.
+
+Adding a card is a table entry and a builder in [src/cards.js](src/cards.js).
+
 ## What has actually been verified
 
 Query-parameter stripping is deterministic and covered by tests for every site. Resolving the opaque share links is the fragile part, so here is what was checked against the live networks rather than a stub:
 
-| Site | Param strip | Share resolve |
-|---|---|---|
-| Threads | live | **real code** — `302` → clean post URL |
-| Instagram | live (`mdxt`, `psln`) | `/share/` still fake: `200`, no redirect → silence |
-| TikTok | live | **real code** — `vt.tiktok.com` → `/@user/video/<id>` |
-| Facebook | live (`share_url`) | **real code** — `/share/<code>` → `/posts/<id>` |
-| Twitter / X | live | n/a |
-| YouTube | live | n/a |
+| Site | Param strip | Share resolve | Card |
+|---|---|---|---|
+| Threads | live | **real code** — `302` → clean post URL | n/a |
+| Instagram | live (`mdxt`, `psln`) | `/share/` still fake: `200`, no redirect → silence | n/a |
+| TikTok | live | **real code** — `vt.tiktok.com` → `/@user/video/<id>` | n/a |
+| Facebook | live (`share_url`) | **real code** — `/share/<code>` → `/posts/<id>` | n/a |
+| Twitter / X | live | n/a | **real code** — built from `api.fxtwitter.com`, sent to Discord and read back |
+| YouTube | live | n/a | n/a |
+| Pixiv | n/a | n/a | **real code** — 2 pages fetched with a pixiv `Referer`, uploaded, embed rendered |
 
-Four of the six sites have resolved a real share link, and every cleaned URL was re-fetched to confirm it still serves the post. Twitter and YouTube need no resolution at all. If a site silently does nothing, this table is the first place to look.
+Four of the six tracker sites have resolved a real share link, and every cleaned URL was re-fetched to confirm it still serves the post. Both cards were posted to a real channel and read back, attachment and embed intact. If a site silently does nothing, this table is the first place to look.
 
 ## Adding a site
 
@@ -135,3 +151,4 @@ The cleaning logic is plain functions with `fetch` injected, so the whole suite 
 - **The bot cannot remove an embed from your message in a DM.** Suppressing embeds on a message you did not author needs `Manage Messages`, and DM channels have no permissions, so Discord answers `404` (verified). Wrap the link in angle brackets — `<https://…>` — and Discord shows no preview on your message; the bot still parses it and its own reply carries the preview.
 - Nothing is stored: no database, no cache, no message logging beyond the one `console.log` per cleaned link.
 - Limits: 4 s per hop, 3 hops, 5 links per message. A failed lookup leaves the link untouched rather than guessing.
+- Card limits: one card per message, 6 s per request, 5 Pixiv pages, 8 MB of attachments in total. A card that cannot be built leaves the plain cleaned reply, never an error.
