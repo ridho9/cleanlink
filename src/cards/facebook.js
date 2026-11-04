@@ -131,8 +131,12 @@ const run = promisify(execFile);
  * the message budget all mean no attachment, and the caller falls back to the
  * author-only card. Nothing here is on the path for any other site.
  */
+function isVideoPath(href) {
+  return /\/(?:reel|videos|watch)\b/.test(new URL(href).pathname);
+}
+
 async function downloadVideo(href, options) {
-  if (!/\/(?:reel|videos|watch)\b/.test(new URL(href).pathname)) return null;
+  if (!isVideoPath(href)) return null;
   const budget = options.budget ?? {};
   if ((budget.files ?? 1) <= 0) return null;
 
@@ -152,14 +156,7 @@ async function downloadVideo(href, options) {
     const cap = Math.min(MAX_ATTACH_BYTES, budget.bytes ?? MAX_ATTACH_BYTES);
     if (buffer.length === 0 || buffer.length > cap) return null;
 
-    return {
-      embeds: [{
-        url: href,
-        color: FACEBOOK_BLUE,
-        footer: { text: 'Facebook' },
-      }],
-      files: [{ attachment: buffer, name: 'video.mp4' }],
-    };
+    return [{ attachment: buffer, name: 'video.mp4' }];
   } catch (error) {
     // Missing binary, unparseable video, size limit: all the same outcome.
     console.log(`[card] facebook video via yt-dlp: ${error.shortMessage ?? error.message}`);
@@ -210,10 +207,17 @@ async function buildFacebookCard({ match, href }, options) {
       // layout said so, or the link is a video path and the post was refused.
       const refused = /tidak tersedia|isn't available|is not available/i.test(page.html);
       if (blocked || refused) {
-        const video = await downloadVideo(href, options);
-        if (video) {
-          if (blocked?.embeds[0].author) video.embeds[0].author = blocked.embeds[0].author;
-          return video;
+        const files = await downloadVideo(href, options);
+        if (files) {
+          const embed = {
+            url: href,
+            color: FACEBOOK_BLUE,
+            footer: { text: 'Facebook' },
+          };
+          // The player's own frame is the picture; the author name is all the
+          // page gave us.
+          Object.assign(embed, blocked?.embeds[0] ?? {});
+          return { embeds: [embed], files };
         }
       }
       if (blocked) return blocked;
@@ -264,6 +268,17 @@ async function buildFacebookCard({ match, href }, options) {
     if (images[0]) embed.image = { url: images[0] };
     // One image per embed, same as every other builder.
     const embeds = [embed, ...imageEmbeds(href, FACEBOOK_BLUE, footer, images.slice(1))];
+
+    // A reel or a video post shows a poster frame here. The video itself is
+    // better when it can be had, so try yt-dlp and drop the poster when the
+    // attachment lands — the player brings its own frame.
+    if (isVideoPath(href)) {
+      const files = await downloadVideo(href, options);
+      if (files) {
+        delete embed.image;
+        return { embeds: [embed], files };
+      }
+    }
 
     return { embeds, files: [] };
   }
