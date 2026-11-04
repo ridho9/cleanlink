@@ -52,7 +52,7 @@ Overlaps with SaucyBot: **Twitter / X** and **Instagram**. Ours alone: **Threads
 
 - **Twitter / X** — built. `api.fxtwitter.com` answers `200 application/json` for a real status, so the card carries author, avatar, full text, QRT text, stats and a still.
 - **Instagram** — nothing to take. The rename renderer is dead, and Discord's own unfurl is now complete: the post page serves `og:title`, `og:description` and an `og:image` on `scontent.cdninstagram.com` that fetches `200`. Parameter stripping is the whole of our contribution.
-- **Threads** — nothing to take, same reason: author plus a signed `fbcdn` image that fetches `200`. The post text is not in the OpenGraph tags, so a card could not say more.
+- **Threads** — built, and SaucyBot has nothing to teach here. Its OpenGraph tags do carry the post text, but only for a browser user agent: `Discordbot` gets a 107 KB shell without `og:description`. That is why Discord's own card is wordless, and one `Mozilla/5.0` fetch fixes it.
 - **TikTok** — nothing found. The native card shows a generated share-card image and a generic title; oEmbed now returns an iframe with no metadata.
 - **YouTube** — nothing needed. The native player is the best result already.
 - **Facebook** — nothing found. `fixfacebook.com` does not resolve; `/share/` unwrapping is where we stop.

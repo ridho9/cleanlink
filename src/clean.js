@@ -47,20 +47,17 @@ export function extractUrls(text) {
 export function ruleFor(url) {
   const host = url.hostname.toLowerCase();
 
-  return (
-    RULES.find((rule) =>
-      rule.hosts.some((base) => host === base || host.endsWith(`.${base}`)),
-    ) ?? null
-  );
+  return RULES.find((rule) => hostMatches(host, rule.hosts)) ?? null;
 }
 
-function matchesHost(host, list = []) {
+/** True when a hostname is one of these domains or a subdomain of one. */
+export function hostMatches(host, list = []) {
   return list.some((base) => host === base || host.endsWith(`.${base}`));
 }
 
 /** True when the URL is opaque and only the server knows the real target. */
 function needsResolve(url, rule) {
-  if (matchesHost(url.hostname.toLowerCase(), rule.shorten)) return true;
+  if (hostMatches(url.hostname.toLowerCase(), rule.shorten)) return true;
   return rule.share ? rule.share.test(url.pathname) : false;
 }
 
@@ -99,7 +96,7 @@ function stripTracking(url, rule) {
  * share/shortener URL owned by a rule. Redirect targets outside the rules
  * are returned but never requested, which is what keeps this SSRF-safe.
  */
-export async function resolveShare(url, { fetchImpl = fetch, maxHops = MAX_HOPS } = {}) {
+async function resolveShare(url, { fetchImpl = fetch, maxHops = MAX_HOPS } = {}) {
   let current = new URL(url.href);
 
   for (let hop = 0; hop < maxHops; hop += 1) {
@@ -169,7 +166,7 @@ function looksLikeFallback(original, resolved, rule) {
 
   // Only judge URLs that stayed on the site the rule describes; a shortener
   // pointing at a different site entirely is legitimate.
-  if (!matchesHost(resolved.hostname.toLowerCase(), rule.hosts)) return false;
+  if (!hostMatches(resolved.hostname.toLowerCase(), rule.hosts)) return false;
 
   // Gave up at the site root.
   if (resolved.pathname === '/' || resolved.pathname === '') return true;

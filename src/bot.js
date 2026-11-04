@@ -117,7 +117,12 @@ function withoutAttachmentImages(embed) {
 /** False for an embed that only existed to show one of those images. */
 function hasContent(embed) {
   return Boolean(
-    embed.title || embed.description || embed.author || embed.footer || embed.image || embed.fields?.length,
+    embed.title ||
+      embed.description ||
+      embed.author ||
+      embed.footer ||
+      embed.image ||
+      embed.fields?.length,
   );
 }
 
@@ -139,11 +144,11 @@ async function sendReply(message, { lines, cards }) {
   const files = cards.flatMap((card) => card.files ?? []);
   const embeds = cards.flatMap((card) => card.embeds);
 
-  const attempts = [{ content, allowedMentions: { parse: [] } }];
-  if (embeds.length > 0) {
-    attempts[0].embeds = embeds;
-    if (files.length > 0) attempts[0].files = files;
-  }
+  const full = { content, allowedMentions: { parse: [] } };
+  if (embeds.length > 0) full.embeds = embeds;
+  if (files.length > 0) full.files = files;
+
+  const attempts = [full];
   if (files.length > 0) {
     attempts.push({
       content,

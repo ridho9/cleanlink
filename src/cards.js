@@ -1,30 +1,28 @@
-import { extractUrls } from './clean.js';
+import { extractUrls, hostMatches } from './clean.js';
 
 // Preview cards for the sites where Discord's own unfurl is broken or thin.
 //
-// Most sites need nothing here: Threads, Instagram and Misskey already answer
-// Discord's crawler with a full set of OpenGraph tags, YouTube has a native
-// player, and TikTok serves an iframe-only oEmbed. Only two sites pay for
-// themselves:
+// Most sites need nothing here: Instagram and Misskey already answer Discord's
+// crawler with a full set of OpenGraph tags, and YouTube has a native player.
+// Five sites pay for themselves:
 //
-//   X      — the fxtwitter API carries the full text, the avatar, the stats
-//            and the quote tweet. Discord's X card shows a truncated title.
-//   Pixiv  — i.pximg.net answers 403 unless the request carries a pixiv
-//            Referer, which Discord never sends, so the native card has no
-//            image. We download the pages ourselves and re-upload them.
-//   TikTok — its own oEmbed returns an iframe and no metadata, and the page's
-//            og:title is the literal string "TikTok · TikTok". tikwm.com is
-//            the fxtwitter of TikTok: real caption, author, cover and counts.
-//   Threads— the page serves a full set of OpenGraph tags INCLUDING the post
-//            text, but only to a browser user agent. Discord crawls as
-//            Discordbot, gets a 107 KB shell with no og:description, and shows
-//            a card with an author and no words. One fetch with Mozilla/5.0
-//            fixes that; no browser engine is involved.
+//   X        — the fxtwitter API carries the full text, the avatar, the stats
+//              and the quote tweet. Discord's X card shows a truncated title.
+//   Pixiv    — i.pximg.net answers 403 unless the request carries a pixiv
+//              Referer, which Discord never sends, so the native card has no
+//              image. We download the pages ourselves and re-upload them.
+//   Threads  — the page serves a full set of OpenGraph tags INCLUDING the post
+//              text, but only to a browser user agent. Discord crawls as
+//              Discordbot, gets a 107 KB shell with no og:description, and
+//              shows a card with an author and no words. One fetch with
+//              Mozilla/5.0 fixes that; no browser engine is involved.
 //   Facebook — the post page is a login wall, but the public embed iframe at
-//            /plugins/post.php is not: it returns the author, the post text and
-//            the media for any post that allows embedding. No token, no
-//            browser. It answers "unavailable" for posts that do not, which is
-//            simply no card.
+//              /plugins/post.php is not: it returns the author, the post text
+//              and the media for any post that allows embedding. It answers
+//              "unavailable" for posts that do not, which is simply no card.
+//   TikTok   — its own oEmbed returns an iframe and no metadata, and the page's
+//              og:title is the literal string "TikTok · TikTok". tikwm.com is
+//              the fxtwitter of TikTok: caption, author, cover and counts.
 //
 // Adding a site is a table entry plus a builder. Keep it that way.
 
@@ -47,8 +45,8 @@ const TIKTOK_BLACK = 0x010101;
 const THREADS_BLACK = 0x000000;
 const FACEBOOK_BLUE = 0x1877f2;
 
-/** Hosts a card is allowed to ask, kept separate from the tracker rules. */
-export const CARD_SITES = [
+/** Sites that own a card, kept separate from the tracker rules in rules.js. */
+const CARD_SITES = [
   {
     id: 'x',
     hosts: ['x.com', 'twitter.com'],
@@ -117,7 +115,7 @@ export function escapeMarkdown(text) {
  * Compose first, clip last: escaping a string that already contains our own
  * `> **Quoting …**` markup would neutralise the markup itself.
  */
-export function clip(text, max) {
+function clip(text, max) {
   if (text.length <= max) return text;
   const cut = text.slice(0, max - 1);
   // A trailing backslash means the cut landed inside an escape sequence.
@@ -129,28 +127,64 @@ export function toField(text, max) {
   return clip(escapeMarkdown(text), max);
 }
 
-function hostMatches(host, list) {
-  return list.some((base) => host === base || host.endsWith(`.${base}`));
-}
-
-async function getJson(url, { fetchImpl, headers = {} } = {}) {
-  const res = await fetchImpl(url, {
-    headers: { 'user-agent': BROWSER_UA, accept: 'application/json', ...headers },
+/** One request, with the headers and timeout every builder needs. */
+function request(url, { fetchImpl = fetch, accept, headers = {} } = {}) {
+  return fetchImpl(url, {
+    headers: {
+      'user-agent': BROWSER_UA,
+      ...(accept ? { accept } : {}),
+      ...headers,
+    },
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
+}
+
+async function getJson(url, options) {
+  const res = await request(url, { ...options, accept: 'application/json' });
   if (!res.ok) return null;
   return res.json();
 }
 
-async function getBytes(url, { fetchImpl, headers = {} } = {}) {
-  const res = await fetchImpl(url, {
-    headers: { 'user-agent': BROWSER_UA, ...headers },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
+async function getHtml(url, options) {
+  const res = await request(url, { ...options, accept: 'text/html' });
+  if (!res.ok) return null;
+  return { status: res.status, html: await res.text() };
+}
+
+async function getBytes(url, options) {
+  const res = await request(url, options);
   if (!res.ok) return null;
   const buffer = Buffer.from(await res.arrayBuffer());
   if (buffer.length === 0) return null;
   return buffer;
+}
+
+/**
+ * The stats block every card ends with.
+ * @param {Array<[string, unknown]>} entries name/value pairs; a pair is dropped
+ *   when its value is not a number
+ */
+function statFields(entries) {
+  const rows = entries.filter(([, value]) => Number.isFinite(value));
+  if (rows.length === 0) return null;
+  return rows.map(([name, value]) => ({
+    name,
+    value: value.toLocaleString('en-US'),
+    inline: true,
+  }));
+}
+
+/** Image-only embeds: every image after the first on a card gets one. */
+function imageEmbeds(url, color, footer, images) {
+  return images.map((image) => ({ url, color, footer, image: { url: image } }));
+}
+
+/** The author block, with whichever of its two optional fields exist. */
+function authorBlock(name, fallback, { url, iconUrl } = {}) {
+  const block = { name: toField(name || fallback, 256) };
+  if (url) block.url = url;
+  if (iconUrl) block.icon_url = iconUrl;
+  return block;
 }
 
 /** Guess an extension from a URL path, defaulting to jpg. */
@@ -193,19 +227,16 @@ async function buildXCard({ match, href }, options) {
   const embed = {
     url: `https://x.com/${author.screen_name ?? handle}/status/${tweet.id ?? id}`,
     color: X_BLUE,
-    author: {
-      name: toField(
-        [author.name, author.screen_name ? `(@${author.screen_name})` : '']
-          .filter(Boolean)
-          .join(' ') || 'X',
-        256,
-      ),
-    },
+    author: authorBlock(
+      [author.name, author.screen_name ? `(@${author.screen_name})` : '']
+        .filter(Boolean)
+        .join(' '),
+      'X',
+      { url: author.url, iconUrl: author.avatar_url },
+    ),
     footer: { text: 'Twitter' },
   };
 
-  if (author.url) embed.author.url = author.url;
-  if (author.avatar_url) embed.author.icon_url = author.avatar_url;
   if (parts.length > 0) embed.description = clip(parts.join('\n\n'), 4096);
 
   // One embed per photo. A Discord embed has a single `image` field and a
@@ -218,26 +249,16 @@ async function buildXCard({ match, href }, options) {
     embed.timestamp = new Date(tweet.created_timestamp * 1000).toISOString();
   }
 
-  const stats = [
+  const fields = statFields([
     ['Replies', tweet.replies],
     ['Retweets', tweet.retweets],
     ['Likes', tweet.likes],
     ['Views', tweet.views],
-  ].filter(([, value]) => Number.isFinite(value));
-
-  if (stats.length > 0) {
-    embed.fields = stats.map(([name, value]) => ({
-      name,
-      value: value.toLocaleString('en-US'),
-      inline: true,
-    }));
-  }
+  ]);
+  if (fields) embed.fields = fields;
 
   // pbs.twimg.com is fetchable by Discord, so extra photos cost nothing here.
-  const embeds = [embed];
-  for (const url of photos.slice(1)) {
-    embeds.push({ url: embed.url, color: X_BLUE, image: { url }, footer: embed.footer });
-  }
+  const embeds = [embed, ...imageEmbeds(embed.url, X_BLUE, embed.footer, photos.slice(1))];
 
   return { embeds, files: [] };
 }
@@ -266,29 +287,25 @@ function metaContent(html, property) {
 }
 
 async function buildThreadsCard({ href }, options) {
-  const res = await (options.fetchImpl ?? fetch)(href, {
-    headers: { 'user-agent': BROWSER_UA, accept: 'text/html' },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
-  if (!res.ok) return null;
-  const html = await res.text();
+  const page = await getHtml(href, options);
+  if (!page) return null;
 
-  const description = metaContent(html, 'og:description');
+  const description = metaContent(page.html, 'og:description');
   // Without the text there is nothing this card adds over Discord's own
   // preview, which already shows the author and the image.
   if (!description) return null;
 
-  const title = metaContent(html, 'og:title') ?? 'Threads';
+  const title = metaContent(page.html, 'og:title') ?? 'Threads';
   const author = title.replace(/\s+on Threads$/i, '').trim();
   const embed = {
-    url: metaContent(html, 'og:url') ?? href,
+    url: metaContent(page.html, 'og:url') ?? href,
     color: THREADS_BLACK,
-    author: { name: toField(author || 'Threads', 256), url: href },
+    author: authorBlock(author, 'Threads', { url: href }),
     description: toField(description, 4096),
     footer: { text: 'Threads' },
   };
 
-  const image = metaContent(html, 'og:image');
+  const image = metaContent(page.html, 'og:image');
   // A text-only post still has an og:image: the author's avatar, served from
   // Instagram's profile-photo bucket (type `t51.2885-19`). That belongs in the
   // corner, not across the card. Post media uses other type ids.
@@ -336,15 +353,6 @@ function htmlToText(fragment) {
     .trim();
 }
 
-async function fetchFacebookEmbed(embedUrl, options) {
-  const res = await (options.fetchImpl ?? fetch)(embedUrl, {
-    headers: { 'user-agent': BROWSER_UA, accept: 'text/html' },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
-  if (!res.ok) return null;
-  return { status: res.status, html: await res.text() };
-}
-
 async function buildFacebookCard({ href }, options) {
   // The post itself is behind a login wall. The embed iframe is not.
   const embedUrl = `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(href)}&show_text=true`;
@@ -353,7 +361,7 @@ async function buildFacebookCard({ href }, options) {
   // time, but an interstitial or a slow edge node does not, and one retry is
   // cheap next to losing the card.
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const page = await fetchFacebookEmbed(embedUrl, options);
+    const page = await getHtml(embedUrl, options);
     if (!page) return null;
 
     const marker = page.html.indexOf('data-testid="post_message"');
@@ -373,27 +381,18 @@ async function buildFacebookCard({ href }, options) {
     const text = body ? htmlToText(body) : '';
     if (!text) return null;
 
-    const embed = {
-      url: href,
-      color: FACEBOOK_BLUE,
-      footer: { text: 'Facebook' },
-      description: toField(text, 4096),
-    };
-
     // The avatar is the one `<img role="img">` that carries the author name in
     // aria-label. Picking the first aria-label in the document is not the same
     // thing: a reel page puts "Putar video" there first.
     const avatar = [...page.html.matchAll(/<img\b[^>]*>/gi)].find((tag) =>
       tag[0].includes('role="img"'),
     );
-    const author = avatar ? /aria-label="([^"]+)"/.exec(avatar[0])?.[1] : null;
+    const name = avatar ? /aria-label="([^"]+)"/.exec(avatar[0])?.[1] : null;
     // The iframe's own permalink is authoritative: a post can sit on a vanity
     // path that differs from the page that owns it.
     const handle =
       /href="\/?([\w.-]+)\/posts\//.exec(page.html)?.[1] ||
       new URL(href).pathname.split('/')[1];
-    if (author) embed.author = { name: toField(decodeEntities(author), 256) };
-    if (embed.author && handle) embed.author.url = `https://www.facebook.com/${handle}`;
 
     // Media, not avatars: the avatar is served at 40x40.
     const images = [
@@ -404,12 +403,21 @@ async function buildFacebookCard({ href }, options) {
       ),
     ];
 
-    const embeds = [embed];
+    const footer = { text: 'Facebook' };
+    const embed = {
+      url: href,
+      color: FACEBOOK_BLUE,
+      footer,
+      description: toField(text, 4096),
+    };
+    if (name) {
+      embed.author = authorBlock(decodeEntities(name), handle, {
+        url: handle && `https://www.facebook.com/${handle}`,
+      });
+    }
     if (images[0]) embed.image = { url: images[0] };
     // One image per embed, same as every other builder.
-    for (const image of images.slice(1)) {
-      embeds.push({ url: href, color: FACEBOOK_BLUE, image: { url: image }, footer: embed.footer });
-    }
+    const embeds = [embed, ...imageEmbeds(href, FACEBOOK_BLUE, footer, images.slice(1))];
 
     return { embeds, files: [] };
   }
@@ -438,37 +446,29 @@ async function buildTikTokCard({ match, href }, options) {
   const embed = {
     url: href,
     color: TIKTOK_BLACK,
-    author: {
-      name: toField(
-        [author.nickname, author.unique_id ? `(@${author.unique_id})` : '']
-          .filter(Boolean)
-          .join(' ') || 'TikTok',
-        256,
-      ),
-      url: author.unique_id ? `https://www.tiktok.com/@${author.unique_id}` : canonical,
-    },
+    author: authorBlock(
+      [author.nickname, author.unique_id ? `(@${author.unique_id})` : '']
+        .filter(Boolean)
+        .join(' '),
+      'TikTok',
+      {
+        url: author.unique_id ? `https://www.tiktok.com/@${author.unique_id}` : canonical,
+        iconUrl: author.avatar,
+      },
+    ),
     footer: { text: 'TikTok' },
   };
-
-  if (author.avatar) embed.author.icon_url = author.avatar;
   if (video.title) embed.description = toField(video.title, 4096);
   // A video cannot play in a Discord embed, so the cover stands in for it.
   if (cover) embed.image = { url: cover };
   if (video.create_time) embed.timestamp = new Date(video.create_time * 1000).toISOString();
 
-  const stats = [
+  const fields = statFields([
     ['Plays', video.play_count],
     ['Likes', video.digg_count],
     ['Comments', video.comment_count],
-  ].filter(([, value]) => Number.isFinite(value));
-
-  if (stats.length > 0) {
-    embed.fields = stats.map(([name, value]) => ({
-      name,
-      value: value.toLocaleString('en-US'),
-      inline: true,
-    }));
-  }
+  ]);
+  if (fields) embed.fields = fields;
 
   return { embeds: [embed], files: [] };
 }
@@ -518,7 +518,9 @@ async function buildPixivCard({ match, href }, options) {
   const embed = {
     url: href,
     color: PIXIV_BLUE,
-    author: { name: toField(meta.body.userName ?? 'Pixiv', 256) },
+    author: authorBlock(meta.body.userName, 'Pixiv', {
+      url: meta.body.userId && `https://www.pixiv.net/users/${meta.body.userId}`,
+    }),
     title: toField(meta.body.illustTitle ?? `Pixiv ${id}`, 256),
     image: { url: `attachment://${files[0].name}` },
     footer: {
@@ -541,8 +543,6 @@ async function buildPixivCard({ match, href }, options) {
     });
   }
 
-  if (meta.body.userId) embed.author.url = `https://www.pixiv.net/users/${meta.body.userId}`;
-
   const tags = (meta.body.tags?.tags ?? [])
     .map((tag) => tag?.tag)
     .filter(Boolean)
@@ -556,6 +556,38 @@ async function buildPixivCard({ match, href }, options) {
 
 // ------------------------------------------------------------------ facade
 
+/** The card site that owns one href, or null. */
+function locateCard(href) {
+  let url;
+  try {
+    url = new URL(href);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+
+  const site = CARD_SITES.find((candidate) =>
+    hostMatches(url.hostname.toLowerCase(), candidate.hosts),
+  );
+  const match = site?.match(url);
+  return match ? { url, site, match } : null;
+}
+
+/**
+ * Resolve one raw URL from the message to a card site.
+ *
+ * The cleaned URL wins: a shortener was resolved into the real target there,
+ * and that target is what carries the id a card needs.
+ */
+function findCard(raw, cleanedFor) {
+  for (const href of [cleanedFor.get(raw), raw]) {
+    if (!href) continue;
+    const hit = locateCard(href);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 /**
  * Build preview cards for the links in a message.
  *
@@ -565,7 +597,7 @@ async function buildPixivCard({ match, href }, options) {
  *   cleanMessage, so a card can show the cleaned URL rather than the tracked one
  * @returns {Promise<Array<{from: string, url: string, embeds: Array, files: Array}>>}
  */
-export async function buildCards(text, { cleaned = [], fetchImpl = fetch, limit = MAX_CARDS } = {}) {
+export async function buildCards(text, { cleaned = [], fetchImpl = fetch } = {}) {
   const cleanedFor = new Map(cleaned.map(({ from, to }) => [from, to]));
   const seen = new Set();
   const cards = [];
@@ -577,33 +609,11 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch, limit 
   let embedsLeft = MAX_EMBEDS;
 
   for (const raw of extractUrls(text)) {
-    if (cards.length >= limit) break;
+    if (cards.length >= MAX_CARDS) break;
 
-    // The cleaned URL comes first: a shortener was resolved into the real
-    // target there, and that target is what carries the id a card needs.
-    let url = null;
-    let site = null;
-    let match = null;
-    for (const href of [cleanedFor.get(raw), raw]) {
-      if (!href) continue;
-      let parsed;
-      try {
-        parsed = new URL(href);
-      } catch {
-        continue;
-      }
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') continue;
-      const found = CARD_SITES.find((candidate) =>
-        hostMatches(parsed.hostname.toLowerCase(), candidate.hosts),
-      );
-      const foundMatch = found?.match(parsed);
-      if (!foundMatch) continue;
-      url = parsed;
-      site = found;
-      match = foundMatch;
-      break;
-    }
-    if (!url) continue;
+    const hit = findCard(raw, cleanedFor);
+    if (!hit) continue;
+    const { url, site, match } = hit;
 
     const key = `${site.id}:${match.slice(1).join('/')}`;
     if (seen.has(key)) continue;
@@ -623,9 +633,12 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch, limit 
 
       // A card is taken whole or not at all: a card with half its pages looks
       // broken, and Discord rejects the whole message past ten embeds.
-      if (card.embeds.length > embedsLeft || card.files.length > filesLeft) continue;
+      if (card.embeds.length > embedsLeft || card.files.length > filesLeft) {
+        console.log(`[card] ${site.id} skipped: message budget spent`);
+        continue;
+      }
 
-      cards.push({ from: raw, url: cleanedFor.get(raw) ?? url.href, ...card });
+      cards.push({ from: raw, url: url.href, ...card });
       embedsLeft -= card.embeds.length;
       filesLeft -= card.files.length;
       bytesLeft -= card.files.reduce((total, file) => total + file.attachment.length, 0);
