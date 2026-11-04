@@ -136,19 +136,22 @@ test('X card escapes markdown in the tweet text', async () => {
   assert.equal(card.embeds[0].description, '\\_\\_not italic\\_\\_ and <@123456789012345678>');
 });
 
-test('X card holds a two-photo tweet in one embed', async () => {
+test('X card gives each photo its own full-size embed', async () => {
   const { impl } = fakeFetch([['https://api.fxtwitter.com/', X_TWO_PHOTOS]]);
   const [card] = await buildCards('https://x.com/EspokunCity/status/2117605067968930228', {
     fetchImpl: impl,
   });
 
-  assert.equal(card.embeds.length, 1);
+  assert.equal(card.embeds.length, 2);
   assert.equal(card.embeds[0].image.url, X_TWO_PHOTOS.tweet.media.all[0].url);
-  assert.equal(card.embeds[0].thumbnail.url, X_TWO_PHOTOS.tweet.media.all[1].url);
+  assert.equal(card.embeds[1].image.url, X_TWO_PHOTOS.tweet.media.all[1].url);
+  assert.equal(card.embeds[1].thumbnail, undefined, 'no shrunken image');
+  assert.ok(card.embeds[0].description, 'the text lives on the first embed');
+  assert.equal(card.embeds[1].description, undefined, 'and is not repeated');
   assert.deepEqual(card.files, [], 'no upload needed: Discord fetches pbs directly');
 });
 
-test('X card attaches the photos an embed has no room for', async () => {
+test('X card keeps every photo of a four-photo post', async () => {
   const four = {
     ...X_TWO_PHOTOS,
     tweet: {
@@ -166,10 +169,12 @@ test('X card attaches the photos an embed has no room for', async () => {
     fetchImpl: impl,
   });
 
-  assert.equal(card.embeds.length, 1);
-  assert.equal(card.embeds[0].image.url, four.tweet.media.all[0].url);
-  assert.equal(card.embeds[0].thumbnail.url, four.tweet.media.all[1].url);
-  assert.deepEqual(card.files.map((file) => file.name), ['photo3.jpg', 'photo4.jpg']);
+  assert.equal(card.embeds.length, 4);
+  assert.deepEqual(
+    card.embeds.map((embed) => embed.image.url),
+    four.tweet.media.all.map((photo) => photo.url),
+  );
+  assert.deepEqual(card.files, []);
 });
 
 test('X card is skipped when the API fails', async () => {
@@ -196,10 +201,12 @@ test('Pixiv card re-hosts the pages, because Discord cannot fetch pximg', async 
   assert.deepEqual(card.files.map((file) => file.name), ['p0.jpg', 'p1.jpg']);
   assert.equal(card.embeds[0].image.url, 'attachment://p0.jpg');
   assert.match(card.embeds[0].footer.text, /^Pixiv · 2 page/);
-  // One card holds both pages: large image plus thumbnail, and because both
-  // files are claimed, no loose attachment appears above the card.
-  assert.equal(card.embeds.length, 1);
-  assert.equal(card.embeds[0].thumbnail.url, 'attachment://p1.jpg');
+  // One embed per page, all at full size. Both files are claimed, so no loose
+  // attachment appears above the card.
+  assert.equal(card.embeds.length, 2);
+  assert.equal(card.embeds[1].image.url, 'attachment://p1.jpg');
+  assert.equal(card.embeds[1].footer.text, 'Pixiv · page 2/2');
+  assert.equal(card.embeds[0].thumbnail, undefined);
   assert.ok(card.files.every((file) => Buffer.compare(file.attachment, IMAGE_BYTES) === 0));
 
   // Every pixiv request needs the Referer, including the images.
@@ -236,10 +243,10 @@ test('Pixiv card spoils restricted works and caps the page count', async () => {
   ]);
   assert.equal(card.embeds[0].image.url, 'attachment://SPOILER_p0.jpg');
   assert.equal(card.embeds[0].footer.text, 'Pixiv · restricted');
-  // Pages 3 to 5 have no room in the embed, so they stay attached.
-  assert.equal(card.embeds.length, 1);
-  assert.equal(card.embeds[0].thumbnail.url, 'attachment://SPOILER_p1.jpg');
+  assert.equal(card.embeds.length, 5);
   assert.equal(card.files.length, 5);
+  assert.equal(card.embeds[4].image.url, 'attachment://SPOILER_p4.jpg');
+  assert.equal(card.embeds[4].footer.text, 'Pixiv · page 5/5');
   assert.equal(calls.filter((call) => call.url.startsWith('https://i.pximg.net/')).length, 5);
 });
 
@@ -317,7 +324,7 @@ test('buildCards cards every handled link, not just the first', async () => {
   ]);
 });
 
-test('buildCards keeps the message inside ten attachments', async () => {
+test('buildCards keeps the message inside ten embeds', async () => {
   // Three five-page works: two fit (5 + 5), the third does not fit the budget.
   const page = {
     body: Array.from({ length: 5 }, (_, index) => ({
@@ -337,8 +344,8 @@ test('buildCards keeps the message inside ten attachments', async () => {
     { fetchImpl: impl },
   );
 
-  assert.equal(cards.length, 2, 'the third work had no file budget left');
-  assert.equal(cards.flatMap((card) => card.embeds).length, 2);
+  assert.equal(cards.length, 2, 'the third work had no embed budget left');
+  assert.equal(cards.flatMap((card) => card.embeds).length, 10);
   assert.equal(cards.flatMap((card) => card.files).length, 10);
 });
 

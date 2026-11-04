@@ -20,9 +20,8 @@ const TIMEOUT_MS = 6000;
 
 // A message can carry several cards, but each one spends the same per-message
 // budget that Discord enforces, so the limits below are shared, not per card.
-// Every card emits exactly one embed, so the card cap keeps the total well
-// under Discord's ten-embed limit; files and bytes are what actually bind.
 const MAX_CARDS = 5; // mirrors the cleaner's 5-link cap
+const MAX_EMBEDS = 10; // Discord's hard limit per message
 const MAX_FILES = 10; // Discord's hard limit per message
 const MAX_IMAGES = 5; // pages per Pixiv work, matching SaucyBot's cap
 const MAX_ATTACH_BYTES = 8_000_000; // below Discord's default 10 MB limit
@@ -160,11 +159,12 @@ async function buildXCard({ match, href }, options) {
   if (author.avatar_url) embed.author.icon_url = author.avatar_url;
   if (parts.length > 0) embed.description = clip(parts.join('\n\n'), 4096);
 
-  // One embed holds two images: the first large, the second as the thumbnail.
-  // Discord can fetch pbs.twimg.com directly, so neither costs an upload.
+  // One embed per photo. A Discord embed has a single `image` field and a
+  // single `thumbnail` field, so two images cannot share a card at full size;
+  // SaucyBot solves the same limit the same way (one embed per photo in
+  // `FxTwitter.cs`). The first embed carries the text, the rest are images.
   if (photos[0]) embed.image = { url: photos[0] };
   else if (still) embed.image = { url: still };
-  if (photos[1]) embed.thumbnail = { url: photos[1] };
   if (tweet.created_timestamp) {
     embed.timestamp = new Date(tweet.created_timestamp * 1000).toISOString();
   }
@@ -184,23 +184,13 @@ async function buildXCard({ match, href }, options) {
     }));
   }
 
-  // A post with three or more photos keeps the extras as attachments rather
-  // than dropping them; an embed has room for exactly two images.
-  const budget = options.budget ?? {};
-  const files = [];
-  let bytes = 0;
-  const byteCap = Math.min(MAX_ATTACH_BYTES, budget.bytes ?? MAX_ATTACH_BYTES);
-  const filesLeft = budget.files ?? MAX_FILES;
-  for (const [index, url] of photos.slice(2).entries()) {
-    if (files.length >= filesLeft) break;
-    const buffer = await getBytes(url, options);
-    if (!buffer) continue;
-    if (bytes + buffer.length > byteCap) break;
-    bytes += buffer.length;
-    files.push({ attachment: buffer, name: `photo${index + 3}.${extensionOf(url)}` });
+  // pbs.twimg.com is fetchable by Discord, so extra photos cost nothing here.
+  const embeds = [embed];
+  for (const url of photos.slice(1)) {
+    embeds.push({ url: embed.url, color: X_BLUE, image: { url }, footer: embed.footer });
   }
 
-  return { embeds: [embed], files };
+  return { embeds, files: [] };
 }
 
 // ------------------------------------------------------------------- Pixiv
@@ -258,10 +248,18 @@ async function buildPixivCard({ match, href }, options) {
     },
   };
 
-  // One card per work: the first page is the image, the second is the
-  // thumbnail, and any further pages stay attached below it. An embed has room
-  // for exactly two images, and a card per page read as three artefacts.
-  if (files[1]) embed.thumbnail = { url: `attachment://${files[1].name}` };
+  // One image per embed, same as X: the first embed carries the title and the
+  // author, the rest are pages. Every file is claimed, so no loose attachment
+  // is left above the card.
+  const embeds = [embed];
+  for (const [offset, file] of files.slice(1).entries()) {
+    embeds.push({
+      url: href,
+      color: PIXIV_BLUE,
+      image: { url: `attachment://${file.name}` },
+      footer: { text: `Pixiv · page ${offset + 2}/${files.length}` },
+    });
+  }
 
   if (meta.body.userId) embed.author.url = `https://www.pixiv.net/users/${meta.body.userId}`;
 
@@ -273,7 +271,7 @@ async function buildPixivCard({ match, href }, options) {
     embed.description = clip(tags.map((tag) => escapeMarkdown(tag)).join(' · '), 4096);
   }
 
-  return { embeds: [embed], files };
+  return { embeds, files };
 }
 
 // ------------------------------------------------------------------ facade
@@ -296,6 +294,7 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch, limit 
   // message and a rejected payload would cost the whole reply.
   let filesLeft = MAX_FILES;
   let bytesLeft = MAX_ATTACH_BYTES;
+  let embedsLeft = MAX_EMBEDS;
 
   for (const raw of extractUrls(text)) {
     if (cards.length >= limit) break;
@@ -326,7 +325,12 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch, limit 
       );
       if (!card) continue;
 
+      // A card is taken whole or not at all: a card with half its pages looks
+      // broken, and Discord rejects the whole message past ten embeds.
+      if (card.embeds.length > embedsLeft || card.files.length > filesLeft) continue;
+
       cards.push({ from: raw, url: cleanedFor.get(raw) ?? url.href, ...card });
+      embedsLeft -= card.embeds.length;
       filesLeft -= card.files.length;
       bytesLeft -= card.files.reduce((total, file) => total + file.attachment.length, 0);
     } catch {
