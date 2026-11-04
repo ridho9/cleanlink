@@ -7,6 +7,7 @@ import { fakeFetch, fixtureText } from '../../test-support/harness.js';
 const FACEBOOK_HTML = fixtureText('facebook-post.html');
 const FACEBOOK_REEL = fixtureText('facebook-reel.html');
 const FACEBOOK_FEED = fixtureText('facebook-feed.html');
+const FACEBOOK_BLOCKED = fixtureText('facebook-video-blocked.html');
 
 test('Facebook card reads the public embed iframe, not the login-walled page', async () => {
   const { impl, calls } = fakeFetch([['https://www.facebook.com/plugins/post.php', FACEBOOK_HTML]]);
@@ -119,6 +120,20 @@ test('a feed showing a different post is not carded', async () => {
     { fetchImpl: impl },
   );
   assert.deepEqual(cards, [], 'the id in the widget must be the one requested');
+});
+
+test('a video Facebook will not play still gets a card naming its owner', async () => {
+  const { impl } = fakeFetch([['https://www.facebook.com/plugins/post.php', FACEBOOK_BLOCKED]]);
+  const [card] = await buildCards('https://www.facebook.com/reel/1473617888008342', {
+    fetchImpl: impl,
+  });
+
+  assert.ok(card, 'Discord shows only "Log in or sign up to view" for this link');
+  const embed = card.embeds[0];
+  assert.equal(embed.author.name, 'Know Your Meme Indonesia - Unofficial');
+  assert.equal(embed.image, undefined, 'there is no media to show');
+  assert.match(embed.description, /not logged in/);
+  assert.equal(embed.footer.text, 'Facebook');
 });
 
 test('Facebook card is skipped for a post that forbids embedding', async () => {

@@ -84,6 +84,33 @@ function feedCard(html, match, href) {
   };
 }
 
+/**
+ * The layout Facebook returns for a video it will not play without a session.
+ *
+ * There is no media to show, only the page name, so the card says what it knows
+ * and no more: who posted it, and that the video needs a logged-in viewer.
+ */
+function blockedVideoCard(html, href) {
+  if (!/Video (?:tidak tersedia|isn't available)/i.test(html)) return null;
+
+  const avatar = [...html.matchAll(/<img\b[^>]*>/gi)].find((tag) => tag[0].includes('role="img"'));
+  const name = avatar ? /aria-label="([^"]+)"/.exec(avatar[0])?.[1] : null;
+  if (!name) return null;
+
+  return {
+    embeds: [{
+      url: href,
+      color: FACEBOOK_BLUE,
+      author: authorBlock(decodeEntities(name), 'Facebook', {
+        url: 'https://www.facebook.com',
+      }),
+      description: 'Facebook will not play this video for a viewer who is not logged in.',
+      footer: { text: 'Facebook' },
+    }],
+    files: [],
+  };
+}
+
 /** Post images: everything on scontent that is not an avatar. */
 function mediaImages(html) {
   return [
@@ -115,6 +142,12 @@ async function buildFacebookCard({ match, href }, options) {
       // card is built from that layout rather than dropped.
       const feed = feedCard(page.html, match, href);
       if (feed) return feed;
+
+      // A video that Facebook will not play for an anonymous viewer still
+      // names its owner. That is worth a card: Discord's own preview for such
+      // a link is the generic "Log in or sign up to view".
+      const blocked = blockedVideoCard(page.html, href);
+      if (blocked) return blocked;
 
       const refused = /tidak tersedia|isn't available|is not available/i.test(page.html);
       // Say why, as far as the answer allows: an anonymous request cannot tell
