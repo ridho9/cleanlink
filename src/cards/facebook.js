@@ -2,18 +2,12 @@
 // /plugins/post.php is not. It answers "unavailable" for posts that forbid
 // embedding, which is simply no card.
 
-import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { promisify } from 'node:util';
-
 import {
   authorBlock,
   decodeEntities,
   getHtml,
+  downloadVideo,
   imageEmbeds,
-  MAX_ATTACH_BYTES,
   toField,
   FACEBOOK_BLUE,
 } from './shared.js';
@@ -118,8 +112,6 @@ function blockedVideoCard(html, href) {
   };
 }
 
-const run = promisify(execFile);
-
 /**
  * Download an unplayable Facebook video with yt-dlp and attach it.
  *
@@ -133,37 +125,6 @@ const run = promisify(execFile);
  */
 function isVideoPath(href) {
   return /\/(?:reel|videos|watch)\b/.test(new URL(href).pathname);
-}
-
-async function downloadVideo(href, options) {
-  if (!isVideoPath(href)) return null;
-  const budget = options.budget ?? {};
-  if ((budget.files ?? 1) <= 0) return null;
-
-  const dir = await mkdtemp(join(tmpdir(), 'cleanlink-'));
-  const file = join(dir, 'video.mp4');
-  try {
-    await run('yt-dlp', [
-      '--no-warnings',
-      '--no-playlist',
-      '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
-      '--merge-output-format', 'mp4',
-      '-o', file,
-      href,
-    ], { timeout: 30_000 });
-
-    const buffer = await readFile(file);
-    const cap = Math.min(MAX_ATTACH_BYTES, budget.bytes ?? MAX_ATTACH_BYTES);
-    if (buffer.length === 0 || buffer.length > cap) return null;
-
-    return [{ attachment: buffer, name: 'video.mp4' }];
-  } catch (error) {
-    // Missing binary, unparseable video, size limit: all the same outcome.
-    console.log(`[card] facebook video via yt-dlp: ${error.shortMessage ?? error.message}`);
-    return null;
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
 }
 
 /** Post images: everything on scontent that is not an avatar. */

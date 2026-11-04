@@ -73,26 +73,37 @@ test('a single-image post falls back to the page image and has no page counter',
   assert.ok(card.embeds[0].image.url.startsWith('https://scontent.cdninstagram.com/'));
 });
 
-test('a reel gets no card, because an embed would suppress Discord\'s player', async () => {
-  const { impl, calls } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
-  const [card] = await buildCards(URL, { fetchImpl: impl });
+test('a reel carries a masked link to the direct mp4, not to the fixer', async () => {
+  const { impl } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
+  const videoUrl = async () => 'https://instagram.fpku7-1.fna.fbcdn.net/o1/v/t2/reel.mp4';
+
+  const [card] = await buildCards(URL, { fetchImpl: impl, videoUrl });
 
   assert.ok(card);
-  assert.deepEqual(card.embeds, [], 'no embed, or Discord drops the video unfurl');
-  assert.deepEqual(card.extraLines, ['[▶ reel](https://vxinstagram.com/reel/DcuMLVagTPh/)']);
-  assert.equal(calls.length, 0, 'and no page fetch is needed for a video');
+  assert.deepEqual(card.embeds, [], 'an embed would suppress Discord\'s player');
+  assert.deepEqual(card.extraLines, [
+    '[▶ reel](https://instagram.fpku7-1.fna.fbcdn.net/o1/v/t2/reel.mp4)',
+  ]);
 });
 
-test('every video path shape gets a masked fixer link', async () => {
-  for (const [url, fixer] of [
-    ['https://www.instagram.com/reel/DcuMLVagTPh/', '[▶ reel](https://vxinstagram.com/reel/DcuMLVagTPh/)'],
-    ['https://www.instagram.com/reels/DcuMLVagTPh/', '[▶ reel](https://vxinstagram.com/reels/DcuMLVagTPh/)'],
-    ['https://www.instagram.com/tv/DcuMLVagTPh/', '[▶ reel](https://vxinstagram.com/tv/DcuMLVagTPh/)'],
-  ]) {
-    const { impl } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
-    const [card] = await buildCards(url, { fetchImpl: impl });
-    assert.deepEqual(card.extraLines, [fixer], url);
-  }
+test('a reel falls back to the poster card when no direct URL resolves', async () => {
+  const { impl } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
+  const [card] = await buildCards(URL, { fetchImpl: impl, videoUrl: async () => null });
+
+  assert.ok(card);
+  assert.equal(card.embeds.length, 1);
+  assert.equal(card.embeds[0].author.name, 'Dr. Abdul El-Sayed (@abdulelsayed)');
+  assert.ok(card.embeds[0].image.url.startsWith('https://scontent.cdninstagram.com/'));
+  assert.equal(card.extraLines, undefined, 'no fixer link is offered any more');
+});
+
+test('the masked label hides whichever URL it points at', async () => {
+  const { impl } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
+  const long = `https://instagram.fpku7-1.fna.fbcdn.net/${'x'.repeat(200)}.mp4`;
+  const [card] = await buildCards(URL, { fetchImpl: impl, videoUrl: async () => long });
+
+  assert.equal(card.extraLines[0].startsWith('[▶ reel]('), true);
+  assert.equal(card.extraLines[0].includes('instagram.fpku7-1'), true);
 });
 
 test('a photo post with no OpenGraph title gets no card', async () => {

@@ -1,18 +1,18 @@
 // Instagram, split by media type because Discord treats the two differently.
 //
-// Photo posts get a card built from the page's OpenGraph tags — Discord renders
-// nothing for the link on its own (verified: a raw post produced zero embeds).
+// Photos and carousels get a card from the page's OpenGraph tags — Discord
+// renders nothing for the link on its own (verified: a raw post produced zero
+// embeds). Carousels need one more source: Instagram's page exposes a single
+// `og:image`, while vxinstagram's page lists every image in order and its
+// `/offload/<id>/<n>` paths serve them as stable URLs Discord will proxy. That
+// fixer page is the only remaining use of a third party here.
 //
 // Video posts get no card at all: Discord only plays a video it unfurls itself,
 // an embed in the same message suppresses that unfurl, and an MP4 handed to an
 // embed's `video` field is dropped. So a reel is the clean link plus a masked
-// `[▶ reel](vxinstagram.com/…)` link — Discord unfurls masked links, so the
-// player appears while the fixer host stays out of the visible text.
-//
-// Carousels are why the photo path reads the fixer page rather than Instagram's:
-// Instagram's own page carries a single `og:image`, while the fixer page lists
-// every image in order, and `vxinstagram.com/offload/<id>/<n>` serves each one
-// as a stable, proxied URL that Discord fetches happily.
+// `[▶ reel](…)` link whose target is the direct mp4 yt-dlp resolves — Discord
+// unfurls masked links and proxies the file, so nothing is downloaded here. If
+// no direct URL can be found, the post falls back to a poster card.
 
 import {
   authorBlock,
@@ -20,6 +20,7 @@ import {
   INSTAGRAM_PINK,
   metaContent,
   toField,
+  videoUrl,
 } from './shared.js';
 
 // The two pages describe a post differently, so both shapes are parsed.
@@ -37,23 +38,23 @@ const COUNT_SUFFIX = /❤️\s*([\d.,]+[KMB]?)\s*💬\s*([\d.,]+[KMB]?)/;
 const MAX_IMAGES = 10;
 
 export async function buildInstagramCard({ href }, options) {
-  // A reel or a TV post is a video. No card, or Discord never unfurls it.
-  //
-  // The fixer link goes in as a masked link: Discord unfurls it all the same
-  // (verified — a video embed appears), but the message shows only the label,
-  // so the third-party host stays out of the text.
-  const video = fixerLink(href);
-  if (video) return { embeds: [], files: [], extraLines: [`[▶ reel](${video})`] };
-
   const url = new URL(href);
-  // Two pages, for two different reasons: instagram.com carries the counts and
-  // the caption as Discord users expect them, and the fixer page lists every
-  // carousel image. Either one alone is still enough to build something.
-  const [page, fixer] = await Promise.all([
+  const video = isVideo(url.pathname);
+
+  if (video) {
+    const direct = await (options.videoUrl ?? videoUrl)(href, options);
+    // No embed, or Discord never unfurls the player.
+    if (direct) return { embeds: [], files: [], extraLines: [`[▶ reel](${direct})`] };
+    // No direct URL: fall through and show the poster frame instead.
+  }
+
+  // instagram.com carries the author, caption and counts. The fixer page is
+  // only needed for a carousel's image list, so a video fallback skips it.
+  const [page, fixerPage] = await Promise.all([
     getHtml(href, options),
-    getHtml(`https://vxinstagram.com${url.pathname}`, options),
+    video ? null : getHtml(`https://vxinstagram.com${url.pathname}`, options),
   ]);
-  const source = page?.html ?? fixer?.html;
+  const source = page?.html ?? fixerPage?.html;
   if (!source) return null;
 
   const title = metaContent(source, 'og:title');
@@ -80,7 +81,7 @@ export async function buildInstagramCard({ href }, options) {
     embed.author = authorBlock(
       [name, handle && `(@${handle})`].filter(Boolean).join(' '),
       'Instagram',
-      { url: handle ? `https://www.instagram.com/${handle}/` : embed.url },
+      { url: handle ? `https://www.instagram.com/${handle}/` : canonical },
     );
   }
 
@@ -95,7 +96,7 @@ export async function buildInstagramCard({ href }, options) {
   }
 
   // Carousel first, from stable fixer URLs; otherwise the post's single image.
-  const images = fixer ? carouselImages(fixer.html, url.pathname) : [];
+  const images = fixerPage ? carouselImages(fixerPage.html, url.pathname) : [];
   if (images.length === 0) {
     const single = metaContent(source, 'og:image');
     if (single) images.push(single);
@@ -115,12 +116,19 @@ export async function buildInstagramCard({ href }, options) {
   return { embeds, files: [] };
 }
 
+/** True for a reel, a reel alias or a TV post. */
+function isVideo(pathname) {
+  return /(?:^|\/)(?:reel|reels|tv)\//.test(pathname);
+}
+
 /**
  * Every image of the post, in order, as stable fixer URLs.
  *
  * The fixer page lists one `<img>` per carousel entry, so the distinct image
  * URLs in document order give the indices that `/offload/<id>/<n>` expects.
- * Signed Instagram CDN URLs are avoided on purpose: they expire.
+ * Signed Instagram CDN URLs are avoided on purpose: they expire. yt-dlp knows
+ * how many entries there are but refuses to resolve images, so it cannot
+ * replace this.
  */
 function carouselImages(html, pathname) {
   const id = pathname.split('/').filter(Boolean).pop();
@@ -151,11 +159,4 @@ function handleOf(title, canonical, description) {
   if (first && !reserved.has(first)) return first;
 
   return /-\s+([\w.]+)\s+on\s+/i.exec(description)?.[1] ?? '';
-}
-
-/** The fixer link for a video post, or null. */
-function fixerLink(href) {
-  const url = new URL(href);
-  if (!/(?:^|\/)(?:reel|reels|tv)\//.test(url.pathname)) return null;
-  return `https://vxinstagram.com${url.pathname}`;
 }

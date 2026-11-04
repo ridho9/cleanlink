@@ -1,5 +1,13 @@
-// Shared pieces for every card builder: limits, colours, one HTTP helper, and
-// the text and embed helpers that keep the five builders consistent.
+// Shared pieces for every card builder: limits, colours, one HTTP helper,
+// the text and embed helpers, and the optional yt-dlp downloader.
+
+import { execFile } from 'node:child_process';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
+
+const run = promisify(execFile);
 
 const BROWSER_UA = 'Mozilla/5.0';
 const TIMEOUT_MS = 6000;
@@ -157,4 +165,71 @@ export function extensionOf(url) {
   const path = new URL(url).pathname.toLowerCase();
   const match = /\.(jpg|jpeg|png|gif|webp)$/.exec(path);
   return match ? match[1].replace('jpeg', 'jpg') : 'jpg';
+}
+
+/**
+ * Download a video with yt-dlp and hand back an attachment.
+ *
+ * Optional by design: no yt-dlp, an unparseable video, or a file larger than
+ * the message budget all return null, and the caller falls back to a poster
+ * frame or a link. yt-dlp is spawned with an argv array (never a shell), under
+ * a timeout, into a temporary directory that is always removed.
+ *
+ * @param {string} href page URL, already validated by the caller's matcher
+ * @param {object} options card options, for the shared attachment budget
+ * @param {object} [format] extra yt-dlp arguments, e.g. a height cap
+ */
+export async function downloadVideo(href, options = {}, format = {}) {
+  const budget = options.budget ?? {};
+  if ((budget.files ?? 1) <= 0) return null;
+
+  const cap = Math.min(MAX_ATTACH_BYTES, budget.bytes ?? MAX_ATTACH_BYTES);
+  const dir = await mkdtemp(join(tmpdir(), 'cleanlink-'));
+  const file = join(dir, 'video.mp4');
+  try {
+    await run('yt-dlp', [
+      '--no-warnings',
+      '--no-playlist',
+      '--max-filesize', String(cap),
+      ...(format.args ?? ['-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best']),
+      '--merge-output-format', 'mp4',
+      '-o', file,
+      href,
+    ], { timeout: 30_000 });
+
+    const buffer = await readFile(file);
+    if (buffer.length === 0 || buffer.length > cap) return null;
+    return [{ attachment: buffer, name: 'video.mp4' }];
+  } catch (error) {
+    console.log(`[card] video via yt-dlp failed for ${new URL(href).host}: ${(error.shortMessage ?? error.message).split('\n')[0]}`);
+    return null;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * The direct media URL for a page, via yt-dlp, or null.
+ *
+ * Preferred over downloading: Discord unfurls a bare mp4 into its own player
+ * and proxies the file, so the bot never moves the bytes and the 8 MB
+ * attachment cap does not apply. yt-dlp resolves Instagram's progressive
+ * `best` format with audio included.
+ */
+export async function videoUrl(href) {
+  try {
+    const { stdout } = await run('yt-dlp', [
+      '--no-warnings',
+      '--no-playlist',
+      '--skip-download',
+      '-f', 'best',
+      '--get-url',
+      href,
+    ], { timeout: 25_000 });
+    const url = stdout.trim().split('\n')[0];
+    return url.startsWith('https://') ? url : null;
+  } catch (error) {
+    console.log(`[card] video url via yt-dlp failed for ${new URL(href).host}: ${(error.shortMessage ?? error.message).split('\n')[0]}`);
+    return null;
+  }
 }
