@@ -98,22 +98,30 @@ export async function resolveShare(url, { fetchImpl = fetch, maxHops = MAX_HOPS 
     if (!rule || !needsResolve(current, rule)) break;
 
     let res;
-    try {
-      res = await fetchImpl(current.href, {
-        method: 'GET',
-        redirect: 'manual',
-        headers: {
-          'user-agent': rule.ua ?? DEFAULT_USER_AGENT,
-          accept: 'text/html,*/*',
-          'accept-language': 'en-US,en;q=0.9',
-        },
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-    } catch {
-      // Timeout, DNS failure, or a blocked request. We cannot learn the real
-      // target, so keep whatever we have and let the caller decide.
-      break;
+    // Twice: a share resolution is one request, and it is the only thing that
+    // turns an opaque code into a real URL. A single timeout used to mean a
+    // silent drop, which looks identical to "this link is not mine".
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        res = await fetchImpl(current.href, {
+          method: 'GET',
+          redirect: 'manual',
+          headers: {
+            'user-agent': rule.ua ?? DEFAULT_USER_AGENT,
+            accept: 'text/html,*/*',
+            'accept-language': 'en-US,en;q=0.9',
+          },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        break;
+      } catch (error) {
+        // Timeout, DNS failure, or a blocked request.
+        if (attempt === 1) {
+          console.log(`[resolve] ${current.href} failed twice: ${error.message}`);
+        }
+      }
     }
+    if (!res) break;
 
     try {
       await res.body?.cancel();
@@ -212,7 +220,10 @@ export async function cleanMessage(text, options = {}) {
       try {
         const to = await cleanUrl(raw, options);
         return to ? { from: raw, to } : null;
-      } catch {
+      } catch (error) {
+        // Never fatal, but never silent either: an exception here used to leave
+        // the message unanswered with nothing in the log.
+        console.log(`[clean] ${raw} failed: ${error.message}`);
         return null;
       }
     }),

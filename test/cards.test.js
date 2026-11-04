@@ -366,6 +366,38 @@ test('Facebook card resolves from a /share/ link through the cleaned URL', async
   assert.equal(card.url, 'https://www.facebook.com/reel/1543457311150597/');
 });
 
+test('Facebook card retries once on an unexpected response', async () => {
+  const calls = [];
+  const { impl } = fakeFetch([
+    ['https://www.facebook.com/plugins/post.php', FACEBOOK_REEL],
+  ]);
+  // First answer is an interstitial, second is the real page.
+  const flaky = async (url, init) => {
+    calls.push(url);
+    if (calls.length === 1) return new Response('<html>checkpoint</html>', { status: 200 });
+    return impl(url, init);
+  };
+
+  const [card] = await buildCards('https://www.facebook.com/reel/1543457311150597/', {
+    fetchImpl: flaky,
+  });
+
+  assert.ok(card, 'the retry must recover');
+  assert.equal(calls.length, 2);
+});
+
+test('Facebook card does not retry a post that refuses embedding', async () => {
+  const refused = '<html><body>Postingan Facebook ini tidak tersedia lagi.</body></html>';
+  const { impl, calls } = fakeFetch([['https://www.facebook.com/plugins/post.php', refused]]);
+
+  const cards = await buildCards('https://www.facebook.com/reel/1543457311150597/', {
+    fetchImpl: impl,
+  });
+
+  assert.deepEqual(cards, []);
+  assert.equal(calls.length, 1, 'a refusal is final, not a hiccup');
+});
+
 test('Facebook card is skipped for a post that forbids embedding', async () => {
   const blocked = '<html><body><h2>Postingan Facebook ini tidak tersedia lagi.</h2></body></html>';
   const { impl } = fakeFetch([['https://www.facebook.com/plugins/post.php', blocked]]);

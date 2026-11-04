@@ -30,6 +30,29 @@ test('extractUrls finds links and trims trailing punctuation', () => {
   assert.deepEqual(extractUrls(undefined), []);
 });
 
+test('a transient resolution failure is retried once', async () => {
+  let attempts = 0;
+  const fetchImpl = async (url) => {
+    attempts += 1;
+    // First call times out, which used to mean a silent drop.
+    if (attempts === 1) throw new Error('The operation was aborted due to timeout');
+    return {
+      status: 302,
+      headers: new Headers({ location: 'https://www.threads.com/@a/post/b' }),
+      body: null,
+    };
+  };
+
+  const cleaned = await cleanMessage('https://www.threads.com/share/abc', { fetchImpl });
+  assert.deepEqual(cleaned, [
+    {
+      from: 'https://www.threads.com/share/abc',
+      to: 'https://www.threads.com/@a/post/b',
+    },
+  ]);
+  assert.equal(attempts, 2);
+});
+
 test('ruleFor matches subdomains but not lookalike hosts', () => {
   assert.equal(ruleFor(new URL('https://www.threads.com/@a/post/b')).id, 'threads');
   assert.equal(ruleFor(new URL('https://vm.tiktok.com/abc')).id, 'tiktok');

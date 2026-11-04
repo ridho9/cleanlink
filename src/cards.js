@@ -336,67 +336,85 @@ function htmlToText(fragment) {
     .trim();
 }
 
-async function buildFacebookCard({ href }, options) {
-  // The post itself is behind a login wall. The embed iframe is not.
-  const embedUrl = `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(href)}&show_text=true`;
+async function fetchFacebookEmbed(embedUrl, options) {
   const res = await (options.fetchImpl ?? fetch)(embedUrl, {
     headers: { 'user-agent': BROWSER_UA, accept: 'text/html' },
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!res.ok) return null;
-  const html = await res.text();
+  return { status: res.status, html: await res.text() };
+}
 
-  // Posts that forbid embedding answer "no longer available" with none of this.
-  const marker = html.indexOf('data-testid="post_message"');
-  if (marker === -1) {
-    // Say why: a forbidden post and a rate-limited response look alike from
-    // the outside, and both just mean "no card".
-    const reason = /tidak tersedia|isn't available|is not available/i.test(html)
-      ? 'post refuses embedding'
-      : 'unexpected response';
-    console.log(`[card] facebook ${res.status} ${html.length}B: ${reason}`);
-    return null;
+async function buildFacebookCard({ href }, options) {
+  // The post itself is behind a login wall. The embed iframe is not.
+  const embedUrl = `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(href)}&show_text=true`;
+
+  // Twice at most: a post that refuses embedding answers the same way every
+  // time, but an interstitial or a slow edge node does not, and one retry is
+  // cheap next to losing the card.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const page = await fetchFacebookEmbed(embedUrl, options);
+    if (!page) return null;
+
+    const marker = page.html.indexOf('data-testid="post_message"');
+    if (marker === -1) {
+      const refused = /tidak tersedia|isn't available|is not available/i.test(page.html);
+      // Say why: a forbidden post and an unexpected response look alike from
+      // the outside, and both mean "no card".
+      console.log(
+        `[card] facebook ${page.status} ${page.html.length}B attempt ${attempt + 1}: ` +
+          (refused ? 'post refuses embedding' : 'unexpected response'),
+      );
+      if (refused) return null;
+      continue;
+    }
+
+    const body = innerDiv(page.html, marker);
+    const text = body ? htmlToText(body) : '';
+    if (!text) return null;
+
+    const embed = {
+      url: href,
+      color: FACEBOOK_BLUE,
+      footer: { text: 'Facebook' },
+      description: toField(text, 4096),
+    };
+
+    // The avatar is the one `<img role="img">` that carries the author name in
+    // aria-label. Picking the first aria-label in the document is not the same
+    // thing: a reel page puts "Putar video" there first.
+    const avatar = [...page.html.matchAll(/<img\b[^>]*>/gi)].find((tag) =>
+      tag[0].includes('role="img"'),
+    );
+    const author = avatar ? /aria-label="([^"]+)"/.exec(avatar[0])?.[1] : null;
+    // The iframe's own permalink is authoritative: a post can sit on a vanity
+    // path that differs from the page that owns it.
+    const handle =
+      /href="\/?([\w.-]+)\/posts\//.exec(page.html)?.[1] ||
+      new URL(href).pathname.split('/')[1];
+    if (author) embed.author = { name: toField(decodeEntities(author), 256) };
+    if (embed.author && handle) embed.author.url = `https://www.facebook.com/${handle}`;
+
+    // Media, not avatars: the avatar is served at 40x40.
+    const images = [
+      ...new Set(
+        [...page.html.matchAll(/https:\/\/scontent[^"\\ ]+/g)]
+          .map((match) => decodeEntities(match[0]))
+          .filter((url) => !url.includes('s40x40')),
+      ),
+    ];
+
+    const embeds = [embed];
+    if (images[0]) embed.image = { url: images[0] };
+    // One image per embed, same as every other builder.
+    for (const image of images.slice(1)) {
+      embeds.push({ url: href, color: FACEBOOK_BLUE, image: { url: image }, footer: embed.footer });
+    }
+
+    return { embeds, files: [] };
   }
 
-  const body = innerDiv(html, marker);
-  const text = body ? htmlToText(body) : '';
-  if (!text) return null;
-
-  const embed = {
-    url: href,
-    color: FACEBOOK_BLUE,
-    footer: { text: 'Facebook' },
-    description: toField(text, 4096),
-  };
-
-  // The avatar is the one `<img role="img">` that carries the author name in
-  // aria-label. Picking the first aria-label in the document is not the same
-  // thing: a reel page puts "Putar video" there first.
-  const avatar = [...html.matchAll(/<img\b[^>]*>/gi)].find((tag) => tag[0].includes('role="img"'));
-  const author = avatar ? /aria-label="([^"]+)"/.exec(avatar[0])?.[1] : null;
-  // The iframe's own permalink is authoritative: a post can sit on a vanity
-  // path that differs from the page that owns it.
-  const handle =
-    /href="\/?([\w.-]+)\/posts\//.exec(html)?.[1] ||
-    new URL(href).pathname.split('/')[1];
-  if (author) embed.author = { name: toField(decodeEntities(author), 256) };
-  if (embed.author && handle) embed.author.url = `https://www.facebook.com/${handle}`;
-
-  // Media, not avatars: the avatar is served at 40x40.
-  const images = [...new Set(
-    [...html.matchAll(/https:\/\/scontent[^"\\ ]+/g)]
-      .map((match) => decodeEntities(match[0]))
-      .filter((url) => !url.includes('s40x40')),
-  )];
-
-  const embeds = [embed];
-  if (images[0]) embed.image = { url: images[0] };
-  // One image per embed, same as every other builder.
-  for (const image of images.slice(1)) {
-    embeds.push({ url: href, color: FACEBOOK_BLUE, image: { url: image }, footer: embed.footer });
-  }
-
-  return { embeds, files: [] };
+  return null;
 }
 
 // ------------------------------------------------------------------ TikTok
