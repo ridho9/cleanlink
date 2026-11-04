@@ -12,6 +12,9 @@ import { extractUrls } from './clean.js';
 //   Pixiv  — i.pximg.net answers 403 unless the request carries a pixiv
 //            Referer, which Discord never sends, so the native card has no
 //            image. We download the pages ourselves and re-upload them.
+//   TikTok — its own oEmbed returns an iframe and no metadata, and the page's
+//            og:title is the literal string "TikTok · TikTok". tikwm.com is
+//            the fxtwitter of TikTok: real caption, author, cover and counts.
 //
 // Adding a site is a table entry plus a builder. Keep it that way.
 
@@ -28,6 +31,7 @@ const MAX_ATTACH_BYTES = 8_000_000; // below Discord's default 10 MB limit
 
 const X_BLUE = 0x1d9bf0;
 const PIXIV_BLUE = 0x0096fa;
+const TIKTOK_BLACK = 0x010101;
 
 /** Hosts a card is allowed to ask, kept separate from the tracker rules. */
 export const CARD_SITES = [
@@ -43,6 +47,14 @@ export const CARD_SITES = [
     hosts: ['pixiv.net'],
     match: (url) => /^\/(?:[a-z]{2}\/)?artworks\/(\d{1,12})/i.exec(url.pathname),
     build: buildPixivCard,
+  },
+  {
+    id: 'tiktok',
+    hosts: ['tiktok.com'],
+    // Photo posts (/@user/photo/<id>) are not covered: tikwm's shape for them
+    // is unverified, and a card built on a guess is worse than a clean link.
+    match: (url) => /^\/@([\w.-]{1,64})\/video\/(\d{6,})/.exec(url.pathname),
+    build: buildTikTokCard,
   },
 ];
 
@@ -193,6 +205,62 @@ async function buildXCard({ match, href }, options) {
   return { embeds, files: [] };
 }
 
+// ------------------------------------------------------------------ TikTok
+
+async function buildTikTokCard({ match, href }, options) {
+  const [, handle, id] = match;
+  const canonical = `https://www.tiktok.com/@${handle}/video/${id}`;
+
+  // tikwm.com is a public API with no key, and the only source of a real
+  // caption: TikTok's own oEmbed returns an iframe and nothing else.
+  const data = await getJson(
+    `https://www.tikwm.com/api/?url=${encodeURIComponent(canonical)}`,
+    options,
+  );
+  if (data?.code !== 0 || !data.data) return null;
+
+  const video = data.data;
+  const author = video.author ?? {};
+  const cover = video.cover ?? video.origin_cover;
+
+  const embed = {
+    url: href,
+    color: TIKTOK_BLACK,
+    author: {
+      name: toField(
+        [author.nickname, author.unique_id ? `(@${author.unique_id})` : '']
+          .filter(Boolean)
+          .join(' ') || 'TikTok',
+        256,
+      ),
+      url: author.unique_id ? `https://www.tiktok.com/@${author.unique_id}` : canonical,
+    },
+    footer: { text: 'TikTok' },
+  };
+
+  if (author.avatar) embed.author.icon_url = author.avatar;
+  if (video.title) embed.description = toField(video.title, 4096);
+  // A video cannot play in a Discord embed, so the cover stands in for it.
+  if (cover) embed.image = { url: cover };
+  if (video.create_time) embed.timestamp = new Date(video.create_time * 1000).toISOString();
+
+  const stats = [
+    ['Plays', video.play_count],
+    ['Likes', video.digg_count],
+    ['Comments', video.comment_count],
+  ].filter(([, value]) => Number.isFinite(value));
+
+  if (stats.length > 0) {
+    embed.fields = stats.map(([name, value]) => ({
+      name,
+      value: value.toLocaleString('en-US'),
+      inline: true,
+    }));
+  }
+
+  return { embeds: [embed], files: [] };
+}
+
 // ------------------------------------------------------------------- Pixiv
 
 async function buildPixivCard({ match, href }, options) {
@@ -299,20 +367,31 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch, limit 
   for (const raw of extractUrls(text)) {
     if (cards.length >= limit) break;
 
-    let url;
-    try {
-      url = new URL(raw);
-    } catch {
-      continue;
+    // The cleaned URL comes first: a shortener was resolved into the real
+    // target there, and that target is what carries the id a card needs.
+    let url = null;
+    let site = null;
+    let match = null;
+    for (const href of [cleanedFor.get(raw), raw]) {
+      if (!href) continue;
+      let parsed;
+      try {
+        parsed = new URL(href);
+      } catch {
+        continue;
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') continue;
+      const found = CARD_SITES.find((candidate) =>
+        hostMatches(parsed.hostname.toLowerCase(), candidate.hosts),
+      );
+      const foundMatch = found?.match(parsed);
+      if (!foundMatch) continue;
+      url = parsed;
+      site = found;
+      match = foundMatch;
+      break;
     }
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') continue;
-    if (!hostMatches(url.hostname.toLowerCase(), CARD_SITES.flatMap((s) => s.hosts))) continue;
-
-    const site = CARD_SITES.find((candidate) =>
-      hostMatches(url.hostname.toLowerCase(), candidate.hosts),
-    );
-    const match = site?.match(url);
-    if (!match) continue;
+    if (!url) continue;
 
     const key = `${site.id}:${match.slice(1).join('/')}`;
     if (seen.has(key)) continue;
@@ -320,7 +399,7 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch, limit 
 
     try {
       const card = await site.build(
-        { match, href: cleanedFor.get(raw) ?? url.href },
+        { match, href: url.href },
         { fetchImpl, budget: { files: filesLeft, bytes: bytesLeft } },
       );
       if (!card) continue;

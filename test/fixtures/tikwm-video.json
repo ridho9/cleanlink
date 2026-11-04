@@ -1,0 +1,33 @@
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "id": "7666123874932722974",
+    "title": "Your For You feed isn't random - it's a reflection of you! From your local region settings to that video you just hit \"Not Interested\" on, you have the power to shape your feed. Here is exactly how your likes, skips, and shares teach the system what to show you next. 👇 #TechTok #TikTokAlgorithm #ForYouPage #LearnOnTikTok",
+    "author": {
+      "id": "107955",
+      "unique_id": "tiktok",
+      "nickname": "TikTok",
+      "avatar": "https://p19-common-sign.tiktokcdn-us.com/tos-useast5-avt-0068-tx/ba67b11de451691939223e9d978e613a~tplv-tiktokx-cropcenter-q:300:300:q70.jpeg?dr=8834&refresh_token=a033c201&x-expires=1793887200&x-signature=f7xzRfKZF%2FYT5Ttk3YUf%2F9igrBw%3D&t=0fa4e001&ps=87d6e48a&shp=d05b14bd&shcp=1d1a97fc&idc=useast5&sc=avatar&s=AWEME_DETAIL"
+    },
+    "cover": "https://p16-common-sign.tiktokcdn-us.com/tos-useast8-p-0068-tx2/oIg9IaxIPOtmiAhiSBBxLRAGKAlAjBi0E6A5E~tplv-tiktokx-cropcenter-q:300:400:q70.jpeg?dr=8596&refresh_token=3e9db149&x-expires=1793887200&x-signature=nWcph574PA57YNJ1BGD%2Fn9IBVzk%3D&t=0fa4e002&ps=933b5bde&shp=d05b14bd&shcp=1d1a97fc&idc=useast5&biz_tag=tt_video&s=AWEME_DETAIL&sc=cover",
+    "origin_cover": "https://p16-common-sign.tiktokcdn-us.com/tos-useast8-p-0068-tx2/oo4XVFDKREExSQe2JjEQcpBAiBkAxkqzYqfUGJ~tplv-tiktokx-shrink-aq:360:360:q75.webp?dr=11731&refresh_token=c7069be4&x-expires=1793887200&x-signature=pRO1V1LSae1cBM5xzxGfPdroTTQ%3D&t=0fa4e002&ps=d97f9a4f&shp=d05b14bd&shcp=1d1a97fc&idc=useast5&biz_tag=tt_video&s=AWEME_DETAIL&sc=feed_cover",
+    "duration": 64,
+    "play_count": 1099232,
+    "digg_count": 130423,
+    "comment_count": 16758,
+    "share_count": 14551,
+    "create_time": 1784908569,
+    "music_info": {
+      "id": "7666123802115443487",
+      "title": "original sound - tiktok",
+      "play": "https://v16-ies-music.tiktokcdn-us.com/aa4e790626445c5abf1ff2dc21b2a0e1/6af47ddd/video/tos/useast8/tos-useast8-v-27dcd7-tx2/oQYxM8T5oQeqwLOV9fUAXCURgaTxEOf8rIAhGi/?a=583965&bti=OTg7QGo5QHM6OjZALTAzYCMvcCMxNDNg&&bt=125&ft=7g~atDDwNxkVQQdGuIOnsdub0BZqYl_DZd2jhWLrK&mime_type=audio_mpeg&rc=NztmZzMzZmU8ZDMzaWk7O0Bpam82dHQ5cjpyPDMzaTU8NEA0Xl8vMC9iNi0xLzRjXjRjYSNjY2hjMmQ0amVhLS1kMTJzcw%3D%3D&vvpl=1&l=20261104143613F86D6C1D6AE50613793E&btag=e00090000&shp=d05b14bd&shcp=-",
+      "cover": "https://p16-common-sign.tiktokcdn-us.com/tos-useast5-avt-0068-tx/ba67b11de451691939223e9d978e613a~tplv-tiktokx-cropcenter-q:1080:1080:q70.jpeg?dr=8837&refresh_token=e4604b2a&x-expires=1793887200&x-signature=dFoV8O2xpiIltx9yQQOikgHukdw%3D&t=0fa4e001&ps=87d6e48a&shp=d05b14bd&shcp=1d1a97fc&idc=useast5&sc=avatar&s=AWEME_DETAIL",
+      "author": "TikTok",
+      "original": true,
+      "duration": 64,
+      "album": "",
+      "create_time": 1784908573
+    }
+  }
+}
