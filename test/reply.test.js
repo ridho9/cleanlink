@@ -49,13 +49,13 @@ test('extra lines a card asks for land after the bracketed link', async () => {
       url: 'https://www.instagram.com/reel/X/',
       embeds: [{ title: 'x' }],
       files: [],
-      extraLines: ['https://vxinstagram.com/reel/X/'],
+      extraLines: ['https://cdn.example/video.mp4'],
     }],
   });
 
   assert.equal(
     message.sent[0].content,
-    '<https://www.instagram.com/reel/X/> https://vxinstagram.com/reel/X/',
+    '<https://www.instagram.com/reel/X/> https://cdn.example/video.mp4',
     'the extra link shares the card line',
   );
 });

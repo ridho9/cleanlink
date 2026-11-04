@@ -87,31 +87,28 @@ Reddit, Spotify and Google were removed on purpose: only fake share codes had ev
 
 ## Preview cards
 
-For X, Pixiv, Threads, Instagram, Facebook, TikTok and nhentai the bot posts its own card, because Discord's own preview fails on all seven:
+Seven sites get a card the bot builds itself, because Discord's own preview fails on each of them. Every card comes from the site's own data — no third-party renderer is used anywhere.
 
-- **X** — Discord shows a truncated title. The bot reads `api.fxtwitter.com` and builds a card with the full text, the avatar, the reply/retweet/like/view counts, a quoted tweet as a blockquote, and one full-size embed per image: the main tweet's pictures first, then the quoted tweet's, with the video's poster frame where a tweet has video. It never rewrites the host to a fixer domain.
-- **Pixiv** — `i.pximg.net` answers `403` unless the request carries a pixiv `Referer`, and Discord never sends one, so the native card has no image. The bot downloads up to 5 pages with that header and re-uploads them as attachments, one embed per page. Restricted works get `SPOILER_` file names.
-- **nhentai** — the gallery page sits behind a Cloudflare challenge that answers `403 Just a moment…` to every user agent, so Discord has nothing to unfurl. The JSON API is not challenged: `api/v2/galleries/<id>` returns the title, cover, page count, favourites, upload date and every tag with its type. The cover on `t.nhentai.net` fetches `200 image/webp` for Discordbot UA. **Adult content, one presentation:** the card shows the title, the author (artists and groups) and the cover as `SPOILER_cover.webp`, so the image is hidden until clicked. There is no channel gate and no `full` variant — the link is carded wherever it is posted. Discord's own unfurl of the same URL carries a title and a generic "Read and download…" line and no image, so the cover is the part only this card adds.
+| Site | Source | What the card shows |
+|---|---|---|
+| **X** | `api.fxtwitter.com` | full text, avatar, quote as a blockquote, Replies/Retweets/Likes/Views, one full-size embed per image — the quoted tweet's pictures included |
+| **Pixiv** | `ajax/illust` + `ajax/illust/<id>/pages` | title, author, tags, up to 5 pages downloaded with a pixiv `Referer` and re-uploaded, because `i.pximg.net` answers `403` without it and Discord never sends one |
+| **Threads** | the page's OpenGraph tags, fetched as `Mozilla/5.0` | author, post text, image or avatar. Crawled as `Discordbot` the page returns a 107 KB shell with no description, which is why Discord's own Threads card has no words |
+| **Instagram** | page + `api/v1/oembed` + `/p/<shortcode>/embed/captioned/` | display name, the **full** caption, Likes/Comments, one embed per carousel image. Reels are carded like photos: the clean frame, not the video |
+| **Facebook** | `plugins/post.php`, plus `yt-dlp` for video | author, post text, media; a reel or video is downloaded and attached when yt-dlp can fetch it |
+| **TikTok** | `tikwm.com/api` | caption, author, avatar, cover, Plays/Likes/Comments. Its own oEmbed returns an iframe only, and the page's `og:title` is the literal `TikTok · TikTok` |
+| **nhentai** | `api/v2/galleries/<id>` | title, author, and the cover attached as `SPOILER_cover.webp`. The gallery page is a Cloudflare challenge, but the API is not. `nh/<id>` works as shorthand |
 
-Two limits worth knowing. **Discord has no spoiler for embed images** — only an attachment honours the `SPOILER_` prefix, which is why the cover leaves the embed. And a spoiler is redaction, not permission: the image is still adult content outside an age-restricted channel. That is a deliberate choice here, not an oversight.
-- **TikTok** — its own oEmbed returns an iframe and no metadata, and the page's `og:title` is the literal string `TikTok · TikTok`. The bot reads `tikwm.com/api`, a public keyless API, for the real caption, author, avatar, cover and counts. Video posts only: photo posts keep the plain clean link.
-- **Facebook** — the post page is a login wall and its `og:title` is a generic string, but the public embed iframe at `plugins/post.php?href=<post>&show_text=true` is not: it returns the author, the post text and the media. No token, no browser. Carded forms: `/<page>/posts/<id|pfbid>`, `/reel/<id>`, `/<page>/videos/<id>`, `/watch/?v=<id>` and `permalink.php?story_fbid=`. **Reels and video posts prefer the video over the poster frame.** When `yt-dlp` is installed the bot downloads `bestvideo+bestaudio` as mp4 and attaches it — Discord plays the attachment, so a reel arrives as the real video rather than a still. Cost is a yt-dlp run per video link, roughly 3–5 s, bounded by the same 8 MB attachment budget as every other card. Without yt-dlp, or when the video is too large or unparseable, the poster frame is used instead, and a video Facebook refuses to embed falls back to an author-only card. Nothing else depends on yt-dlp.
+Why the other two get no card: **Misskey** already answers Discord's crawler with complete OpenGraph tags, and its URL was confirmed to unfurl; **YouTube** has a native player.
 
-Three layouts are parsed: the single-post embed (`data-testid="post_message"`); the page-feed widget Facebook falls back to for some posts, accepted only when the post id inside it matches the one requested; and the "video cannot be played without a session" page, which yields author-only card because Discord's own preview of such a link is just "Log in or sign up to view". Posts that forbid embedding, and posts that need a login to view, answer "no longer available" and then the bot sends the plain clean link.
-- **Instagram** — two presentations, because the platform splits the same way Discord does. **Photo posts** (`/p/`): the page carries `og:title` (author plus caption), `og:description` (likes and comments), `og:image` and `og:url`, and Discord shows none of it — posted raw, the URL produced zero embeds. The bot reads the tags with a browser user agent and builds the card. **Media comes from Instagram itself**, from three first-party surfaces, each for what only it has:
+### Limits that shape every card
 
-| Source | Gives |
-|---|---|
-| the post page | display name and like/comment counts (OpenGraph) |
-| `api/v1/oembed/?url=<post>` | the **full** caption (the OpenGraph one is clipped), the handle, and a thumbnail with its aspect ratio intact — 640×800 rather than a 640×640 `stp` crop |
-| `/p/<shortcode>/embed/captioned/` | one `display_url` per carousel image, and the video's clean frame |
-
-That replaced both a third-party image proxy and a yt-dlp call, so Instagram needs no outside service at all. All three are signed CDN links, which is fine: Discord proxies them as it renders the message. **Reels and TV posts** (`/reel/`, `/reels/`, `/tv/`): a video, and Discord only plays a video it unfurls itself. An embed of ours in the same message suppresses that unfurl entirely (verified: one embed, no video), and an MP4 handed to an embed's `video` field is dropped. So a video post gets no card at all — one line holding the clean link and a **masked** `[▶ reel](vxinstagram.com/…)` link. Discord unfurls masked links too, so the player appears with the caption and counts while the fixer host stays out of the visible text. If that fixer is ever gone, the post degrades to the clean link only.
-- **Threads** — the page has the post text in `og:description`, **but only for a browser user agent**. Crawled as `Discordbot` it returns a 107 KB shell with no description, which is why Discord's own card shows an author and no words. The bot fetches the page once as `Mozilla/5.0`. A text-only post's `og:image` is the author's avatar, so that goes in the corner rather than across the card.
-
-Why the other two sites get no card: Misskey already answers Discord's crawler with complete OpenGraph tags, including an image that fetches, and the URL was confirmed to unfurl. YouTube has a native player. Do not assume a site "unfurls fine" because its tags are fetchable from your machine — Instagram's are, and Discord still renders nothing. Evidence for each is in [docs/saucybot-url-inventory.md](docs/saucybot-url-inventory.md).
-
-Every carded link appears in the message wrapped in angle brackets, `<https://…>`, so Discord does not unfurl it a second time next to the card. A card is decoration and degrades: a rejected attachment falls back to the embed alone, and a missing **Embed Links** permission falls back to the plain clean link.
+- **One embed per image.** A Discord embed has one `image` and one `thumbnail` field — no gallery — so two full-size images need two embeds. The second image is never put in `thumbnail`; a shrunk version was rejected.
+- **An embed suppresses link unfurls.** A message holding our card never creates Discord's own preview, and an MP4 in `embed.video` is dropped outright. That is why a video can only arrive as an attachment or as its own message.
+- **No spoiler for embed images.** Only an attachment honours the `SPOILER_` filename prefix, which is why the nhentai cover leaves the embed. A spoiler is redaction, not permission.
+- **Budgets per message, shared by every card:** 5 cards, 10 embeds, 10 files, 8 MB of attachments. A card that would break a budget is skipped whole.
+- **A card is decoration and degrades:** a rejected attachment resends the embeds alone, a missing **Embed Links** permission resends the plain links. Never an error, never a lost clean link.
+- **Card text is third-party text:** everything passes through `escapeMarkdown`, and composition happens before clipping so our own `> **Quoting …**` markup survives.
 
 Adding a card is a table entry in [src/cards/index.js](src/cards/index.js) plus a builder module beside it.
 
@@ -129,7 +126,7 @@ Query-parameter stripping is deterministic and covered by tests for every site. 
 | YouTube | live | n/a | n/a |
 | TikTok | live | **real code** — `vt.tiktok.com` → `/@user/video/<id>` | **real code** — `tikwm.com` answered for a real video, card sent and read back |
 | Threads | live | **real code** — `302` → clean post URL | **real code** — text, author and avatar from the page, card sent and read back |
-| Instagram | live (`mdxt`, `psln`) | `/share/` still fake: `200`, no redirect → silence | **real code** — photo card read back from Discord; reel read back as a playable video embed |
+| Instagram | live (`mdxt`, `psln`, `srtk`) | `/share/` still fake: `200`, no redirect → silence | **real code** — single post, 4- and 10-image carousels and a reel all read back from Discord |
 | Facebook | live | **real code** — `/share/<code>` → `/posts/<id>`, `/reel/<id>` | **real code** — text, author and image from `plugins/post.php` for a post, a reel and a watch link; cards sent and read back |
 | nhentai | n/a | n/a | **real code** — `api/v2/galleries/<id>` and a `t.nhentai.net` cover that Discord can fetch; card built and inspected, gated on NSFW |
 | Pixiv | n/a | n/a | **real code** — 2 pages fetched with a pixiv `Referer`, uploaded, embed rendered |
