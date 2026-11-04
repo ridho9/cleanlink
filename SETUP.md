@@ -229,7 +229,7 @@ The journal on this host is persistent (`/var/log/journal` exists), so logs surv
 Facebook refuses some videos to anonymous requests but not to yt-dlp, and Instagram reels can be played only through a URL yt-dlp resolves. If `yt-dlp` is on the service's `PATH`:
 
 - a Facebook video is downloaded and attached (Discord plays the attachment);
-- an Instagram reel keeps its card, and a second message carries a masked link to the direct mp4 that Discord unfurls into a player.
+- an Instagram reel keeps its card and adds a masked `[|>](…)` link to the direct mp4 — a click-through, since Discord renders no player in a message that already holds an embed.
 
 Without it, both fall back: the Facebook card keeps its author line, the Instagram post keeps its poster frame. It is optional and not a package dependency.
 

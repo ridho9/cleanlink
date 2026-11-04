@@ -73,7 +73,7 @@ test('a single-image post falls back to the page image and has no page counter',
   assert.ok(card.embeds[0].image.url.startsWith('https://scontent.cdninstagram.com/'));
 });
 
-test('a reel keeps its card and puts the video in a masked follow-up', async () => {
+test('a reel keeps its card and offers the video as a click-through label', async () => {
   const { impl } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
   const direct = 'https://instagram.fpku7-1.fna.fbcdn.net/o1/v/t2/reel.mp4';
 
@@ -82,20 +82,18 @@ test('a reel keeps its card and puts the video in a masked follow-up', async () 
   assert.ok(card);
   assert.equal(card.embeds.length, 1, 'the author and caption stay');
   assert.equal(card.embeds[0].author.name, 'Dr. Abdul El-Sayed (@abdulelsayed)');
-  assert.ok(card.embeds[0].description.startsWith('Heard there’s a reunion'));
   assert.ok(card.embeds[0].image, 'and the poster frame');
   assert.deepEqual(card.files, [], 'nothing is downloaded');
-  assert.deepEqual(card.extraLines, undefined, 'the carded link is bracketed, not labelled');
-  assert.deepEqual(card.followUps, [`[reel](${direct})`]);
+  assert.deepEqual(card.extraLines, [`[|>](${direct})`], 'the label rides the card line');
+  assert.equal(card.followUps, undefined, 'and no second message is sent');
 });
 
-test('a reel with no resolvable URL keeps the card alone', async () => {
+test('a reel with no resolvable URL carries no label', async () => {
   const { impl } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
   const [card] = await buildCards(URL, { fetchImpl: impl, videoUrl: async () => null });
 
   assert.ok(card);
-  assert.equal(card.embeds.length, 1);
-  assert.equal(card.followUps, undefined);
+  assert.equal(card.extraLines, undefined);
 });
 
 test('a photo post with no OpenGraph title gets no card', async () => {

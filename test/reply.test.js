@@ -60,25 +60,6 @@ test('extra lines a card asks for land after the bracketed link', async () => {
   );
 });
 
-test('a follow-up line is sent as its own message after the card', async () => {
-  const message = fakeMessage();
-  await sendReply(message, {
-    lines: [],
-    cards: [{
-      from: 'https://www.instagram.com/reel/X/',
-      url: 'https://www.instagram.com/reel/X/',
-      embeds: [{ title: 'reel' }],
-      files: [],
-      followUps: ['https://cdn.example/video.mp4'],
-    }],
-  });
-
-  assert.equal(message.sent.length, 2);
-  assert.equal(message.sent[0].embeds.length, 1);
-  assert.equal(message.sent[1].content, 'https://cdn.example/video.mp4');
-  assert.equal(message.sent[1].embeds, undefined, 'a bare URL unfurls into the player');
-});
-
 test('a plain clean reply carries no embeds', async () => {
   const message = fakeMessage();
   await sendReply(message, { lines, cards: [] });

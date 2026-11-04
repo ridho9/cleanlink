@@ -77,31 +77,12 @@ export async function sendReply(message, { lines, cards }) {
   for (const [index, payload] of attempts.entries()) {
     try {
       await message.reply(payload);
-      await sendFollowUps(message, cards);
       return;
     } catch (error) {
       const last = index === attempts.length - 1;
       if (last) throw error;
       console.log(`[reply] attempt ${index + 1} rejected: ${error.message}`);
     }
-  }
-}
-
-/**
- * Extra messages a card asked for.
- *
- * A message holding an embed never unfurls a link, so a video that must play
- * arrives in its own message. Failures here are logged, never fatal: the card
- * has already been delivered.
- */
-async function sendFollowUps(message, cards) {
-  const lines = cards.flatMap((card) => card.followUps ?? []);
-  if (lines.length === 0) return;
-
-  try {
-    await message.reply({ content: fitLines(lines).join('\n'), allowedMentions: { parse: [] } });
-  } catch (error) {
-    console.log(`[reply] follow-up rejected: ${error.message}`);
   }
 }
 

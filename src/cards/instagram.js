@@ -111,12 +111,13 @@ export async function buildInstagramCard({ href }, options) {
     footer: { text: `Instagram · ${index + 2}/${images.length}` },
   }))];
 
-  // The card stays; the video needs its own message, because an embed in the
-  // message suppresses link unfurls. The follow-up carries only a masked label,
-  // so the long signed URL never appears in the text.
+  // The video is offered as a masked label beside the clean link, on the card's
+  // own line. Discord will not render a player here — an embed in the message
+  // suppresses link unfurls — so the label is a click-through to the file, not
+  // an inline player. That trade is deliberate: one message, card included.
   if (video) {
     const direct = await (options.videoUrl ?? videoUrl)(href, options);
-    if (direct) return { embeds, files: [], followUps: [`[reel](${direct})`] };
+    if (direct) return { embeds, files: [], extraLines: [`[|>](${direct})`] };
   }
 
   return { embeds, files: [] };
