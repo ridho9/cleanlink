@@ -226,7 +226,12 @@ The journal on this host is persistent (`/var/log/journal` exists), so logs surv
 
 ### Optional: yt-dlp
 
-Facebook refuses some videos to anonymous requests but not to yt-dlp. If `yt-dlp` is on the service's `PATH`, the bot downloads such a video and attaches it; without it, the bot sends an author-only card instead. Nothing else uses it, and it is not a dependency of the package.
+Facebook refuses some videos to anonymous requests but not to yt-dlp, and Instagram reels can be played only through a URL yt-dlp resolves. If `yt-dlp` is on the service's `PATH`:
+
+- a Facebook video is downloaded and attached (Discord plays the attachment);
+- an Instagram reel gets a masked link to the direct mp4, which Discord unfurls and proxies — no download, no size cap.
+
+Without it, both fall back: the Facebook card keeps its author line, the Instagram post keeps its poster frame. It is optional and not a package dependency.
 
 ```sh
 command -v yt-dlp || nix profile install nixpkgs#yt-dlp
