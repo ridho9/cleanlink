@@ -114,12 +114,6 @@ export async function buildInstagramCard({ href }, options) {
     footer: { text: `Instagram · ${index + 2}/${images.length}` },
   }))];
 
-  // The video is offered as a masked label beside the clean link, on the card's
-  // own line. Discord will not render a player here — an embed in the message
-  // suppresses link unfurls — so the label is a click-through to the file, not
-  // an inline player. That trade is deliberate: one message, card included.
-  if (media.video) return { embeds, files: [], extraLines: [`[|>](${media.video})`] };
-
   return { embeds, files: [] };
 }
 

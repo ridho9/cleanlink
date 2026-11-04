@@ -8,6 +8,10 @@ const REEL_HTML = fixtureText('instagram-reel.html');
 const CAROUSEL_PAGE = fixtureText('instagram-carousel-page.html');
 const EMBED_CAROUSEL = fixtureText('instagram-embed-carousel.html');
 const EMBED_VIDEO = fixtureText('instagram-embed-video.html');
+
+// The reel's frame, as each page reports it.
+const EMBED_FRAME = /"display_url":"([^"]+)"/.exec(EMBED_VIDEO.replace(/\\/g, ''))[1];
+const OG_IMAGE = /property="og:image" content="([^"]+)"/.exec(REEL_HTML)[1].replace(/&amp;/g, '&');
 const URL = 'https://www.instagram.com/reel/DcuMLVagTPh/';
 
 test('an Instagram photo post is carded from its OpenGraph tags', async () => {
@@ -69,30 +73,24 @@ test('a single-image post falls back to the page image and has no page counter',
   assert.ok(card.embeds[0].image.url.startsWith('https://scontent.cdninstagram.com/'));
 });
 
-test('a reel keeps its card and offers the video as a click-through label', async () => {
+test('a reel is carded like a photo post, with a clean frame and no link', async () => {
   const { impl } = fakeFetch([
     ['https://www.instagram.com/p/DcuMLVagTPh/embed/captioned/', EMBED_VIDEO],
     ['https://www.instagram.com/', REEL_HTML],
   ]);
-
   const [card] = await buildCards(URL, { fetchImpl: impl });
 
   assert.ok(card);
-  assert.equal(card.embeds.length, 1, 'the author and caption stay');
+  assert.equal(card.embeds.length, 1);
   assert.equal(card.embeds[0].author.name, 'Dr. Abdul El-Sayed (@abdulelsayed)');
-  assert.ok(card.embeds[0].image, 'and the poster frame');
-  assert.deepEqual(card.files, [], 'nothing is downloaded');
-  assert.match(card.extraLines[0], /^\[\|>\]\(https:\/\/instagram\./, 'the label rides the card line');
-  assert.match(card.extraLines[0], /\.mp4\?/, 'a signed CDN file URL');
-  assert.equal(card.followUps, undefined, 'and no second message is sent');
-});
+  assert.ok(card.embeds[0].description.startsWith('Heard there’s a reunion'));
 
-test('a reel with no video in the payload carries no label', async () => {
-  const { impl } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
-  const [card] = await buildCards(URL, { fetchImpl: impl });
-
-  assert.ok(card);
-  assert.equal(card.extraLines, undefined);
+  // The frame comes from the embed payload, not `og:image` — Instagram bakes a
+  // play button into the OpenGraph thumbnail.
+  assert.equal(card.embeds[0].image.url, EMBED_FRAME);
+  assert.notEqual(card.embeds[0].image.url, OG_IMAGE);
+  assert.equal(card.extraLines, undefined, 'no video link is offered');
+  assert.deepEqual(card.files, []);
 });
 
 test('a photo post with no OpenGraph title gets no card', async () => {

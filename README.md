@@ -72,7 +72,7 @@ Note that server mode means the bot reads message content in every channel it ca
 | Site | Handles | Card |
 |---|---|---|
 | Threads | `/share/<code>` share links, strips `xmt`, `slof` | **yes** — post text, author, image from the page's OpenGraph tags |
-| Instagram | `/share/…` links, strips `igsh`, `igshid`, `mdxt`, `psln` | **yes** — one embed per image for photo posts and carousels; reels and TV posts show the card plus a click-through `[\|>](…)` link to the video |
+| Instagram | `/share/…` links, strips `igsh`, `igshid`, `mdxt`, `psln` | **yes** — one embed per image, for photos, carousels and reels; a reel gets its still, not the video |
 | TikTok | `vm.` / `vt.` short links, strips `is_from_webapp`, `sender_device`, `web_id`, `_t`, … | **yes** — caption, author, cover, counts from `tikwm.com` |
 | Twitter / X | strips `s`, `t`, `ref_src`, `ref_url` | **yes** — text, avatar, stats, quote, still |
 | YouTube | on `watch` links keeps only `v`, so playlist and radio parameters go; short links lose `si`, `feature` | no, the native player is better |
