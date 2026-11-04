@@ -49,6 +49,10 @@ export async function sendReply(message, { lines, cards }) {
     // Angle brackets stop Discord from unfurling the link a second time next
     // to the card we built from it.
     ...cards.map((card) => `<${card.url}>`),
+    // Bare links a builder asked for: Discord unfurls these itself, which is
+    // how a playable video gets in — an MP4 in an embed's video field is
+    // dropped by Discord.
+    ...cards.flatMap((card) => card.extraLines ?? []),
     ...lines.filter(({ from }) => !carded.has(from)).map(({ to }) => to),
   ]).join('\n');
 

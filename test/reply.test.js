@@ -40,6 +40,25 @@ test('a carded link is bracketed and the plain link is not repeated', async () =
   assert.equal(message.sent[0].embeds.length, 1);
 });
 
+test('extra lines a card asks for land after the bracketed link', async () => {
+  const message = fakeMessage();
+  await sendReply(message, {
+    lines: [],
+    cards: [{
+      from: 'https://www.instagram.com/reel/X/',
+      url: 'https://www.instagram.com/reel/X/',
+      embeds: [{ title: 'x' }],
+      files: [],
+      extraLines: ['https://vxinstagram.com/reel/X/'],
+    }],
+  });
+
+  assert.equal(
+    message.sent[0].content,
+    '<https://www.instagram.com/reel/X/>\nhttps://vxinstagram.com/reel/X/',
+  );
+});
+
 test('a plain clean reply carries no embeds', async () => {
   const message = fakeMessage();
   await sendReply(message, { lines, cards: [] });

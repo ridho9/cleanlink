@@ -19,6 +19,13 @@ import {
 const ENGAGEMENT = /^([\d.,]+[KMB]?)\s+likes?,\s+([\d.,]+[KMB]?)\s+comments?/i;
 
 export async function buildInstagramCard({ href }, options) {
+  // A reel or a TV post is a video, and Discord only plays one it unfurls
+  // itself — an embed of ours in the same message suppresses that unfurl
+  // entirely (verified). So a video post gets no card: the clean link plus the
+  // fixer link, and Discord draws the player with the caption and counts.
+  const video = fixerLink(href);
+  if (video) return { embeds: [], files: [], extraLines: [video] };
+
   const page = await getHtml(href, options);
   if (!page) return null;
 
@@ -65,4 +72,17 @@ export async function buildInstagramCard({ href }, options) {
   }
 
   return { embeds: [embed], files: [] };
+}
+
+/**
+ * The fixer link for a video post, or null.
+ *
+ * Derived from the incoming URL, not from `og:url`: the canonical path carries
+ * the handle (`/abdulelsayed/reel/<id>/`) while vxinstagram takes
+ * `/reel/<id>/`.
+ */
+function fixerLink(href) {
+  const url = new URL(href);
+  if (!/(?:^|\/)(?:reel|reels|tv)\//.test(url.pathname)) return null;
+  return `https://vxinstagram.com${url.pathname}`;
 }
