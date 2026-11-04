@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildCards } from '../../src/cards/index.js';
+import { buildCards, hasCardFor } from '../../src/cards/index.js';
 import { buildNhentaiCard } from '../../src/cards/nhentai.js';
 import { fakeFetch, fixture, IMAGE_BYTES, imageResponse } from '../../test-support/harness.js';
 
@@ -78,4 +78,29 @@ test('nhentai card matches a gallery path with or without a slug', async () => {
     const [card] = await buildCards(url, { fetchImpl: impl });
     assert.ok(card, url);
   }
+});
+
+test('nh/<id> shorthand expands to the gallery link', async () => {
+  const { impl } = fetchGallery();
+  const [card] = await buildCards('look nh/693549', { fetchImpl: impl });
+
+  assert.ok(card);
+  assert.equal(card.from, 'nh/693549');
+  assert.equal(card.url, 'https://nhentai.net/g/693549/');
+  assert.equal(card.embeds[0].title, GALLERY.title.pretty);
+});
+
+test('shorthand and the full link produce one card, not two', async () => {
+  const { impl } = fetchGallery();
+  const cards = await buildCards('nh/693549 https://nhentai.net/g/693549/', { fetchImpl: impl });
+  assert.equal(cards.length, 1);
+});
+
+test('hasCardFor sees the shorthand and ignores text that is not one', () => {
+  assert.equal(hasCardFor('nh/693549'), true);
+  assert.equal(hasCardFor('https://nhentai.net/g/693549/'), true);
+  assert.equal(hasCardFor('nh/abc'), false);
+  assert.equal(hasCardFor('nh/1234567890123'), false, 'ids stop at nine digits');
+  assert.equal(hasCardFor('nothing to see'), false);
+  assert.equal(hasCardFor(''), false);
 });

@@ -73,6 +73,31 @@ const CARD_SITES = [
   },
 ];
 
+/**
+ * Shorthand a person types instead of a URL, e.g. `nh/693549`.
+ *
+ * These are not URLs, so extractUrls never sees them; each one expands to the
+ * real link, which is what the reply shows.
+ */
+const SHORTHAND = [[/\bnh\/(\d{1,9})\b/g, (match) => `https://nhentai.net/g/${match[1]}/`]];
+
+/** Every (from, href) pair worth looking at in a message. */
+function candidateRefs(text, cleanedFor) {
+  const refs = extractUrls(text).map((raw) => ({ from: raw, href: cleanedFor.get(raw) ?? raw }));
+  for (const [pattern, expand] of SHORTHAND) {
+    for (const match of text.matchAll(pattern)) {
+      refs.push({ from: match[0], href: expand(match) });
+    }
+  }
+  return refs;
+}
+
+/** True when this text contains something a card could be built from. */
+export function hasCardFor(text) {
+  if (typeof text !== 'string' || text.length === 0) return false;
+  return candidateRefs(text, new Map()).some(({ href }) => locateCard(href) !== null);
+}
+
 /** The card site that owns one href, or null. */
 function locateCard(href) {
   let url;
@@ -96,8 +121,8 @@ function locateCard(href) {
  * The cleaned URL wins: a shortener was resolved into the real target there,
  * and that target is what carries the id a card needs.
  */
-function findCard(raw, cleanedFor) {
-  for (const href of [cleanedFor.get(raw), raw]) {
+function findCard(raw, cleanedFor, explicit) {
+  for (const href of [explicit, cleanedFor.get(raw), raw]) {
     if (!href) continue;
     const hit = locateCard(href);
     if (hit) return hit;
@@ -125,10 +150,10 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch } = {})
   let bytesLeft = MAX_ATTACH_BYTES;
   let embedsLeft = MAX_EMBEDS;
 
-  for (const raw of extractUrls(text)) {
+  for (const { from: raw, href } of candidateRefs(text, cleanedFor)) {
     if (cards.length >= MAX_CARDS) break;
 
-    const hit = findCard(raw, cleanedFor);
+    const hit = findCard(raw, cleanedFor, href);
     if (!hit) continue;
     const { url, site, match } = hit;
 

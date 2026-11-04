@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cleanMessage, cleanUrl, extractUrls, ruleFor } from '../src/clean.js';
+import { cleanMessage, cleanUrl, extractUrls, handlesAny, ruleFor } from '../src/clean.js';
 
 /** Minimal fetch stand-in: returns a 302 when a route matches, else a 200. */
 function stubFetch(routes = {}) {
@@ -88,6 +88,14 @@ test('YouTube paths that are not watch links keep their parameters', async () =>
     await cleanUrl('https://youtu.be/O_tWg-56evA?si=abc', { fetchImpl }),
     'https://youtu.be/O_tWg-56evA',
   );
+});
+
+test('handlesAny is true only for a link a rule owns', () => {
+  assert.equal(handlesAny('see https://youtu.be/abc?si=1'), true);
+  assert.equal(handlesAny('https://vm.tiktok.com/ZMabc'), true);
+  assert.equal(handlesAny('https://example.com/a?utm_source=x'), false);
+  assert.equal(handlesAny('no links at all'), false);
+  assert.equal(handlesAny(''), false);
 });
 
 test('ruleFor matches subdomains but not lookalike hosts', () => {

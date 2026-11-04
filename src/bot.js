@@ -6,8 +6,8 @@ import {
   Partials,
   PermissionFlagsBits,
 } from 'discord.js';
-import { cleanMessage } from './clean.js';
-import { buildCards } from './cards/index.js';
+import { cleanMessage, handlesAny } from './clean.js';
+import { buildCards, hasCardFor } from './cards/index.js';
 import { sendReply } from './reply.js';
 
 // Shown on the incoming message while the bot works on it, removed afterwards.
@@ -111,6 +111,10 @@ export async function handleMessage(message) {
   const isDM = message.channel.type === ChannelType.DM;
   // Ignore group DMs and anything else that is neither a DM nor a guild channel.
   if (!isDM && !message.guild) return;
+
+  // Do not react to a message there is nothing to do with. The check is two
+  // regex passes, so it is cheaper than the ack reaction it avoids.
+  if (!handlesAny(message.content) && !hasCardFor(message.content)) return;
 
   // Acknowledge on receipt so it is obvious the message landed, and drop the
   // reaction once the reply is out (or once we know there is nothing to do).

@@ -53,6 +53,8 @@ https://www.threads.com/@phodhipo/post/DfPOscPD6UR
 Behaviour:
 
 - **DMs and server channels.** In a DM it just replies. In a server channel it also removes the preview card from your message, if it has been given `Manage Messages`.
+- **The 👀 reaction only appears on messages it can act on.** A link no rule owns, or a message with no link, gets no reaction and no reply — the check is a regex pass, so nothing is fetched to find out.
+- **`nh/<id>` stands in for an nhentai link.** Send `nh/693549` and the bot replies with the real gallery link plus the card.
 - **Silent unless it changed something.** Links it does not handle, links with nothing to strip, and failed lookups all get no reply. A link that gets a card is an exception: it is answered even when it had nothing to strip, because the card itself is the reply.
 - **Never edits or deletes text.** The only write to another message is Discord's embed-suppression flag in a server channel; the content is never touched.
 - One reply per message, up to 5 links, one per line, and a card for each carded link in the message.
@@ -76,7 +78,7 @@ Note that server mode means the bot reads message content in every channel it ca
 | YouTube | on `watch` links keeps only `v`, so playlist and radio parameters go; short links lose `si`, `feature` | no, the native player is better |
 | Facebook | `fb.watch`, `/share/…`, strips `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url` | **yes** — author, text and media from the public embed iframe |
 | Pixiv | nothing to strip | **yes** — the artwork pages, re-uploaded |
-| nhentai | nothing to strip | **yes** — title, author, and the cover attached behind Discord's spoiler flag |
+| nhentai | nothing to strip; `nh/<id>` shorthand works as input | **yes** — title, author, and the cover attached behind Discord's spoiler flag |
 | Misskey | nothing to strip | no, Discord's own preview is complete |
 
 Common trackers (`utm_*`, `fbclid`, `gclid`, `twclid`, `yclid`, `mibextid`, `_ga`, `_gl`) are stripped everywhere.

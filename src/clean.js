@@ -43,6 +43,17 @@ export function extractUrls(text) {
     .filter(Boolean);
 }
 
+/** True when this text contains a link the cleaner would handle. */
+export function handlesAny(text) {
+  return extractUrls(text).some((raw) => {
+    try {
+      return ruleFor(new URL(raw)) !== null;
+    } catch {
+      return false;
+    }
+  });
+}
+
 /** Find the rule that owns this URL, if any. */
 export function ruleFor(url) {
   const host = url.hostname.toLowerCase();
