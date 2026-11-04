@@ -20,7 +20,6 @@ import {
   INSTAGRAM_PINK,
   metaContent,
   toField,
-  videoUrl,
 } from './shared.js';
 
 // The two pages describe a post differently, so both shapes are parsed.
@@ -42,13 +41,15 @@ export async function buildInstagramCard({ href }, options) {
   const video = isVideo(url.pathname);
 
 
-  // instagram.com carries the author, caption and counts. The fixer page is
-  // only needed for a carousel's image list.
-  const [page, fixerPage] = await Promise.all([
+  // Two Instagram pages, both first party: the post page carries the author,
+  // caption and counts as OpenGraph tags, and `/embed/captioned/` carries the
+  // media — `video_url` for a reel, one `display_url` per carousel image.
+  const shortcode = url.pathname.split('/').filter(Boolean).pop();
+  const [page, embedPage] = await Promise.all([
     getHtml(href, options),
-    video ? null : getHtml(`https://vxinstagram.com${url.pathname}`, options),
+    getHtml(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, options),
   ]);
-  const source = page?.html ?? fixerPage?.html;
+  const source = page?.html ?? embedPage?.html;
   if (!source) return null;
 
   const title = metaContent(source, 'og:title');
@@ -89,8 +90,10 @@ export async function buildInstagramCard({ href }, options) {
     ];
   }
 
-  // Carousel first, from stable fixer URLs; otherwise the post's single image.
-  const images = fixerPage ? carouselImages(fixerPage.html, url.pathname) : [];
+  // Every carousel image, in order, from the embed payload; otherwise the
+  // single image the page exposes.
+  const media = embedMedia(embedPage?.html ?? '');
+  const images = media.images.slice(0, MAX_IMAGES);
   if (images.length === 0) {
     const single = metaContent(source, 'og:image');
     if (single) images.push(single);
@@ -115,10 +118,7 @@ export async function buildInstagramCard({ href }, options) {
   // own line. Discord will not render a player here — an embed in the message
   // suppresses link unfurls — so the label is a click-through to the file, not
   // an inline player. That trade is deliberate: one message, card included.
-  if (video) {
-    const direct = await (options.videoUrl ?? videoUrl)(href, options);
-    if (direct) return { embeds, files: [], extraLines: [`[|>](${direct})`] };
-  }
+  if (media.video) return { embeds, files: [], extraLines: [`[|>](${media.video})`] };
 
   return { embeds, files: [] };
 }
@@ -129,26 +129,21 @@ function isVideo(pathname) {
 }
 
 /**
- * Every image of the post, in order, as stable fixer URLs.
+ * Media references from Instagram's own embed payload.
  *
- * The fixer page lists one `<img>` per carousel entry, so the distinct image
- * URLs in document order give the indices that `/offload/<id>/<n>` expects.
- * Signed Instagram CDN URLs are avoided on purpose: they expire. yt-dlp knows
- * how many entries there are but refuses to resolve images, so it cannot
- * replace this.
+ * `/p/<shortcode>/embed/captioned/` embeds a JSON blob with `video_url` for a
+ * video post and one `display_url` per carousel image. The blob is a JS string
+ * literal nested inside a JSON string, so quotes and slashes arrive escaped —
+ * sometimes twice. Dropping every backslash is safe here (a URL needs none) and
+ * collapses all of that to plain text. These are signed CDN URLs: fine, because
+ * Discord proxies them as it renders the message.
  */
-function carouselImages(html, pathname) {
-  const id = pathname.split('/').filter(Boolean).pop();
-  if (!id) return [];
+function embedMedia(html) {
+  const plain = html.replace(/\\/g, '');
+  const video = /"video_url":"([^"]+)"/.exec(plain)?.[1] ?? null;
+  const images = [...plain.matchAll(/"display_url":"([^"]+)"/g)].map((match) => match[1]);
 
-  const seen = new Set();
-  for (const match of html.matchAll(/https:\/\/scontent[^"\\ ]+/g)) {
-    seen.add(match[0]);
-    if (seen.size >= MAX_IMAGES) break;
-  }
-  if (seen.size === 0) return [];
-
-  return [...seen.keys()].map((_, index) => `https://vxinstagram.com/offload/${id}/${index}`);
+  return { video, images: [...new Set(images)] };
 }
 
 /**
