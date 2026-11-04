@@ -197,7 +197,15 @@ export async function downloadVideo(href, options = {}, format = {}) {
       href,
     ], { timeout: 30_000 });
 
-    const buffer = await readFile(file);
+    let buffer;
+    try {
+      buffer = await readFile(file);
+    } catch {
+      // yt-dlp exits successfully when it skips a file bigger than
+      // --max-filesize, leaving nothing behind.
+      console.log(`[card] video skipped for ${new URL(href).host}: over the attachment budget`);
+      return null;
+    }
     if (buffer.length === 0 || buffer.length > cap) return null;
     return [{ attachment: buffer, name: 'video.mp4' }];
   } catch (error) {
@@ -205,31 +213,5 @@ export async function downloadVideo(href, options = {}, format = {}) {
     return null;
   } finally {
     await rm(dir, { recursive: true, force: true });
-  }
-}
-
-/**
- * The direct media URL for a page, via yt-dlp, or null.
- *
- * Preferred over downloading: Discord unfurls a bare mp4 into its own player
- * and proxies the file, so the bot never moves the bytes and the 8 MB
- * attachment cap does not apply. yt-dlp resolves Instagram's progressive
- * `best` format with audio included.
- */
-export async function videoUrl(href) {
-  try {
-    const { stdout } = await run('yt-dlp', [
-      '--no-warnings',
-      '--no-playlist',
-      '--skip-download',
-      '-f', 'best',
-      '--get-url',
-      href,
-    ], { timeout: 25_000 });
-    const url = stdout.trim().split('\n')[0];
-    return url.startsWith('https://') ? url : null;
-  } catch (error) {
-    console.log(`[card] video url via yt-dlp failed for ${new URL(href).host}: ${(error.shortMessage ?? error.message).split('\n')[0]}`);
-    return null;
   }
 }

@@ -3,9 +3,9 @@
 // Photos and carousels get a card from the page's OpenGraph tags — Discord
 // renders nothing for the link on its own (verified: a raw post produced zero
 // embeds). Carousels need one more source: Instagram's page exposes a single
-// `og:image`, while vxinstagram's page lists every image in order and its
-// `/offload/<id>/<n>` paths serve them as stable URLs Discord will proxy. That
-// fixer page is the only remaining use of a third party here.
+// `og:image`, and yt-dlp knows how many entries a carousel has but will not
+// resolve images, so vxinstagram's page is read for the image list — the one
+// remaining use of a third party in this file.
 //
 // Video posts get no card at all: Discord only plays a video it unfurls itself,
 // an embed in the same message suppresses that unfurl, and an MP4 handed to an
@@ -18,9 +18,9 @@ import {
   authorBlock,
   getHtml,
   INSTAGRAM_PINK,
+  downloadVideo,
   metaContent,
   toField,
-  videoUrl,
 } from './shared.js';
 
 // The two pages describe a post differently, so both shapes are parsed.
@@ -41,15 +41,8 @@ export async function buildInstagramCard({ href }, options) {
   const url = new URL(href);
   const video = isVideo(url.pathname);
 
-  if (video) {
-    const direct = await (options.videoUrl ?? videoUrl)(href, options);
-    // No embed, or Discord never unfurls the player.
-    if (direct) return { embeds: [], files: [], extraLines: [`[▶ reel](${direct})`] };
-    // No direct URL: fall through and show the poster frame instead.
-  }
-
   // instagram.com carries the author, caption and counts. The fixer page is
-  // only needed for a carousel's image list, so a video fallback skips it.
+  // only needed for a carousel's image list, so a video skips it.
   const [page, fixerPage] = await Promise.all([
     getHtml(href, options),
     video ? null : getHtml(`https://vxinstagram.com${url.pathname}`, options),
@@ -104,6 +97,18 @@ export async function buildInstagramCard({ href }, options) {
   if (images.length > 0) {
     embed.image = { url: images[0] };
     if (images.length > 1) embed.footer = { text: `Instagram · 1/${images.length}` };
+  }
+
+  // A video post keeps its card — author, caption, counts — and carries the
+  // file as an attachment, because Discord suppresses a link unfurl as soon as
+  // the message holds an embed. Too large or unresolvable, and the poster frame
+  // stays instead.
+  if (video) {
+    const files = await (options.downloadVideo ?? downloadVideo)(href, options);
+    if (files) {
+      delete embed.image;
+      return { embeds: [embed], files };
+    }
   }
 
   const embeds = [embed, ...images.slice(1).map((image, index) => ({
