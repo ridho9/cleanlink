@@ -126,8 +126,103 @@ If the reply appears in Discord, you are done. That terminal is now the bot.
 | No reply from a site you expect | That site is not in the rule table — Reddit, Spotify and Google were deliberately removed | See [README](README.md) → Supported sites |
 | Reply is a bare site homepage | A shortener that no longer accepts the code | Send a fresh share link; the guard should return silence instead |
 
-## Restarting and keeping it alive
+## Running it as a service
 
-Manual is fine: `mise run start` whenever you want it up.
+Manual `mise run start` is fine while you are at the keyboard. For a server, run it under systemd: it starts at boot, restarts on crash, and every line goes to the journal.
 
-To have it start at login and restart on crash, a `launchd` agent in `~/Library/LaunchAgents/` is the macOS-native answer — ask and it can be generated for this machine. Note that it will then run whenever the Mac is on; nothing else in this setup changes.
+**One instance per token.** Discord accepts a second login and silently invalidates the first, so stop the copy on your laptop before starting one elsewhere.
+
+### Deploy
+
+From the machine that holds the repo:
+
+```sh
+rsync -az --delete --exclude node_modules --exclude .env ./ bot-host:Project/cleanlink/
+scp .env bot-host:Project/cleanlink/.env
+ssh bot-host 'chmod 600 ~/Project/cleanlink/.env && cd ~/Project/cleanlink && pnpm install --frozen-lockfile'
+```
+
+Run `node --test` on the host once — it is offline and catches a Node version mismatch before the bot does.
+
+### Unit (`~/.config/systemd/user/cleanlink.service`)
+
+```ini
+[Unit]
+Description=cleanlink Discord bot
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Project/cleanlink
+ExecStart=/etc/profiles/per-user/<user>/bin/node --env-file-if-exists=.env src/bot.js
+Restart=always
+RestartSec=5
+SyslogIdentifier=cleanlink
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target
+```
+
+`node` reads `.env` itself, so the token is parsed in exactly one place and never appears in a unit file or in `systemctl show`. The file is `600`.
+
+### Enable
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now cleanlink
+loginctl enable-linger "$USER"     # start at boot without logging in; already on for the bot user
+```
+
+`enable` gives boot start, `Restart=always` gives crash recovery, and `StartLimitIntervalSec=0` means it never gives up retrying.
+
+### Logs
+
+```sh
+journalctl --user -u cleanlink -f            # live
+journalctl --user -u cleanlink -n 200        # recent
+journalctl --user -u cleanlink -p warning    # warnings and errors only
+journalctl --user -u cleanlink --since today
+journalctl --user -u cleanlink -o cat        # message text without metadata
+```
+
+The journal on this host is persistent (`/var/log/journal` exists), so logs survive a reboot. Every card miss is logged with its reason (`[card] facebook … post refuses embedding`, `[resolve] … failed twice`, `[clean] … failed`), which is what makes "the bot ignored my link" diagnosable without guessing.
+
+### Update
+
+```sh
+# from your machine
+rsync -az --delete --exclude node_modules --exclude .env ./ bot-host:Project/cleanlink/
+ssh bot-host 'cd ~/Project/cleanlink && pnpm install --frozen-lockfile && systemctl --user restart cleanlink'
+```
+
+`rsync --delete` would remove `.env` too, hence the exclude; if you ever lose it, copy it again and `chmod 600`.
+
+### Declarative alternative
+
+If you would rather own the unit in `/etc/nixos/configuration.nix` than in `~/.config/systemd/user`, move it to a system service. That needs root and a `nixos-rebuild switch`, and `node` must come from a root-visible path:
+
+```nix
+systemd.services.cleanlink = {
+  description = "cleanlink Discord bot";
+  wantedBy = [ "multi-user.target" ];
+  after = [ "network-online.target" ];
+  wants = [ "network-online.target" ];
+  serviceConfig = {
+    Type = "simple";
+    User = "<user>";
+    WorkingDirectory = "/home/<user>/Project/cleanlink";
+    ExecStart = "${pkgs.nodejs_24}/bin/node --env-file-if-exists=.env src/bot.js";
+    Restart = "always";
+    RestartSec = 5;
+    SyslogIdentifier = "cleanlink";
+    NoNewPrivileges = true;
+    PrivateTmp = true;
+  };
+};
+```
+
+Then `journalctl -u cleanlink` without `--user`. Do not run both units at once.
