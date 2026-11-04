@@ -96,7 +96,7 @@ Why the other three sites get no card: Instagram and Misskey already answer Disc
 
 Every carded link appears in the message wrapped in angle brackets, `<https://…>`, so Discord does not unfurl it a second time next to the card. A card is decoration and degrades: a rejected attachment falls back to the embed alone, and a missing **Embed Links** permission falls back to the plain clean link.
 
-Adding a card is a table entry and a builder in [src/cards.js](src/cards.js).
+Adding a card is a table entry in [src/cards/index.js](src/cards/index.js) plus a builder module beside it.
 
 ## What has actually been verified
 
