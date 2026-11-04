@@ -126,6 +126,39 @@ If the reply appears in Discord, you are done. That terminal is now the bot.
 | No reply from a site you expect | That site is not in the rule table — Reddit, Spotify and Google were deliberately removed | See [README](README.md) → Supported sites |
 | Reply is a bare site homepage | A shortener that no longer accepts the code | Send a fresh share link; the guard should return silence instead |
 
+## Two applications: live and dev
+
+Once the bot is in servers you do not control, keep a second application for development. Same code, different token, different bot user — a broken experiment then cannot take the live bot down or steal its session.
+
+| | Live | Dev |
+|---|---|---|
+| Application | the one already running | a new one in the same Developer Portal account |
+| Token file | `.env` — only on the host | `.env.dev` — only on your machine |
+| Run | `mise run start` (host service) | `mise run dev` |
+| Invite | the link you hand out | your own test server |
+
+Create the dev application the same way as the live one: **Bot → Message Content Intent: on**, then invite it with the same permission set.
+
+### Invite link for the dev app
+
+Replace `<id>` with the dev application's id (the **Application ID** on the General Information page):
+
+```
+https://discord.com/oauth2/authorize?client_id=<id>&permissions=126016&scope=bot
+```
+
+`126016` is the same set the live bot uses: View Channel, Send Messages, Add Reactions, Manage Messages, Embed Links, Attach Files, Read Message History. Drop `8192` (`Manage Messages`) if you want a dev bot that never touches other people's messages.
+
+### Files
+
+```sh
+cp .env.dev.example .env.dev     # paste the dev token
+chmod 600 .env.dev
+mise run dev
+```
+
+`.env` and `.env.dev` are both gitignored. `pnpm start` reads `.env`, `pnpm start:dev` reads `.env.dev`; nothing else differs.
+
 ## Running it as a service
 
 Manual `mise run start` is fine while you are at the keyboard. For a server, run it under systemd: it starts at boot, restarts on crash, and every line goes to the journal.

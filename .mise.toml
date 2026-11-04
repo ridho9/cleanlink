@@ -9,3 +9,7 @@ run = "pnpm test"
 [tasks.start]
 description = "Run the bot"
 run = "pnpm start"
+
+[tasks.dev]
+description = "Run the bot against the development application (.env.dev)"
+run = "pnpm start:dev"
