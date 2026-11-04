@@ -18,11 +18,13 @@ import { extractUrls } from './clean.js';
 const BROWSER_UA = 'Mozilla/5.0';
 const TIMEOUT_MS = 6000;
 
-// One card per message: a second card costs an API call and gains little,
-// while the remaining links still get cleaned as usual.
-const MAX_CARDS = 1;
-const MAX_IMAGES = 5; // Pixiv pages, matching SaucyBot's cap
-const MAX_ATTACH_BYTES = 8_000_000; // Discord's default per-message limit
+// A message can carry several cards, but each one spends the same per-message
+// budget that Discord enforces, so the limits below are shared, not per card.
+const MAX_CARDS = 5; // mirrors the cleaner's 5-link cap
+const MAX_EMBEDS = 10; // Discord's hard limit per message
+const MAX_FILES = 10; // Discord's hard limit per message
+const MAX_IMAGES = 5; // pages per Pixiv work, matching SaucyBot's cap
+const MAX_ATTACH_BYTES = 8_000_000; // below Discord's default 10 MB limit
 
 const X_BLUE = 0x1d9bf0;
 const PIXIV_BLUE = 0x0096fa;
@@ -195,10 +197,16 @@ async function buildPixivCard({ match, href }, options) {
     ...options,
     headers,
   });
+  const budget = options.budget ?? {};
+  const filesLeft = Math.min(MAX_IMAGES, budget.files ?? MAX_IMAGES);
+  const byteCap = Math.min(MAX_ATTACH_BYTES, budget.bytes ?? MAX_ATTACH_BYTES);
+  // An earlier card in the same message may have spent the whole file budget.
+  if (filesLeft <= 0) return null;
+
   const urls = (pages?.body ?? [])
     .map((page) => page?.urls?.regular)
     .filter(Boolean)
-    .slice(0, MAX_IMAGES);
+    .slice(0, filesLeft);
 
   // The whole point of this card is the image, and it only exists if we host
   // it: Discord cannot fetch i.pximg.net. No files means no card.
@@ -208,7 +216,7 @@ async function buildPixivCard({ match, href }, options) {
   for (const [index, url] of urls.entries()) {
     const buffer = await getBytes(url, { ...options, headers });
     if (!buffer) continue;
-    if (bytes + buffer.length > MAX_ATTACH_BYTES) break;
+    if (bytes + buffer.length > byteCap) break;
     bytes += buffer.length;
     const name = `${restricted ? 'SPOILER_' : ''}p${index}.${extensionOf(url)}`;
     files.push({ attachment: buffer, name });
@@ -258,12 +266,18 @@ async function buildPixivCard({ match, href }, options) {
  * @param {object} [options]
  * @param {Array<{from: string, to: string}>} [options.cleaned] results from
  *   cleanMessage, so a card can show the cleaned URL rather than the tracked one
- * @returns {Promise<Array<{from: string, url: string, embed: object, files: Array}>>}
+ * @returns {Promise<Array<{from: string, url: string, embeds: Array, files: Array}>>}
  */
 export async function buildCards(text, { cleaned = [], fetchImpl = fetch, limit = MAX_CARDS } = {}) {
   const cleanedFor = new Map(cleaned.map(({ from, to }) => [from, to]));
   const seen = new Set();
   const cards = [];
+
+  // Shared across every card in this message, because Discord counts them per
+  // message and a rejected payload would cost the whole reply.
+  let filesLeft = MAX_FILES;
+  let bytesLeft = MAX_ATTACH_BYTES;
+  let embedsLeft = MAX_EMBEDS;
 
   for (const raw of extractUrls(text)) {
     if (cards.length >= limit) break;
@@ -288,9 +302,20 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch, limit 
     seen.add(key);
 
     try {
-      const card = await site.build({ match, href: cleanedFor.get(raw) ?? url.href }, { fetchImpl });
+      const card = await site.build(
+        { match, href: cleanedFor.get(raw) ?? url.href },
+        { fetchImpl, budget: { files: filesLeft, bytes: bytesLeft } },
+      );
       if (!card) continue;
+
+      // An image-only embed still counts towards Discord's ten, so a card that
+      // does not fit is skipped whole rather than silently truncated.
+      if (card.embeds.length > embedsLeft) continue;
+
       cards.push({ from: raw, url: cleanedFor.get(raw) ?? url.href, ...card });
+      embedsLeft -= card.embeds.length;
+      filesLeft -= card.files.length;
+      bytesLeft -= card.files.reduce((total, file) => total + file.attachment.length, 0);
     } catch {
       // A card is decoration. Any failure leaves the plain cleaned reply.
     }

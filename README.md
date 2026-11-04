@@ -55,7 +55,7 @@ Behaviour:
 - **DMs and server channels.** In a DM it just replies. In a server channel it also removes the preview card from your message, if it has been given `Manage Messages`.
 - **Silent unless it changed something.** Links it does not handle, links with nothing to strip, and failed lookups all get no reply. A link that gets a card is an exception: it is answered even when it had nothing to strip, because the card itself is the reply.
 - **Never edits or deletes text.** The only write to another message is Discord's embed-suppression flag in a server channel; the content is never touched.
-- One reply per message, up to 5 links, one per line, plus at most one card.
+- One reply per message, up to 5 links, one per line, and a card for each carded link in the message.
 
 Server mode needs the bot's role to have **Manage Messages** (Server Settings → Roles, or a per-channel override). Without it the bot still replies, it just cannot clear the original card:
 
@@ -91,7 +91,7 @@ For X and Pixiv the bot posts its own card, because Discord's own preview fails 
 
 Why the other six sites get no card: Threads, Instagram and Misskey already answer Discord's crawler with complete OpenGraph tags, including an image that fetches, so a card we build would say less. TikTok's oEmbed returns an iframe only. YouTube has a native player. Facebook's oEmbed needs an app token. Evidence for each is in [docs/saucybot-url-inventory.md](docs/saucybot-url-inventory.md).
 
-A carded link appears in the message wrapped in angle brackets, `<https://…>`, so Discord does not unfurl it a second time next to the card. A card is decoration and degrades: a rejected attachment falls back to the embed alone, and a missing **Embed Links** permission falls back to the plain clean link.
+Every carded link appears in the message wrapped in angle brackets, `<https://…>`, so Discord does not unfurl it a second time next to the card. A card is decoration and degrades: a rejected attachment falls back to the embed alone, and a missing **Embed Links** permission falls back to the plain clean link.
 
 Adding a card is a table entry and a builder in [src/cards.js](src/cards.js).
 
@@ -151,4 +151,4 @@ The cleaning logic is plain functions with `fetch` injected, so the whole suite 
 - **The bot cannot remove an embed from your message in a DM.** Suppressing embeds on a message you did not author needs `Manage Messages`, and DM channels have no permissions, so Discord answers `404` (verified). Wrap the link in angle brackets — `<https://…>` — and Discord shows no preview on your message; the bot still parses it and its own reply carries the preview.
 - Nothing is stored: no database, no cache, no message logging beyond the one `console.log` per cleaned link.
 - Limits: 4 s per hop, 3 hops, 5 links per message. A failed lookup leaves the link untouched rather than guessing.
-- Card limits: one card per message, 6 s per request, 5 Pixiv pages, 8 MB of attachments in total. A card that cannot be built leaves the plain cleaned reply, never an error.
+- Card limits, shared by every card in the message: 10 embeds, 10 files, 5 Pixiv pages per work, 8 MB of attachments, 6 s per request. A card that does not fit the budget is skipped whole, and a card that cannot be built leaves the plain cleaned reply — never an error.
