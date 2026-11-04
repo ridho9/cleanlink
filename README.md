@@ -76,7 +76,7 @@ Note that server mode means the bot reads message content in every channel it ca
 | YouTube | on `watch` links keeps only `v`, so playlist and radio parameters go; short links lose `si`, `feature` | no, the native player is better |
 | Facebook | `fb.watch`, `/share/…`, strips `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url` | **yes** — author, text and media from the public embed iframe |
 | Pixiv | nothing to strip | **yes** — the artwork pages, re-uploaded |
-| nhentai | nothing to strip | **yes, age-restricted channels only** — title, cover, tags, counts |
+| nhentai | nothing to strip | **yes** — title, author, and the cover attached behind Discord's spoiler flag |
 | Misskey | nothing to strip | no, Discord's own preview is complete |
 
 Common trackers (`utm_*`, `fbclid`, `gclid`, `twclid`, `yclid`, `mibextid`, `_ga`, `_gl`) are stripped everywhere.
@@ -89,15 +89,9 @@ For X, Pixiv, Threads, Facebook, TikTok and nhentai the bot posts its own card, 
 
 - **X** — Discord shows a truncated title. The bot reads `api.fxtwitter.com` and builds a card with the full text, the avatar, the reply/retweet/like/view counts, a quoted tweet as a blockquote, and one full-size embed per photo, or the video's poster frame. It never rewrites the host to a fixer domain.
 - **Pixiv** — `i.pximg.net` answers `403` unless the request carries a pixiv `Referer`, and Discord never sends one, so the native card has no image. The bot downloads up to 5 pages with that header and re-uploads them as attachments, one embed per page. Restricted works get `SPOILER_` file names.
-- **nhentai** — the gallery page sits behind a Cloudflare challenge that answers `403 Just a moment…` to every user agent, so Discord has nothing to unfurl. The JSON API is not challenged: `api/v2/galleries/<id>` returns the title, cover, page count, favourites, upload date and every tag with its type. The cover on `t.nhentai.net` fetches `200 image/webp` for Discordbot UA. **Adult content, three modes** chosen by `NSFW_CARDS`:
+- **nhentai** — the gallery page sits behind a Cloudflare challenge that answers `403 Just a moment…` to every user agent, so Discord has nothing to unfurl. The JSON API is not challenged: `api/v2/galleries/<id>` returns the title, cover, page count, favourites, upload date and every tag with its type. The cover on `t.nhentai.net` fetches `200 image/webp` for Discordbot UA. **Adult content, one presentation:** the card shows the title, the author (artists and groups) and the cover as `SPOILER_cover.webp`, so the image is hidden until clicked. There is no channel gate and no `full` variant — the link is carded wherever it is posted. Discord's own unfurl of the same URL carries a title and a generic "Read and download…" line and no image, so the cover is the part only this card adds.
 
-| `NSFW_CARDS` | Age-restricted channel | Any other channel |
-|---|---|---|
-| `channel` (default) | full card: cover image and explicit tags | no reply |
-| `spoiler` | full card | reduced card: title, author, Pages/Favorites/Language, and the cover attached as `SPOILER_cover.webp` |
-| `all` | full card | full card |
-
-Discord has **no spoiler for embed images** — only an attachment can be hidden until clicked, so the spoiler variant moves the cover out of the embed into a file and drops the explicit tag list. A spoiler is redaction, not permission: `spoiler` and `all` both put adult content outside an age-restricted channel, which Discord's rules do not allow. `channel` is the default for that reason.
+Two limits worth knowing. **Discord has no spoiler for embed images** — only an attachment honours the `SPOILER_` prefix, which is why the cover leaves the embed. And a spoiler is redaction, not permission: the image is still adult content outside an age-restricted channel. That is a deliberate choice here, not an oversight.
 - **TikTok** — its own oEmbed returns an iframe and no metadata, and the page's `og:title` is the literal string `TikTok · TikTok`. The bot reads `tikwm.com/api`, a public keyless API, for the real caption, author, avatar, cover and counts. Video posts only: photo posts keep the plain clean link.
 - **Facebook** — the post page is a login wall and its `og:title` is a generic string, but the public embed iframe at `plugins/post.php?href=<post>&show_text=true` is not: it returns the author, the post text and the media. No token, no browser. Carded forms: `/<page>/posts/<id|pfbid>`, `/reel/<id>`, `/<page>/videos/<id>`, `/watch/?v=<id>` and `permalink.php?story_fbid=`. Posts that forbid embedding, and posts that need a login to view, answer "no longer available" and then the bot sends the plain clean link.
 - **Threads** — the page has the post text in `og:description`, **but only for a browser user agent**. Crawled as `Discordbot` it returns a 107 KB shell with no description, which is why Discord's own card shows an author and no words. The bot fetches the page once as `Mozilla/5.0`. A text-only post's `og:image` is the author's avatar, so that goes in the corner rather than across the card.

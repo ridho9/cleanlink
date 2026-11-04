@@ -13,28 +13,6 @@ import { sendReply } from './reply.js';
 // Shown on the incoming message while the bot works on it, removed afterwards.
 const ACK_EMOJI = '👀';
 
-/**
- * How adult links are handled, from NSFW_CARDS:
- *
- *   channel (default) — a full card only where Discord marks the channel as
- *                       age-restricted; everywhere else the link is left alone.
- *   spoiler           — a reduced card everywhere: title, author, counts, and
- *                       the cover attached with Discord's `SPOILER_` prefix so
- *                       the image is hidden until clicked. Explicit tags are
- *                       dropped. A spoiler is redaction, not permission: the
- *                       image is still adult content in a channel that is not
- *                       age-restricted.
- *   all               — a full card everywhere, DMs included.
- */
-function nsfwPolicy(channel) {
-  const mode = (process.env.NSFW_CARDS ?? 'channel').toLowerCase();
-  const ageRestricted = channel?.nsfw === true;
-
-  if (mode === 'all') return { nsfw: true, spoiler: false };
-  if (mode === 'spoiler') return { nsfw: ageRestricted, spoiler: !ageRestricted };
-  return { nsfw: ageRestricted, spoiler: false };
-}
-
 const token = process.env.DISCORD_TOKEN;
 if (!token) {
   console.error('DISCORD_TOKEN is not set. Paste your bot token into .env (DISCORD_TOKEN=...).');
@@ -148,10 +126,7 @@ export async function handleMessage(message) {
     const cleaned = await cleanMessage(message.content);
     // Cards are built from the cleaned URL, so a carded link shows its clean
     // form even though it is the one being replaced by an embed.
-    const cards = await buildCards(message.content, {
-      cleaned,
-      ...nsfwPolicy(message.channel),
-    });
+    const cards = await buildCards(message.content, { cleaned });
 
     if (cleaned.length === 0 && cards.length === 0) return;
 
