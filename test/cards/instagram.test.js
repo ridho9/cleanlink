@@ -79,15 +79,15 @@ test('a reel gets no card, because an embed would suppress Discord\'s player', a
 
   assert.ok(card);
   assert.deepEqual(card.embeds, [], 'no embed, or Discord drops the video unfurl');
-  assert.deepEqual(card.extraLines, ['https://vxinstagram.com/reel/DcuMLVagTPh/']);
+  assert.deepEqual(card.extraLines, ['[▶ reel](https://vxinstagram.com/reel/DcuMLVagTPh/)']);
   assert.equal(calls.length, 0, 'and no page fetch is needed for a video');
 });
 
-test('every video path shape gets the fixer link', async () => {
+test('every video path shape gets a masked fixer link', async () => {
   for (const [url, fixer] of [
-    ['https://www.instagram.com/reel/DcuMLVagTPh/', 'https://vxinstagram.com/reel/DcuMLVagTPh/'],
-    ['https://www.instagram.com/reels/DcuMLVagTPh/', 'https://vxinstagram.com/reels/DcuMLVagTPh/'],
-    ['https://www.instagram.com/tv/DcuMLVagTPh/', 'https://vxinstagram.com/tv/DcuMLVagTPh/'],
+    ['https://www.instagram.com/reel/DcuMLVagTPh/', '[▶ reel](https://vxinstagram.com/reel/DcuMLVagTPh/)'],
+    ['https://www.instagram.com/reels/DcuMLVagTPh/', '[▶ reel](https://vxinstagram.com/reels/DcuMLVagTPh/)'],
+    ['https://www.instagram.com/tv/DcuMLVagTPh/', '[▶ reel](https://vxinstagram.com/tv/DcuMLVagTPh/)'],
   ]) {
     const { impl } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
     const [card] = await buildCards(url, { fetchImpl: impl });

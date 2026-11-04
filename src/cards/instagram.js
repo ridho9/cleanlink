@@ -5,8 +5,9 @@
 //
 // Video posts get no card at all: Discord only plays a video it unfurls itself,
 // an embed in the same message suppresses that unfurl, and an MP4 handed to an
-// embed's `video` field is dropped. So a reel is the clean link plus a bare
-// `vxinstagram.com` link, and Discord draws the player.
+// embed's `video` field is dropped. So a reel is the clean link plus a masked
+// `[▶ reel](vxinstagram.com/…)` link — Discord unfurls masked links, so the
+// player appears while the fixer host stays out of the visible text.
 //
 // Carousels are why the photo path reads the fixer page rather than Instagram's:
 // Instagram's own page carries a single `og:image`, while the fixer page lists
@@ -37,8 +38,12 @@ const MAX_IMAGES = 10;
 
 export async function buildInstagramCard({ href }, options) {
   // A reel or a TV post is a video. No card, or Discord never unfurls it.
+  //
+  // The fixer link goes in as a masked link: Discord unfurls it all the same
+  // (verified — a video embed appears), but the message shows only the label,
+  // so the third-party host stays out of the text.
   const video = fixerLink(href);
-  if (video) return { embeds: [], files: [], extraLines: [video] };
+  if (video) return { embeds: [], files: [], extraLines: [`[▶ reel](${video})`] };
 
   const url = new URL(href);
   // Two pages, for two different reasons: instagram.com carries the counts and
