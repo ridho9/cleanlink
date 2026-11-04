@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import { buildCards, escapeMarkdown, toField } from '../src/cards.js';
+import { buildCards, decodeEntities, escapeMarkdown, toField } from '../src/cards.js';
 
 const fixture = (name) =>
   JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8'));
@@ -13,6 +13,7 @@ const X_TWO_PHOTOS = fixture('x-two-photos.json');
 const PIXIV = fixture('pixiv-illust.json');
 const PIXIV_PAGES = fixture('pixiv-pages.json');
 const TIKWM = fixture('tikwm-video.json');
+const THREADS_HTML = readFileSync(new URL('./fixtures/threads-post.html', import.meta.url), 'utf8');
 
 /** A fetch stub that answers by URL prefix and records what it was asked. */
 function fakeFetch(routes) {
@@ -47,6 +48,12 @@ test('escapeMarkdown neutralises Discord markdown', () => {
   assert.equal(escapeMarkdown('1. ordered'), '1\\. ordered');
   assert.equal(escapeMarkdown('plain text'), 'plain text');
   assert.equal(escapeMarkdown(undefined), '');
+});
+
+test('decodeEntities handles numeric and named entities', () => {
+  assert.equal(decodeEntities('Yoan (&#064;phodhipo)'), 'Yoan (@phodhipo)');
+  assert.equal(decodeEntities('a &amp; b &lt;c&gt; &quot;d&quot; &#39;e&#39;'), "a & b <c> \"d\" 'e'");
+  assert.equal(decodeEntities('&#x2022; dot'), '• dot');
 });
 
 test('toField clips inside the limit and never leaves a dangling escape', () => {
@@ -260,6 +267,46 @@ test('Pixiv card is skipped when no image can be fetched', async () => {
   ]);
 
   const cards = await buildCards('https://www.pixiv.net/artworks/151616953', { fetchImpl: impl });
+  assert.deepEqual(cards, []);
+});
+
+test('Threads card asks for a browser user agent and keeps the post text', async () => {
+  const { impl, calls } = fakeFetch([['https://www.threads.com/', THREADS_HTML]]);
+  const [card] = await buildCards('https://www.threads.com/@phodhipo/post/DfPOscPD6UR', {
+    fetchImpl: impl,
+  });
+
+  assert.ok(card);
+  assert.equal(calls[0].headers['user-agent'], 'Mozilla/5.0', 'Discordbot would get no text');
+  assert.equal(card.embeds.length, 1);
+  assert.equal(card.embeds[0].author.name, 'Yoan Dipo Asani (@phodhipo)');
+  assert.ok(card.embeds[0].description.startsWith('Bukan sombong ya.'));
+  assert.ok(!card.embeds[0].description.includes('&'));
+  assert.equal(card.embeds[0].footer.text, 'Threads');
+  // A text-only post's og:image is the avatar, so it goes in the corner.
+  assert.ok(card.embeds[0].thumbnail.url.includes('scontent.cdninstagram.com'));
+  assert.equal(card.embeds[0].image, undefined);
+});
+
+test('Threads card shows post media large, not the avatar', async () => {
+  const withMedia = THREADS_HTML.replace(
+    /\/t51\.2885-19\//,
+    '/t39.92108-6/',
+  );
+  const { impl } = fakeFetch([['https://www.threads.com/', withMedia]]);
+  const [card] = await buildCards('https://www.threads.com/@phodhipo/post/DfPOscPD6UR', {
+    fetchImpl: impl,
+  });
+
+  assert.ok(card.embeds[0].image);
+  assert.equal(card.embeds[0].thumbnail, undefined);
+});
+
+test('Threads card is skipped when the page has no description', async () => {
+  const { impl } = fakeFetch([['https://www.threads.com/', '<html><head></head></html>']]);
+  const cards = await buildCards('https://www.threads.com/@phodhipo/post/DfPOscPD6UR', {
+    fetchImpl: impl,
+  });
   assert.deepEqual(cards, []);
 });
 

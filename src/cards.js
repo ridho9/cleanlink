@@ -15,9 +15,16 @@ import { extractUrls } from './clean.js';
 //   TikTok — its own oEmbed returns an iframe and no metadata, and the page's
 //            og:title is the literal string "TikTok · TikTok". tikwm.com is
 //            the fxtwitter of TikTok: real caption, author, cover and counts.
+//   Threads— the page serves a full set of OpenGraph tags INCLUDING the post
+//            text, but only to a browser user agent. Discord crawls as
+//            Discordbot, gets a 107 KB shell with no og:description, and shows
+//            a card with an author and no words. One fetch with Mozilla/5.0
+//            fixes that; no browser engine is involved.
 //
 // Adding a site is a table entry plus a builder. Keep it that way.
 
+// Meta serves Threads metadata to a browser string and an empty shell to
+// Discordbot, so the Threads builder must not borrow this for a crawler UA.
 const BROWSER_UA = 'Mozilla/5.0';
 const TIMEOUT_MS = 6000;
 
@@ -32,6 +39,7 @@ const MAX_ATTACH_BYTES = 8_000_000; // below Discord's default 10 MB limit
 const X_BLUE = 0x1d9bf0;
 const PIXIV_BLUE = 0x0096fa;
 const TIKTOK_BLACK = 0x010101;
+const THREADS_BLACK = 0x000000;
 
 /** Hosts a card is allowed to ask, kept separate from the tracker rules. */
 export const CARD_SITES = [
@@ -47,6 +55,12 @@ export const CARD_SITES = [
     hosts: ['pixiv.net'],
     match: (url) => /^\/(?:[a-z]{2}\/)?artworks\/(\d{1,12})/i.exec(url.pathname),
     build: buildPixivCard,
+  },
+  {
+    id: 'threads',
+    hosts: ['threads.com', 'threads.net'],
+    match: (url) => /^\/@([\w.]{1,64})\/post\/([A-Za-z0-9_-]{6,})/.exec(url.pathname),
+    build: buildThreadsCard,
   },
   {
     id: 'tiktok',
@@ -203,6 +217,64 @@ async function buildXCard({ match, href }, options) {
   }
 
   return { embeds, files: [] };
+}
+
+// ----------------------------------------------------------------- Threads
+
+/** Decode the handful of HTML entities Meta puts in its meta tags. */
+export function decodeEntities(text) {
+  return String(text ?? '')
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+/** Pull one meta tag out of a page. */
+function metaContent(html, property) {
+  const match = new RegExp(
+    `<meta[^>]+(?:property|name)="${property}"[^>]+content="([^"]*)"`,
+    'i',
+  ).exec(html);
+  return match ? decodeEntities(match[1]) : null;
+}
+
+async function buildThreadsCard({ href }, options) {
+  const res = await (options.fetchImpl ?? fetch)(href, {
+    headers: { 'user-agent': BROWSER_UA, accept: 'text/html' },
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (!res.ok) return null;
+  const html = await res.text();
+
+  const description = metaContent(html, 'og:description');
+  // Without the text there is nothing this card adds over Discord's own
+  // preview, which already shows the author and the image.
+  if (!description) return null;
+
+  const title = metaContent(html, 'og:title') ?? 'Threads';
+  const author = title.replace(/\s+on Threads$/i, '').trim();
+  const embed = {
+    url: metaContent(html, 'og:url') ?? href,
+    color: THREADS_BLACK,
+    author: { name: toField(author || 'Threads', 256), url: href },
+    description: toField(description, 4096),
+    footer: { text: 'Threads' },
+  };
+
+  const image = metaContent(html, 'og:image');
+  // A text-only post still has an og:image: the author's avatar, served from
+  // Instagram's profile-photo bucket (type `t51.2885-19`). That belongs in the
+  // corner, not across the card. Post media uses other type ids.
+  if (image) {
+    if (/\/t51\.2885-19\//.test(image)) embed.thumbnail = { url: image };
+    else embed.image = { url: image };
+  }
+
+  return { embeds: [embed], files: [] };
 }
 
 // ------------------------------------------------------------------ TikTok
