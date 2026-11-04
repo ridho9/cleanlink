@@ -348,7 +348,15 @@ async function buildFacebookCard({ href }, options) {
 
   // Posts that forbid embedding answer "no longer available" with none of this.
   const marker = html.indexOf('data-testid="post_message"');
-  if (marker === -1) return null;
+  if (marker === -1) {
+    // Say why: a forbidden post and a rate-limited response look alike from
+    // the outside, and both just mean "no card".
+    const reason = /tidak tersedia|isn't available|is not available/i.test(html)
+      ? 'post refuses embedding'
+      : 'unexpected response';
+    console.log(`[card] facebook ${res.status} ${html.length}B: ${reason}`);
+    return null;
+  }
 
   const body = innerDiv(html, marker);
   const text = body ? htmlToText(body) : '';
@@ -588,7 +596,12 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch, limit 
         { match, href: url.href },
         { fetchImpl, budget: { files: filesLeft, bytes: bytesLeft } },
       );
-      if (!card) continue;
+      if (!card) {
+        // Keep this: a card that silently does not appear is indistinguishable
+        // from a link the bot did not recognise.
+        console.log(`[card] ${site.id} produced nothing for ${url.href}`);
+        continue;
+      }
 
       // A card is taken whole or not at all: a card with half its pages looks
       // broken, and Discord rejects the whole message past ten embeds.
@@ -598,8 +611,10 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch, limit 
       embedsLeft -= card.embeds.length;
       filesLeft -= card.files.length;
       bytesLeft -= card.files.reduce((total, file) => total + file.attachment.length, 0);
-    } catch {
-      // A card is decoration. Any failure leaves the plain cleaned reply.
+    } catch (error) {
+      // A card is decoration, so the reply still goes out — but a swallowed
+      // error is invisible in the log, so it is reported here.
+      console.log(`[card] ${site.id} failed for ${raw}: ${error.message}`);
     }
   }
 
