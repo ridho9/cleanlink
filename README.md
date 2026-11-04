@@ -87,7 +87,7 @@ Reddit, Spotify and Google were removed on purpose: only fake share codes had ev
 For X and Pixiv the bot posts its own card, because Discord's own preview fails on both:
 
 - **X** — Discord shows a truncated title. The bot reads `api.fxtwitter.com` and builds a card with the full text, the avatar, the reply/retweet/like/view counts, a quoted tweet as a blockquote, and either the photo or the video's poster frame. It never rewrites the host to a fixer domain.
-- **Pixiv** — `i.pximg.net` answers `403` unless the request carries a pixiv `Referer`, and Discord never sends one, so the native card has no image. The bot downloads up to 5 pages with that header and re-uploads them as attachments. Restricted works get `SPOILER_` file names.
+- **Pixiv** — `i.pximg.net` answers `403` unless the request carries a pixiv `Referer`, and Discord never sends one, so the native card has no image. The bot downloads up to 5 pages with that header and re-uploads them as attachments. Each page gets its own embed, so a multi-page work reads as one card that continues, not as a loose image above a card. Restricted works get `SPOILER_` file names.
 
 Why the other six sites get no card: Threads, Instagram and Misskey already answer Discord's crawler with complete OpenGraph tags, including an image that fetches, so a card we build would say less. TikTok's oEmbed returns an iframe only. YouTube has a native player. Facebook's oEmbed needs an app token. Evidence for each is in [docs/saucybot-url-inventory.md](docs/saucybot-url-inventory.md).
 

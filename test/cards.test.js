@@ -75,23 +75,24 @@ test('X card carries text, author, still, stats and timestamp', async () => {
 
   assert.ok(card, 'expected a card');
   assert.equal(card.url, 'https://x.com/someone/status/2117280148445962692');
-  assert.equal(card.embed.url, 'https://x.com/0x0SojalSec/status/2117280148445962692');
-  assert.match(card.embed.author.name, /^Md Ismail .*\(@0x0SojalSec\)$/);
-  assert.equal(card.embed.author.icon_url, X_VIDEO.tweet.author.avatar_url);
-  assert.ok(card.embed.description.startsWith('Stop chatting with AI.'));
+  assert.equal(card.embeds[0].url, 'https://x.com/0x0SojalSec/status/2117280148445962692');
+  assert.match(card.embeds[0].author.name, /^Md Ismail .*\(@0x0SojalSec\)$/);
+  assert.equal(card.embeds[0].author.icon_url, X_VIDEO.tweet.author.avatar_url);
+  assert.ok(card.embeds[0].description.startsWith('Stop chatting with AI.'));
   // No photo in this tweet: the poster frame stands in for the video.
-  assert.equal(card.embed.image.url, X_VIDEO.tweet.media.all[0].thumbnail_url);
-  assert.equal(card.embed.footer.text, 'Twitter');
+  assert.equal(card.embeds[0].image.url, X_VIDEO.tweet.media.all[0].thumbnail_url);
+  assert.equal(card.embeds[0].footer.text, 'Twitter');
   assert.deepEqual(
-    card.embed.fields.map((field) => field.name),
+    card.embeds[0].fields.map((field) => field.name),
     ['Replies', 'Retweets', 'Likes', 'Views'],
   );
   assert.equal(
-    card.embed.fields.find((field) => field.name === 'Views').value,
+    card.embeds[0].fields.find((field) => field.name === 'Views').value,
     X_VIDEO.tweet.views.toLocaleString('en-US'),
   );
-  assert.equal(card.embed.timestamp, new Date(X_VIDEO.tweet.created_timestamp * 1000).toISOString());
+  assert.equal(card.embeds[0].timestamp, new Date(X_VIDEO.tweet.created_timestamp * 1000).toISOString());
   assert.deepEqual(card.files, []);
+  assert.equal(card.embeds.length, 1);
 });
 
 test('X card for a text-only tweet has no image', async () => {
@@ -99,9 +100,9 @@ test('X card for a text-only tweet has no image', async () => {
   const [card] = await buildCards('https://twitter.com/jack/status/20', { fetchImpl: impl });
 
   assert.ok(card);
-  assert.equal(card.embed.image, undefined);
-  assert.equal(card.embed.description, 'just setting up my twttr');
-  assert.deepEqual(card.embed.fields.map((field) => field.name), ['Replies', 'Retweets', 'Likes']);
+  assert.equal(card.embeds[0].image, undefined);
+  assert.equal(card.embeds[0].description, 'just setting up my twttr');
+  assert.deepEqual(card.embeds[0].fields.map((field) => field.name), ['Replies', 'Retweets', 'Likes']);
 });
 
 test('X card quotes a quoted tweet as a blockquote', async () => {
@@ -119,8 +120,8 @@ test('X card quotes a quoted tweet as a blockquote', async () => {
   const [card] = await buildCards('https://x.com/jack/status/20', { fetchImpl: impl });
 
   assert.ok(card);
-  assert.match(card.embed.description, /> \*\*Quoting Jack \(@jack\)\*\*/);
-  assert.match(card.embed.description, /> \\\*original\\\* thought\n> second line/);
+  assert.match(card.embeds[0].description, /> \*\*Quoting Jack \(@jack\)\*\*/);
+  assert.match(card.embeds[0].description, /> \\\*original\\\* thought\n> second line/);
 });
 
 test('X card escapes markdown in the tweet text', async () => {
@@ -131,7 +132,7 @@ test('X card escapes markdown in the tweet text', async () => {
   const { impl } = fakeFetch([['https://api.fxtwitter.com/', hostile]]);
   const [card] = await buildCards('https://x.com/jack/status/20', { fetchImpl: impl });
 
-  assert.equal(card.embed.description, '\\_\\_not italic\\_\\_ and <@123456789012345678>');
+  assert.equal(card.embeds[0].description, '\\_\\_not italic\\_\\_ and <@123456789012345678>');
 });
 
 test('X card is skipped when the API fails', async () => {
@@ -150,14 +151,18 @@ test('Pixiv card re-hosts the pages, because Discord cannot fetch pximg', async 
   const [card] = await buildCards('https://www.pixiv.net/artworks/151616953', { fetchImpl: impl });
 
   assert.ok(card);
-  assert.equal(card.embed.url, 'https://www.pixiv.net/artworks/151616953');
-  assert.equal(card.embed.author.name, PIXIV.body.userName);
-  assert.equal(card.embed.author.url, `https://www.pixiv.net/users/${PIXIV.body.userId}`);
-  assert.equal(card.embed.title, PIXIV.body.illustTitle);
+  assert.equal(card.embeds[0].url, 'https://www.pixiv.net/artworks/151616953');
+  assert.equal(card.embeds[0].author.name, PIXIV.body.userName);
+  assert.equal(card.embeds[0].author.url, `https://www.pixiv.net/users/${PIXIV.body.userId}`);
+  assert.equal(card.embeds[0].title, PIXIV.body.illustTitle);
   assert.equal(card.files.length, PIXIV_PAGES.body.length);
   assert.deepEqual(card.files.map((file) => file.name), ['p0.jpg', 'p1.jpg']);
-  assert.equal(card.embed.image.url, 'attachment://p0.jpg');
-  assert.match(card.embed.footer.text, /^Pixiv · 2 page/);
+  assert.equal(card.embeds[0].image.url, 'attachment://p0.jpg');
+  assert.match(card.embeds[0].footer.text, /^Pixiv · 2 page/);
+  // Every extra page gets its own embed, so no file is left dangling above the
+  // card as a loose attachment.
+  assert.equal(card.embeds.length, 2);
+  assert.deepEqual(card.embeds[1], { color: 0x0096fa, image: { url: 'attachment://p1.jpg' } });
   assert.ok(card.files.every((file) => Buffer.compare(file.attachment, IMAGE_BYTES) === 0));
 
   // Every pixiv request needs the Referer, including the images.
@@ -192,8 +197,10 @@ test('Pixiv card spoils restricted works and caps the page count', async () => {
     'SPOILER_p3.jpg',
     'SPOILER_p4.jpg',
   ]);
-  assert.equal(card.embed.image.url, 'attachment://SPOILER_p0.jpg');
-  assert.equal(card.embed.footer.text, 'Pixiv · restricted');
+  assert.equal(card.embeds[0].image.url, 'attachment://SPOILER_p0.jpg');
+  assert.equal(card.embeds[0].footer.text, 'Pixiv · restricted');
+  assert.equal(card.embeds.length, 5);
+  assert.equal(card.embeds[4].image.url, 'attachment://SPOILER_p4.jpg');
   assert.equal(calls.filter((call) => call.url.startsWith('https://i.pximg.net/')).length, 5);
 });
 

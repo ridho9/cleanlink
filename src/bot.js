@@ -114,6 +114,13 @@ function withoutAttachmentImages(embed) {
   return copy;
 }
 
+/** False for an embed that only existed to show one of those images. */
+function hasContent(embed) {
+  return Boolean(
+    embed.title || embed.description || embed.author || embed.footer || embed.image || embed.fields?.length,
+  );
+}
+
 /**
  * Post the reply, degrading step by step.
  *
@@ -130,7 +137,7 @@ async function sendReply(message, { lines, cards }) {
   ]).join('\n');
 
   const files = cards.flatMap((card) => card.files ?? []);
-  const embeds = cards.map((card) => card.embed);
+  const embeds = cards.flatMap((card) => card.embeds);
 
   const attempts = [{ content, allowedMentions: { parse: [] } }];
   if (embeds.length > 0) {
@@ -141,7 +148,8 @@ async function sendReply(message, { lines, cards }) {
     attempts.push({
       content,
       allowedMentions: { parse: [] },
-      embeds: embeds.map(withoutAttachmentImages),
+      // Image-only embeds have nothing left to show once their file is gone.
+      embeds: embeds.map(withoutAttachmentImages).filter(hasContent),
     });
   }
   if (embeds.length > 0) {
@@ -200,7 +208,7 @@ export async function handleMessage(message) {
       console.log(`cleaned ${from} -> ${to}`);
     }
     for (const card of cards) {
-      console.log(`card ${card.from} -> ${card.embed.url}`);
+      console.log(`card ${card.from} -> ${card.embeds[0].url}`);
     }
 
     if (!isDM) await suppressOriginalEmbed(message);

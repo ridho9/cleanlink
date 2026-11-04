@@ -176,7 +176,7 @@ async function buildXCard({ match, href }, options) {
     }));
   }
 
-  return { embed, files: [] };
+  return { embeds: [embed], files: [] };
 }
 
 // ------------------------------------------------------------------- Pixiv
@@ -228,6 +228,14 @@ async function buildPixivCard({ match, href }, options) {
     },
   };
 
+  // One embed per page. Discord renders an attachment that no embed claims as
+  // a loose file, which is what made a 2-page work look like "link, image,
+  // card" instead of one card with more pages.
+  const embeds = [embed];
+  for (const file of files.slice(1)) {
+    embeds.push({ color: PIXIV_BLUE, image: { url: `attachment://${file.name}` } });
+  }
+
   if (meta.body.userId) embed.author.url = `https://www.pixiv.net/users/${meta.body.userId}`;
 
   const tags = (meta.body.tags?.tags ?? [])
@@ -238,7 +246,7 @@ async function buildPixivCard({ match, href }, options) {
     embed.description = clip(tags.map((tag) => escapeMarkdown(tag)).join(' · '), 4096);
   }
 
-  return { embed, files };
+  return { embeds, files };
 }
 
 // ------------------------------------------------------------------ facade
