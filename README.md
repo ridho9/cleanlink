@@ -74,7 +74,7 @@ Note that server mode means the bot reads message content in every channel it ca
 | TikTok | `vm.` / `vt.` short links, strips `is_from_webapp`, `sender_device`, `web_id`, `_t`, … | **yes** — caption, author, cover, counts from `tikwm.com` |
 | Twitter / X | strips `s`, `t`, `ref_src`, `ref_url` | **yes** — text, avatar, stats, quote, still |
 | YouTube | strips `si`, `feature` | no, the native player is better |
-| Facebook | `fb.watch`, `/share/…`, strips `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url` | no, its oEmbed needs an app token |
+| Facebook | `fb.watch`, `/share/…`, strips `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url` | **yes** — author, text and media from the public embed iframe |
 | Pixiv | nothing to strip | **yes** — the artwork pages, re-uploaded |
 | Misskey | nothing to strip | no, Discord's own preview is complete |
 
@@ -84,14 +84,15 @@ Reddit, Spotify and Google were removed on purpose: only fake share codes had ev
 
 ## Preview cards
 
-For X, Pixiv, Threads and TikTok the bot posts its own card, because Discord's own preview fails on all four:
+For X, Pixiv, Threads, Facebook and TikTok the bot posts its own card, because Discord's own preview fails on all five:
 
 - **X** — Discord shows a truncated title. The bot reads `api.fxtwitter.com` and builds a card with the full text, the avatar, the reply/retweet/like/view counts, a quoted tweet as a blockquote, and one full-size embed per photo, or the video's poster frame. It never rewrites the host to a fixer domain.
 - **Pixiv** — `i.pximg.net` answers `403` unless the request carries a pixiv `Referer`, and Discord never sends one, so the native card has no image. The bot downloads up to 5 pages with that header and re-uploads them as attachments, one embed per page. Restricted works get `SPOILER_` file names.
 - **TikTok** — its own oEmbed returns an iframe and no metadata, and the page's `og:title` is the literal string `TikTok · TikTok`. The bot reads `tikwm.com/api`, a public keyless API, for the real caption, author, avatar, cover and counts. Video posts only: photo posts keep the plain clean link.
+- **Facebook** — the post page is a login wall and its `og:title` is a generic string, but the public embed iframe at `plugins/post.php?href=<post>&show_text=true` is not: it returns the author, the post text and the media. No token, no browser. Posts that forbid embedding answer "no longer available", and then the bot sends the plain clean link. Post permalinks only; `/watch/` and `/reel/` are not carded.
 - **Threads** — the page has the post text in `og:description`, **but only for a browser user agent**. Crawled as `Discordbot` it returns a 107 KB shell with no description, which is why Discord's own card shows an author and no words. The bot fetches the page once as `Mozilla/5.0`. A text-only post's `og:image` is the author's avatar, so that goes in the corner rather than across the card.
 
-Why the other four sites get no card: Instagram and Misskey already answer Discord's crawler with complete OpenGraph tags, including an image that fetches, so a card we build would say less. YouTube has a native player. Facebook's oEmbed needs an app token, its own post pages return a generic title, and a real browser hit the login wall — see [docs/saucybot-url-inventory.md](docs/saucybot-url-inventory.md). Evidence for each is in [docs/saucybot-url-inventory.md](docs/saucybot-url-inventory.md).
+Why the other three sites get no card: Instagram and Misskey already answer Discord's crawler with complete OpenGraph tags, including an image that fetches, so a card we build would say less. YouTube has a native player. Evidence for each is in [docs/saucybot-url-inventory.md](docs/saucybot-url-inventory.md).
 
 Every carded link appears in the message wrapped in angle brackets, `<https://…>`, so Discord does not unfurl it a second time next to the card. A card is decoration and degrades: a rejected attachment falls back to the embed alone, and a missing **Embed Links** permission falls back to the plain clean link.
 
@@ -111,6 +112,7 @@ Query-parameter stripping is deterministic and covered by tests for every site. 
 | YouTube | live | n/a | n/a |
 | TikTok | live | **real code** — `vt.tiktok.com` → `/@user/video/<id>` | **real code** — `tikwm.com` answered for a real video, card sent and read back |
 | Threads | live | **real code** — `302` → clean post URL | **real code** — text, author and avatar from the page, card sent and read back |
+| Facebook | live | **real code** — `/share/<code>` → `/posts/<id>` | **real code** — text, author and image from `plugins/post.php`, card sent and read back |
 | Pixiv | n/a | n/a | **real code** — 2 pages fetched with a pixiv `Referer`, uploaded, embed rendered |
 
 Four of the six tracker sites have resolved a real share link, and every cleaned URL was re-fetched to confirm it still serves the post. Both cards were posted to a real channel and read back, attachment and embed intact. If a site silently does nothing, this table is the first place to look.

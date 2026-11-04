@@ -14,6 +14,7 @@ const PIXIV = fixture('pixiv-illust.json');
 const PIXIV_PAGES = fixture('pixiv-pages.json');
 const TIKWM = fixture('tikwm-video.json');
 const THREADS_HTML = readFileSync(new URL('./fixtures/threads-post.html', import.meta.url), 'utf8');
+const FACEBOOK_HTML = readFileSync(new URL('./fixtures/facebook-post.html', import.meta.url), 'utf8');
 
 /** A fetch stub that answers by URL prefix and records what it was asked. */
 function fakeFetch(routes) {
@@ -305,6 +306,35 @@ test('Threads card shows post media large, not the avatar', async () => {
 test('Threads card is skipped when the page has no description', async () => {
   const { impl } = fakeFetch([['https://www.threads.com/', '<html><head></head></html>']]);
   const cards = await buildCards('https://www.threads.com/@phodhipo/post/DfPOscPD6UR', {
+    fetchImpl: impl,
+  });
+  assert.deepEqual(cards, []);
+});
+
+test('Facebook card reads the public embed iframe, not the login-walled page', async () => {
+  const { impl, calls } = fakeFetch([['https://www.facebook.com/plugins/post.php', FACEBOOK_HTML]]);
+  const [card] = await buildCards(
+    'https://www.facebook.com/NASA/posts/pfbid02uH6kjwWSmyXozUDNbPndAcJBZXU3b5P8kQJdWi3ShU75f7nooWuirXdHAgKLqvggl',
+    { fetchImpl: impl },
+  );
+
+  assert.ok(card);
+  assert.ok(calls[0].url.startsWith('https://www.facebook.com/plugins/post.php?href='));
+  assert.equal(card.embeds.length, 1);
+  assert.equal(card.embeds[0].author.name, 'Learn With NASA');
+  assert.equal(card.embeds[0].author.url, 'https://www.facebook.com/LearnWithNASA');
+  assert.ok(card.embeds[0].description.startsWith('Ready for a special National STEM Day Q&A?'));
+  assert.ok(!card.embeds[0].description.includes('&amp;'));
+  assert.ok(!/[ \t]\n/.test(card.embeds[0].description), 'no line keeps a trailing space');
+  assert.ok(card.embeds[0].image.url.startsWith('https://scontent'));
+  assert.ok(!card.embeds[0].image.url.includes('s40x40'), 'the avatar is not the post image');
+  assert.equal(card.embeds[0].footer.text, 'Facebook');
+});
+
+test('Facebook card is skipped for a post that forbids embedding', async () => {
+  const blocked = '<html><body><h2>Postingan Facebook ini tidak tersedia lagi.</h2></body></html>';
+  const { impl } = fakeFetch([['https://www.facebook.com/plugins/post.php', blocked]]);
+  const cards = await buildCards('https://www.facebook.com/NASA/posts/pfbid02uH6kjwWSmyXozUDNbPndAcJBZXU3b5P8kQJdWi3ShU75f7nooWuirXdHAgKLqvggl', {
     fetchImpl: impl,
   });
   assert.deepEqual(cards, []);

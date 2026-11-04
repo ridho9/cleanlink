@@ -20,6 +20,11 @@ import { extractUrls } from './clean.js';
 //            Discordbot, gets a 107 KB shell with no og:description, and shows
 //            a card with an author and no words. One fetch with Mozilla/5.0
 //            fixes that; no browser engine is involved.
+//   Facebook — the post page is a login wall, but the public embed iframe at
+//            /plugins/post.php is not: it returns the author, the post text and
+//            the media for any post that allows embedding. No token, no
+//            browser. It answers "unavailable" for posts that do not, which is
+//            simply no card.
 //
 // Adding a site is a table entry plus a builder. Keep it that way.
 
@@ -40,6 +45,7 @@ const X_BLUE = 0x1d9bf0;
 const PIXIV_BLUE = 0x0096fa;
 const TIKTOK_BLACK = 0x010101;
 const THREADS_BLACK = 0x000000;
+const FACEBOOK_BLUE = 0x1877f2;
 
 /** Hosts a card is allowed to ask, kept separate from the tracker rules. */
 export const CARD_SITES = [
@@ -61,6 +67,18 @@ export const CARD_SITES = [
     hosts: ['threads.com', 'threads.net'],
     match: (url) => /^\/@([\w.]{1,64})\/post\/([A-Za-z0-9_-]{6,})/.exec(url.pathname),
     build: buildThreadsCard,
+  },
+  {
+    id: 'facebook',
+    hosts: ['facebook.com', 'fb.com', 'fb.watch'],
+    // Post permalinks only. /watch/ and /reel/ were not verified against the
+    // embed endpoint, so they keep the plain clean link.
+    match: (url) =>
+      /^\/[^/]+\/posts\/([0-9]{6,}|pfbid[0-9A-Za-z]{10,})/.exec(url.pathname) ??
+      (/^\/permalink\.php$/.test(url.pathname) && url.searchParams.get('story_fbid')
+        ? ['permalink']
+        : null),
+    build: buildFacebookCard,
   },
   {
     id: 'tiktok',
@@ -275,6 +293,95 @@ async function buildThreadsCard({ href }, options) {
   }
 
   return { embeds: [embed], files: [] };
+}
+
+// --------------------------------------------------------------- Facebook
+
+/** Inner HTML of the div that starts at `from`, honouring nesting. */
+function innerDiv(html, from) {
+  const open = html.indexOf('>', from);
+  if (open === -1) return null;
+  const start = open + 1;
+  let depth = 1;
+  const tag = /<\/?div\b/gi;
+  tag.lastIndex = start;
+  for (let match = tag.exec(html); match; match = tag.exec(html)) {
+    if (match[0][1] === '/') {
+      depth -= 1;
+      if (depth === 0) return html.slice(start, match.index);
+    } else {
+      depth += 1;
+    }
+  }
+  return null;
+}
+
+/** Turn the post body's paragraphs and links into plain text. */
+function htmlToText(fragment) {
+  return decodeEntities(
+    fragment
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<[^>]+>/g, ''),
+  )
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+async function buildFacebookCard({ href }, options) {
+  // The post itself is behind a login wall. The embed iframe is not.
+  const embedUrl = `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(href)}&show_text=true`;
+  const res = await (options.fetchImpl ?? fetch)(embedUrl, {
+    headers: { 'user-agent': BROWSER_UA, accept: 'text/html' },
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (!res.ok) return null;
+  const html = await res.text();
+
+  // Posts that forbid embedding answer "no longer available" with none of this.
+  const marker = html.indexOf('data-testid="post_message"');
+  if (marker === -1) return null;
+
+  const body = innerDiv(html, marker);
+  const text = body ? htmlToText(body) : '';
+  if (!text) return null;
+
+  const embed = {
+    url: href,
+    color: FACEBOOK_BLUE,
+    footer: { text: 'Facebook' },
+    description: toField(text, 4096),
+  };
+
+  // The avatar carries the author name in aria-label. The page handle comes
+  // from the permalink path, or from the link the iframe puts in the post.
+  const author = /aria-label="([^"]+)"/.exec(html)?.[1];
+  // The iframe's own permalink is authoritative: a post can sit on a vanity
+  // path that differs from the page that owns it.
+  const handle =
+    /href="\/?([\w.-]+)\/posts\//.exec(html)?.[1] ||
+    new URL(href).pathname.split('/')[1];
+  if (author) embed.author = { name: toField(decodeEntities(author), 256) };
+  if (embed.author && handle) embed.author.url = `https://www.facebook.com/${handle}`;
+
+  // Media, not avatars: the avatar is served at 40x40.
+  const images = [...new Set(
+    [...html.matchAll(/https:\/\/scontent[^"\\ ]+/g)]
+      .map((match) => decodeEntities(match[0]))
+      .filter((url) => !url.includes('s40x40')),
+  )];
+
+  const embeds = [embed];
+  if (images[0]) embed.image = { url: images[0] };
+  // One image per embed, same as every other builder.
+  for (const image of images.slice(1)) {
+    embeds.push({ url: href, color: FACEBOOK_BLUE, image: { url: image }, footer: embed.footer });
+  }
+
+  return { embeds, files: [] };
 }
 
 // ------------------------------------------------------------------ TikTok
