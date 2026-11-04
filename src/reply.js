@@ -90,10 +90,9 @@ export async function sendReply(message, { lines, cards }) {
 /**
  * Extra messages a card asked for.
  *
- * A bare URL is the only way to get a Discord-rendered player, and a message
- * holding an embed never unfurls one — so a video too large to attach arrives
- * as its own message. Failures here are logged, never fatal: the card is
- * already delivered.
+ * A message holding an embed never unfurls a link, so a video that must play
+ * arrives in its own message. Failures here are logged, never fatal: the card
+ * has already been delivered.
  */
 async function sendFollowUps(message, cards) {
   const lines = cards.flatMap((card) => card.followUps ?? []);

@@ -73,58 +73,29 @@ test('a single-image post falls back to the page image and has no page counter',
   assert.ok(card.embeds[0].image.url.startsWith('https://scontent.cdninstagram.com/'));
 });
 
-test('a reel keeps its card and carries the video as an attachment', async () => {
+test('a reel keeps its card and puts the video in a masked follow-up', async () => {
   const { impl } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
-  const file = { attachment: Buffer.from([1, 2, 3]), name: 'video.mp4' };
-  const downloadVideo = async () => [file];
+  const direct = 'https://instagram.fpku7-1.fna.fbcdn.net/o1/v/t2/reel.mp4';
 
-  const [card] = await buildCards(URL, { fetchImpl: impl, downloadVideo });
+  const [card] = await buildCards(URL, { fetchImpl: impl, videoUrl: async () => direct });
 
   assert.ok(card);
   assert.equal(card.embeds.length, 1, 'the author and caption stay');
   assert.equal(card.embeds[0].author.name, 'Dr. Abdul El-Sayed (@abdulelsayed)');
   assert.ok(card.embeds[0].description.startsWith('Heard there’s a reunion'));
-  assert.equal(card.embeds[0].image, undefined, 'the player brings its own frame');
-  assert.deepEqual(card.files, [file]);
-  assert.equal(card.extraLines, undefined, 'no label, no fixer link');
+  assert.ok(card.embeds[0].image, 'and the poster frame');
+  assert.deepEqual(card.files, [], 'nothing is downloaded');
+  assert.deepEqual(card.extraLines, undefined, 'the carded link is bracketed, not labelled');
+  assert.deepEqual(card.followUps, [`[reel](${direct})`]);
 });
 
-test('a reel too large to attach sends the video as a follow-up URL', async () => {
+test('a reel with no resolvable URL keeps the card alone', async () => {
   const { impl } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
-  const direct = 'https://instagram.fpku7-1.fna.fbcdn.net/o1/v/t2/big.mp4';
-
-  const [card] = await buildCards(URL, {
-    fetchImpl: impl,
-    downloadVideo: async () => null,
-    videoUrl: async () => direct,
-  });
-
-  assert.ok(card);
-  assert.equal(card.embeds.length, 1, 'the card still goes out');
-  assert.ok(card.embeds[0].image, 'with its poster frame');
-  assert.deepEqual(card.followUps, [direct], 'and the video follows in its own message');
-});
-
-test('a reel with no downloadable file and no direct URL keeps the poster', async () => {
-  const { impl } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
-  const [card] = await buildCards(URL, {
-    fetchImpl: impl,
-    downloadVideo: async () => null,
-    videoUrl: async () => null,
-  });
-
-  assert.ok(card.embeds[0].image);
-  assert.equal(card.followUps, undefined);
-});
-
-test('a reel with no downloadable file keeps its poster frame', async () => {
-  const { impl } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
-  const [card] = await buildCards(URL, { fetchImpl: impl, downloadVideo: async () => null });
+  const [card] = await buildCards(URL, { fetchImpl: impl, videoUrl: async () => null });
 
   assert.ok(card);
   assert.equal(card.embeds.length, 1);
-  assert.ok(card.embeds[0].image.url.startsWith('https://scontent.cdninstagram.com/'));
-  assert.deepEqual(card.files, []);
+  assert.equal(card.followUps, undefined);
 });
 
 test('a photo post with no OpenGraph title gets no card', async () => {

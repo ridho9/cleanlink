@@ -18,7 +18,6 @@ import {
   authorBlock,
   getHtml,
   INSTAGRAM_PINK,
-  downloadVideo,
   metaContent,
   toField,
   videoUrl,
@@ -42,8 +41,9 @@ export async function buildInstagramCard({ href }, options) {
   const url = new URL(href);
   const video = isVideo(url.pathname);
 
+
   // instagram.com carries the author, caption and counts. The fixer page is
-  // only needed for a carousel's image list, so a video skips it.
+  // only needed for a carousel's image list.
   const [page, fixerPage] = await Promise.all([
     getHtml(href, options),
     video ? null : getHtml(`https://vxinstagram.com${url.pathname}`, options),
@@ -104,26 +104,20 @@ export async function buildInstagramCard({ href }, options) {
   // file as an attachment, because Discord suppresses a link unfurl as soon as
   // the message holds an embed. Too large or unresolvable, and the poster frame
   // stays instead.
-  if (video) {
-    const files = await (options.downloadVideo ?? downloadVideo)(href, options);
-    if (files) {
-      delete embed.image;
-      return { embeds: [embed], files };
-    }
-
-    // Too large to attach. The card still goes out, and the video follows as a
-    // second message whose bare URL Discord unfurls into its own proxied
-    // player — no size limit, and nothing downloaded here.
-    const direct = await (options.videoUrl ?? videoUrl)(href, options);
-    if (direct) return { embeds: [embed], files: [], followUps: [direct] };
-  }
-
   const embeds = [embed, ...images.slice(1).map((image, index) => ({
     url: embed.url,
     color: INSTAGRAM_PINK,
     image: { url: image },
     footer: { text: `Instagram · ${index + 2}/${images.length}` },
   }))];
+
+  // The card stays; the video needs its own message, because an embed in the
+  // message suppresses link unfurls. The follow-up carries only a masked label,
+  // so the long signed URL never appears in the text.
+  if (video) {
+    const direct = await (options.videoUrl ?? videoUrl)(href, options);
+    if (direct) return { embeds, files: [], followUps: [`[reel](${direct})`] };
+  }
 
   return { embeds, files: [] };
 }
