@@ -59,10 +59,9 @@ const CARD_SITES = [
   {
     id: 'nhentai',
     hosts: ['nhentai.net'],
-    // /g/<id>/ and /g/<id>/<slug>/. Adult content: the card is never built for
-    // a channel that is not age-restricted, and no request is made either.
+    // /g/<id>/ and /g/<id>/<slug>/. Adult content: the builder decides between
+    // a full card, a spoiler card, and nothing, from the options it is given.
     match: (url) => /^\/g\/(\d{1,9})(?:\/|$)/.exec(url.pathname),
-    requiresNsfw: true,
     build: buildNhentaiCard,
   },
   {
@@ -115,10 +114,15 @@ function findCard(raw, cleanedFor) {
  * @param {Array<{from: string, to: string}>} [options.cleaned] results from
  *   cleanMessage, so a card can show the cleaned URL rather than the tracked one
  * @param {boolean} [options.nsfw] true only for a channel Discord marks as
- *   age-restricted; builders for adult sites refuse without it
+ *   age-restricted; builders for adult sites show the full card only then
+ * @param {boolean} [options.spoiler] allow a reduced card with the image
+ *   attached behind Discord's spoiler flag instead of the full one
  * @returns {Promise<Array<{from: string, url: string, embeds: Array, files: Array}>>}
  */
-export async function buildCards(text, { cleaned = [], fetchImpl = fetch, nsfw = false } = {}) {
+export async function buildCards(
+  text,
+  { cleaned = [], fetchImpl = fetch, nsfw = false, spoiler = false } = {},
+) {
   const cleanedFor = new Map(cleaned.map(({ from, to }) => [from, to]));
   const seen = new Set();
   const cards = [];
@@ -135,7 +139,6 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch, nsfw =
     const hit = findCard(raw, cleanedFor);
     if (!hit) continue;
     const { url, site, match } = hit;
-    if (site.requiresNsfw && !nsfw) continue;
 
     const key = `${site.id}:${match.slice(1).join('/')}`;
     if (seen.has(key)) continue;
@@ -144,7 +147,7 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch, nsfw =
     try {
       const card = await site.build(
         { match, href: url.href },
-        { fetchImpl, nsfw, budget: { files: filesLeft, bytes: bytesLeft } },
+        { fetchImpl, nsfw, spoiler, budget: { files: filesLeft, bytes: bytesLeft } },
       );
       if (!card) {
         // Keep this: a card that silently does not appear is indistinguishable

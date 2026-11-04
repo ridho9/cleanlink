@@ -14,15 +14,25 @@ import { sendReply } from './reply.js';
 const ACK_EMOJI = '👀';
 
 /**
- * Whether this channel is allowed to receive an adult card.
+ * How adult links are handled, from NSFW_CARDS:
  *
- * Discord's rule is age-restricted channels, which a DM is not. Set
- * NSFW_IN_DM=1 to let the bot card adult links in its own DMs as well.
+ *   channel (default) — a full card only where Discord marks the channel as
+ *                       age-restricted; everywhere else the link is left alone.
+ *   spoiler           — a reduced card everywhere: title, author, counts, and
+ *                       the cover attached with Discord's `SPOILER_` prefix so
+ *                       the image is hidden until clicked. Explicit tags are
+ *                       dropped. A spoiler is redaction, not permission: the
+ *                       image is still adult content in a channel that is not
+ *                       age-restricted.
+ *   all               — a full card everywhere, DMs included.
  */
-function nsfwAllowed(channel) {
-  if (!channel) return false;
-  if (channel.nsfw === true) return true;
-  return channel.type === ChannelType.DM && process.env.NSFW_IN_DM === '1';
+function nsfwPolicy(channel) {
+  const mode = (process.env.NSFW_CARDS ?? 'channel').toLowerCase();
+  const ageRestricted = channel?.nsfw === true;
+
+  if (mode === 'all') return { nsfw: true, spoiler: false };
+  if (mode === 'spoiler') return { nsfw: ageRestricted, spoiler: !ageRestricted };
+  return { nsfw: ageRestricted, spoiler: false };
 }
 
 const token = process.env.DISCORD_TOKEN;
@@ -140,7 +150,7 @@ export async function handleMessage(message) {
     // form even though it is the one being replaced by an embed.
     const cards = await buildCards(message.content, {
       cleaned,
-      nsfw: nsfwAllowed(message.channel),
+      ...nsfwPolicy(message.channel),
     });
 
     if (cleaned.length === 0 && cards.length === 0) return;

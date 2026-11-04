@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { buildCards } from '../../src/cards/index.js';
-import { fakeFetch, fixture } from '../../test-support/harness.js';
+import { buildNhentaiCard } from '../../src/cards/nhentai.js';
+import { fakeFetch, fixture, imageResponse, IMAGE_BYTES } from '../../test-support/harness.js';
 
 const GALLERY = fixture('nhentai-gallery.json');
 const URL = 'https://nhentai.net/g/693549/';
@@ -37,12 +38,56 @@ test('nhentai card carries the title, cover, counts and tag groups', async () =>
   assert.equal(fields.Tags.split(', ').length, 12, 'the tag list is capped');
 });
 
-test('nhentai card is refused unless the channel is age-restricted', async () => {
+test('nhentai card is refused when neither the channel nor the spoiler mode allows it', async () => {
   const { impl, calls } = fetchGallery();
   const cards = await buildCards(URL, { fetchImpl: impl });
 
   assert.deepEqual(cards, []);
-  assert.equal(calls.length, 0, 'no request is made for a channel that cannot show it');
+  assert.equal(calls.length, 0, 'no request is made when no presentation is allowed');
+});
+
+test('spoiler mode hides the cover in an attachment and drops the explicit tags', async () => {
+  const { impl, calls } = fakeFetch([
+    ['https://nhentai.net/api/v2/galleries/693549', GALLERY],
+    ['https://t.nhentai.net/', imageResponse()],
+  ]);
+  const [card] = await buildCards(URL, { fetchImpl: impl, spoiler: true });
+
+  assert.ok(card);
+  const embed = card.embeds[0];
+  assert.equal(embed.image, undefined, 'an embed image cannot be spoilered');
+  assert.equal(embed.title, GALLERY.title.pretty);
+  assert.equal(embed.author.name, 'takashima shoa (high land)');
+  assert.equal(embed.footer.text, 'nhentai · spoiler');
+
+  const names = embed.fields.map((field) => field.name);
+  assert.deepEqual(names, ['Pages', 'Favorites', 'Language']);
+  assert.ok(!names.includes('Tags'), 'the explicit tag list is the part that is dropped');
+
+  assert.equal(card.files.length, 1);
+  assert.equal(card.files[0].name, 'SPOILER_cover.webp');
+  assert.deepEqual(card.files[0].attachment, IMAGE_BYTES);
+  assert.equal(calls.at(-1).url, `https://t.nhentai.net/${GALLERY.cover.path}`);
+});
+
+test('spoiler mode still shows the full card in an age-restricted channel', async () => {
+  const { impl } = fakeFetch([['https://nhentai.net/api/v2/galleries/693549', GALLERY]]);
+  const [card] = await buildCards(URL, { fetchImpl: impl, nsfw: true, spoiler: true });
+
+  assert.ok(card.embeds[0].image, 'the age-restricted channel gets the picture');
+  assert.ok(card.embeds[0].fields.some((field) => field.name === 'Tags'));
+  assert.deepEqual(card.files, []);
+});
+
+test('spoiler mode gives up the cover when the message has no file budget', async () => {
+  const { impl } = fakeFetch([['https://nhentai.net/api/v2/galleries/693549', GALLERY]]);
+  const card = await buildNhentaiCard(
+    { match: ['/g/693549/', '693549'], href: URL },
+    { fetchImpl: impl, spoiler: true, budget: { files: 0, bytes: 8_000_000 } },
+  );
+
+  assert.ok(card, 'the metadata card survives a spent budget');
+  assert.deepEqual(card.files, [], 'but no attachment is fetched or attached');
 });
 
 test('nhentai card is skipped when the gallery does not exist', async () => {
