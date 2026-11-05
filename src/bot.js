@@ -142,6 +142,12 @@ export async function handleMessage(message) {
   // regex passes, so it is cheaper than the ack reaction it avoids.
   if (!handlesAny(message.content) && !hasCardFor(message.content)) return;
 
+  // Hide the original preview first, before anything else, so the channel
+  // does not show it and then swap it for our card a few seconds later. Every
+  // path that ends without a reply hands it back (see finally): it was our doing.
+  const suppressed = isDM ? false : await suppressOriginalEmbed(message);
+  let replied = false;
+
   // Acknowledge on receipt so it is obvious the message landed, and drop the
   // reaction once the reply is out (or once we know there is nothing to do).
   // A reaction failure must never break the actual work.
@@ -151,12 +157,6 @@ export async function handleMessage(message) {
   } catch (error) {
     console.log(`[ack] could not react: ${error.message}`);
   }
-
-  // Hide the original preview at once, so the channel does not show it and
-  // then swap it for our card a few seconds later. Every path that ends
-  // without a reply hands it back (see finally): it was our doing.
-  const suppressed = isDM ? false : await suppressOriginalEmbed(message);
-  let replied = false;
 
   try {
     const cleaned = await cleanMessage(message.content);
