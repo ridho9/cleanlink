@@ -69,6 +69,20 @@ test('media that could not be attached goes out as its own message', async () =>
   ]);
 });
 
+test('every posted message is reported, so it can be deleted with its original', async () => {
+  const message = fakeMessage({ reject: 1 });
+  const reported = [];
+  await sendReply(message, {
+    lines: [],
+    cards: [{ ...card, files: [{ attachment: Buffer.alloc(1), name: 'p0.jpg' }], followUp: 'https://video.twimg.com/v.mp4' }],
+  }, { onSent: async (sent) => reported.push(sent) });
+
+  // The first attempt was rejected and posted nothing; the fallback reply and
+  // the follow-up were posted, and only they are reported.
+  assert.equal(message.sent.length, 2);
+  assert.equal(reported.length, 2);
+});
+
 test('at most two follow-ups, and a failed one never breaks the reply', async () => {
   const message = fakeMessage({ failFollowUp: true });
   const many = Array.from({ length: 4 }, (_, i) => ({

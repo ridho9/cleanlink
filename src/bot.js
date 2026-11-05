@@ -11,6 +11,7 @@ import {
 import { cleanMessage, handlesAny } from './clean.js';
 import { buildCards, hasCardFor } from './cards/index.js';
 import { sendReply } from './reply.js';
+import { originalDeleted, track } from './replies.js';
 
 // Shown on the incoming message while the bot works on it, removed afterwards.
 const ACK_EMOJI = '👀';
@@ -47,7 +48,9 @@ const client = new Client({
   // cache lookup, and a DM channel is never in the cache, so the message is
   // dropped before `messageCreate` is ever emitted — silently, while the raw
   // packet still arrives. This is the bug that makes a DM bot look dead.
-  partials: [Partials.Channel],
+  // Message: a delete event for a message no longer in the cache arrives
+  // as a partial, and without this it is dropped - the reply would stay.
+  partials: [Partials.Channel, Partials.Message],
 });
 
 client.once(Events.ClientReady, (ready) => {
@@ -142,6 +145,9 @@ export async function handleMessage(message) {
   // regex passes, so it is cheaper than the ack reaction it avoids.
   if (!handlesAny(message.content) && !hasCardFor(message.content)) return;
 
+  // Tracked from receipt, so a delete during the work below is not missed.
+  const replies = track(message.id);
+
   // Hide the original preview first, before anything else, so the channel
   // does not show it and then swap it for our card a few seconds later. Every
   // path that ends without a reply hands it back (see finally): it was our doing.
@@ -173,8 +179,11 @@ export async function handleMessage(message) {
       console.log(`card ${card.from} -> ${card.embeds[0]?.url ?? card.followUp}`);
     }
 
+    // The user may delete the message while the cards are built; then there
+    // is no one left to answer.
+    if (replies.deleted()) return;
     try {
-      await sendReply(message, { lines: cleaned, cards });
+      await sendReply(message, { lines: cleaned, cards }, { onSent: replies.add });
       replied = true;
     } catch (error) {
       // A permission the bot lacks — most often Send Messages in Threads — is
@@ -187,7 +196,7 @@ export async function handleMessage(message) {
       throw error;
     }
   } finally {
-    if (suppressed && !replied) await restoreOriginalEmbed(message);
+    if (suppressed && !replied && !replies.deleted()) await restoreOriginalEmbed(message);
     if (ack) {
       try {
         await ack.users.remove(client.user);
@@ -199,6 +208,7 @@ export async function handleMessage(message) {
 }
 
 client.on(Events.MessageCreate, (message) => handleMessage(message));
+client.on(Events.MessageDelete, (message) => originalDeleted(message.id));
 
 client.on(Events.Error, (error) => {
   console.error('gateway error:', error);

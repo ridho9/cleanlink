@@ -40,10 +40,13 @@ function hasContent(embed) {
 /**
  * Post the reply, degrading step by step.
  *
+ * `onSent` is called with every message posted (the reply and each
+ * follow-up), so the caller can delete them along with the original.
+ *
  * A card is decoration: a rejected attachment or a missing Embed Links
  * permission must never cost the clean link itself.
  */
-export async function sendReply(message, { lines, cards }) {
+export async function sendReply(message, { lines, cards }, { onSent = async () => {} } = {}) {
   const carded = new Set(cards.map((card) => card.from));
   const content = fitLines([
     // One line per card, the link in angle brackets so Discord does not unfurl
@@ -75,7 +78,7 @@ export async function sendReply(message, { lines, cards }) {
 
   for (const [index, payload] of attempts.entries()) {
     try {
-      await message.reply(payload);
+      await onSent(await message.reply(payload));
       break;
     } catch (error) {
       const last = index === attempts.length - 1;
@@ -84,7 +87,7 @@ export async function sendReply(message, { lines, cards }) {
     }
   }
 
-  await sendFollowUps(message, cards);
+  await sendFollowUps(message, cards, onSent);
 }
 
 /** At most this many follow-up messages, so a five-link message stays a reply. */
@@ -103,12 +106,12 @@ const FOLLOW_UP_LABEL = '▶ Play video';
  * and Discord prints it in full above the player; a masked link still unfurls
  * into the same player (measured for Instagram and X).
  */
-async function sendFollowUps(message, cards) {
+async function sendFollowUps(message, cards, onSent) {
   const urls = cards.map((card) => card.followUp).filter(Boolean).slice(0, MAX_FOLLOW_UPS);
 
   for (const url of urls) {
     try {
-      await message.channel.send({ content: `[${FOLLOW_UP_LABEL}](${url})`, allowedMentions: { parse: [] } });
+      await onSent(await message.channel.send({ content: `[${FOLLOW_UP_LABEL}](${url})`, allowedMentions: { parse: [] } }));
       console.log(`[reply] follow-up with ${new URL(url).host}`);
     } catch (error) {
       // The clean link and the card are already out; a lost player is not worth
