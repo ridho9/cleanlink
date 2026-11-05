@@ -60,8 +60,10 @@ const CARD_SITES = [
       (/^\/watch\/?$/.test(url.pathname) && url.searchParams.get('v')
         ? ['watch', url.searchParams.get('v')]
         : null) ??
-      (/^\/permalink\.php$/.test(url.pathname) && url.searchParams.get('story_fbid')
-        ? ['permalink']
+      // A /share/p/ link often resolves to story.php; both name the post by
+      // story_fbid, which is also what keeps two such posts apart.
+      (/^\/(?:permalink|story)\.php$/.test(url.pathname) && url.searchParams.get('story_fbid')
+        ? ['story', url.searchParams.get('story_fbid')]
         : null),
     build: buildFacebookCard,
   },

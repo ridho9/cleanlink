@@ -76,7 +76,7 @@ Note that server mode means the bot reads message content in every channel it ca
 | TikTok | `vm.` / `vt.` short links, strips `is_from_webapp`, `sender_device`, `web_id`, `_t`, … | **yes** — caption, author, cover, counts from `tikwm.com` |
 | Twitter / X | strips `s`, `t`, `ref_src`, `ref_url` | **yes** — text, avatar, stats, quote, still |
 | YouTube | on `watch` links keeps only `v`, so playlist and radio parameters go; short links lose `si`, `feature` | no, the native player is better |
-| Facebook | `fb.watch`, `/share/…`, strips `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url` | **yes** — author, text and media from the public embed iframe, or from a mirror when the post refuses it |
+| Facebook | `fb.watch`, `/share/…`, strips `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url`; on `story.php` / `permalink.php` keeps only `story_fbid` and `id` | **yes** — author, text and media from the public embed iframe, or from a mirror when the post refuses it |
 | Pixiv | nothing to strip | **yes** — the artwork pages, re-uploaded |
 | nhentai | nothing to strip; `nh/<id>` shorthand works as input, in any case | **yes** — title, author, and the cover attached behind Discord's spoiler flag |
 | Misskey | nothing to strip | no, Discord's own preview is complete |
@@ -129,7 +129,7 @@ Query-parameter stripping is deterministic and covered by tests for every site. 
 | TikTok | live | **real code** — `vt.tiktok.com` → `/@user/video/<id>` | **real code** — `tikwm.com` answered for a real video, card sent and read back |
 | Threads | live | **real code** — `302` → clean post URL | **real code** — text, author and avatar from the page, card sent and read back |
 | Instagram | live (`mdxt`, `psln`, `srtk`) | `/share/` still fake: `200`, no redirect → silence | **real code** — single post, 4- and 10-image carousels and a reel all read back from Discord |
-| Facebook | live | **real code** — `/share/<code>` → `/posts/<id>`, `/reel/<id>` | **real code** — text, author and image from `plugins/post.php` for a post, a reel and a watch link; cards sent and read back |
+| Facebook | live | **real code** — `/share/<code>` → `/posts/<id>`, `/reel/<id>`, `story.php?story_fbid=…` | **real code** — text, author and image from `plugins/post.php` for a post, a reel and a watch link; cards sent and read back |
 | nhentai | n/a | n/a | **real code** — `api/v2/galleries/<id>` and a `t.nhentai.net` cover that Discord can fetch; card built and inspected, gated on NSFW |
 | Pixiv | n/a | n/a | **real code** — 2 pages fetched with a pixiv `Referer`, uploaded, embed rendered |
 

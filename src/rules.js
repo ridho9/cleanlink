@@ -73,6 +73,8 @@ export const RULES = [
     shorten: ['fb.watch'],
     share: /^\/share\//i,
     dropAllOn: /\/(?:posts|permalink|videos|reel)\b/i,
+    // permalink.php and story.php carry the post in the query: keep only that.
+    keepOnly: { path: /^\/(?:permalink|story)\.php$/, keep: [/^story_fbid$/i, /^id$/i] },
     // share_url is the back-reference to the share link we just unwrapped.
     drop: [/^rdid$/i, /^refid$/i, /^sfnsn$/i, /^__tn__$/i, /^share_url$/i],
     // An invalid fb.watch code lands on the watch page with no video id.

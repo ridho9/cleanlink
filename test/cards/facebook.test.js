@@ -63,6 +63,19 @@ test('Facebook card resolves from a /share/ link through the cleaned URL', async
   assert.equal(card.url, 'https://www.facebook.com/reel/1543457311150597/');
 });
 
+test('a story.php or permalink.php post gets a card, one per story_fbid', async () => {
+  // share/p/1AGxULxfo3 resolves to story.php; the embed endpoint takes it as is.
+  const { impl, calls } = fakeFetch([['https://www.facebook.com/plugins/post.php', FACEBOOK_HTML]]);
+  const cards = await buildCards([
+    'https://www.facebook.com/story.php?story_fbid=122208791906443837&id=61563315113050',
+    'https://www.facebook.com/permalink.php?story_fbid=122208791906443837&id=61563315113050',
+    'https://www.facebook.com/permalink.php?story_fbid=555555555555&id=61563315113050',
+  ].join(' '), { fetchImpl: impl });
+
+  assert.equal(cards.length, 2, 'the same story_fbid is one post, a different one is another');
+  assert.ok(decodeURIComponent(calls[0].url).includes('story.php?story_fbid=122208791906443837'));
+});
+
 test('Facebook card retries once on an unexpected response', async () => {
   const calls = [];
   const { impl } = fakeFetch([

@@ -365,6 +365,18 @@ test('drops unknown tokens on permalinks but leaves other URL shapes alone', asy
     'https://www.instagram.com/p/DfG4ZQcM3vW/',
   );
 
+  // story.php and permalink.php name the post in the query: keep story_fbid
+  // and id, drop the rest - including post_id, which only repeats them.
+  for (const page of ['story', 'permalink']) {
+    assert.equal(
+      await cleanUrl(
+        `https://www.facebook.com/${page}.php?story_fbid=122208791906443837&id=61563315113050&post_id=61563315113050_122208791906443837&rdid=x`,
+        { fetchImpl },
+      ),
+      `https://www.facebook.com/${page}.php?story_fbid=122208791906443837&id=61563315113050`,
+    );
+  }
+
   // A search URL must keep its parameters, so this is not ours to touch.
   assert.equal(
     await cleanUrl('https://x.com/search?q=malware&src=typed_query', { fetchImpl }),
