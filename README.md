@@ -54,7 +54,7 @@ Behaviour:
 
 - **DMs and server channels.** In a DM it just replies. In a server channel it also removes the preview card from your message, if it has been given `Manage Messages`.
 - **The 👀 reaction only appears on messages it can act on.** A link no rule owns, or a message with no link, gets no reaction and no reply — the check is a regex pass, so nothing is fetched to find out.
-- **`nh/<id>` stands in for an nhentai link.** Send `nh/693549` and the bot replies with the real gallery link plus the card.
+- **`nh/<id>` stands in for an nhentai link.** Send `nh/693549` and the bot replies with the real gallery link plus the card. Any case works (`NH/693549`), a leading zero is dropped, and a `/nh/<digits>` path inside some other URL is **not** treated as a shorthand.
 - **Silent unless it changed something.** Links it does not handle, links with nothing to strip, and failed lookups all get no reply. A link that gets a card is an exception: it is answered even when it had nothing to strip, because the card itself is the reply.
 - **Never edits or deletes text.** The only write to another message is Discord's embed-suppression flag in a server channel; the content is never touched.
 - One reply per message, up to 5 links, one per line, and a card for each carded link in the message.
@@ -78,7 +78,7 @@ Note that server mode means the bot reads message content in every channel it ca
 | YouTube | on `watch` links keeps only `v`, so playlist and radio parameters go; short links lose `si`, `feature` | no, the native player is better |
 | Facebook | `fb.watch`, `/share/…`, strips `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url` | **yes** — author, text and media from the public embed iframe |
 | Pixiv | nothing to strip | **yes** — the artwork pages, re-uploaded |
-| nhentai | nothing to strip; `nh/<id>` shorthand works as input | **yes** — title, author, and the cover attached behind Discord's spoiler flag |
+| nhentai | nothing to strip; `nh/<id>` shorthand works as input, in any case | **yes** — title, author, and the cover attached behind Discord's spoiler flag |
 | Misskey | nothing to strip | no, Discord's own preview is complete |
 
 Common trackers (`utm_*`, `fbclid`, `gclid`, `twclid`, `yclid`, `mibextid`, `_ga`, `_gl`) are stripped everywhere.
@@ -97,7 +97,7 @@ Seven sites get a card the bot builds itself, because Discord's own preview fail
 | **Instagram** | page + `api/v1/oembed` + `/p/<shortcode>/embed/captioned/` | display name, the **full** caption, Likes/Comments, one embed per carousel image. Reels are carded like photos: the clean frame, not the video |
 | **Facebook** | `plugins/post.php`, plus `yt-dlp` for video | author, post text, media; a reel or video is downloaded and attached when yt-dlp can fetch it |
 | **TikTok** | `tikwm.com/api` | caption, author, avatar, cover, Plays/Likes/Comments. Its own oEmbed returns an iframe only, and the page's `og:title` is the literal `TikTok · TikTok` |
-| **nhentai** | `api/v2/galleries/<id>` | title, author, and the cover attached as `SPOILER_cover.webp`. The gallery page is a Cloudflare challenge, but the API is not. `nh/<id>` works as shorthand |
+| **nhentai** | `api/v2/galleries/<id>` | title, author, and the cover attached as `SPOILER_cover.webp`. The gallery page is a Cloudflare challenge, but the API is not. `NH/693549` and `nh/693549` both work as shorthand |
 
 Why the other two get no card: **Misskey** already answers Discord's crawler with complete OpenGraph tags, and its URL was confirmed to unfurl; **YouTube** has a native player.
 

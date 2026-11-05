@@ -96,6 +96,22 @@ test('shorthand and the full link produce one card, not two', async () => {
   assert.equal(cards.length, 1);
 });
 
+test('the shorthand is case-insensitive and drops leading zeros', async () => {
+  const { impl } = fetchGallery();
+  const [card] = await buildCards('NH/0693549', { fetchImpl: impl });
+
+  assert.ok(card);
+  assert.equal(card.from, 'NH/0693549');
+  assert.equal(card.url, 'https://nhentai.net/g/693549/');
+});
+
+test('the shorthand never fires inside a URL', () => {
+  assert.equal(hasCardFor('https://example.com/docs/nh/123'), false);
+  assert.equal(hasCardFor('see https://foo.tld/path/nh/693549 here'), false);
+  // Two shorthand tokens on one line, one of them in prose, still work.
+  assert.equal(hasCardFor('(nh/693549)'), true);
+});
+
 test('hasCardFor sees the shorthand and ignores text that is not one', () => {
   assert.equal(hasCardFor('nh/693549'), true);
   assert.equal(hasCardFor('https://nhentai.net/g/693549/'), true);

@@ -1,4 +1,4 @@
-import { extractUrls, hostMatches } from '../clean.js';
+import { extractUrls, findUrls, hostMatches } from '../clean.js';
 import { buildFacebookCard } from './facebook.js';
 import { buildInstagramCard } from './instagram.js';
 import { buildNhentaiCard } from './nhentai.js';
@@ -86,15 +86,24 @@ const CARD_SITES = [
  * Shorthand a person types instead of a URL, e.g. `nh/693549`.
  *
  * These are not URLs, so extractUrls never sees them; each one expands to the
- * real link, which is what the reply shows.
+ * real link, which is what the reply shows. The pattern is case-insensitive
+ * because this is typed text, not an identifier - but a match *inside* a URL
+ * is dropped, so `example.com/docs/nh/123` never turns into a gallery.
  */
-const SHORTHAND = [[/\bnh\/(\d{1,9})\b/g, (match) => `https://nhentai.net/g/${match[1]}/`]];
+const SHORTHAND = [
+  [/\bnh\/(\d{1,9})\b/gi, (match) => `https://nhentai.net/g/${Number(match[1])}/`],
+];
 
 /** Every (from, href) pair worth looking at in a message. */
 function candidateRefs(text, cleanedFor) {
-  const refs = extractUrls(text).map((raw) => ({ from: raw, href: cleanedFor.get(raw) ?? raw }));
+  const urls = findUrls(text);
+  const refs = urls.map(({ raw }) => ({ from: raw, href: cleanedFor.get(raw) ?? raw }));
+
   for (const [pattern, expand] of SHORTHAND) {
     for (const match of text.matchAll(pattern)) {
+      // `.../nh/123` is part of a URL, not a shorthand someone typed.
+      const start = match.index;
+      if (urls.some(({ start: from, end }) => start >= from && start < end)) continue;
       refs.push({ from: match[0], href: expand(match) });
     }
   }

@@ -34,13 +34,26 @@ const GLOBAL_TRACKING = [
   /^mc_eid$/i,
 ];
 
-/** Pull candidate URLs out of free text. */
-export function extractUrls(text) {
+/**
+ * Pull candidate URLs out of free text, with the offsets they occupy.
+ * The offsets let a caller tell "this text is inside a URL" from "this text
+ * stands on its own", which the `nh/123` shorthand depends on.
+ * @returns {Array<{raw: string, start: number, end: number}>}
+ */
+export function findUrls(text) {
   if (typeof text !== 'string') return [];
 
   return [...text.matchAll(URL_RE)]
-    .map((match) => match[0].replace(TRAILING_PUNCTUATION, ''))
+    .map((match) => {
+      const raw = match[0].replace(TRAILING_PUNCTUATION, '');
+      return raw ? { raw, start: match.index, end: match.index + raw.length } : null;
+    })
     .filter(Boolean);
+}
+
+/** Pull candidate URLs out of free text. */
+export function extractUrls(text) {
+  return findUrls(text).map(({ raw }) => raw);
 }
 
 /** True when this text contains a link the cleaner would handle. */
