@@ -15,6 +15,13 @@ const SINGLE_PAGE = fixtureText('instagram-single.html');
 const EMBED_FRAME = /"display_url":"([^"]+)"/.exec(EMBED_VIDEO.replace(/\\/g, ''))[1];
 const OG_IMAGE = /property="og:image" content="([^"]+)"/.exec(REEL_HTML)[1].replace(/&amp;/g, '&');
 const URL = 'https://www.instagram.com/reel/DcuMLVagTPh/';
+const VIDEO_URL = /"video_url":"([^"]+)"/.exec(EMBED_VIDEO.replace(/\\/g, ''))[1];
+const MP4_BYTES = Buffer.from([0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70]);
+const mp4 = (length = MP4_BYTES.length) =>
+  new Response(MP4_BYTES, {
+    status: 200,
+    headers: { 'content-type': 'video/mp4', 'content-length': String(length) },
+  });
 
 test('an Instagram photo post is carded from its OpenGraph tags', async () => {
   const { impl, calls } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
@@ -95,7 +102,7 @@ test('oEmbed supplies the full caption, the handle and an uncropped thumbnail', 
   assert.ok(!embed.image.url.includes('s640x640'), 'not the square crop');
 });
 
-test('a reel is carded like a photo post, with a clean frame and no link', async () => {
+test('a reel whose video cannot be fetched keeps the clean frame', async () => {
   const { impl } = fakeFetch([
     ['https://www.instagram.com/p/DcuMLVagTPh/embed/captioned/', EMBED_VIDEO],
     ['https://www.instagram.com/', REEL_HTML],
@@ -111,8 +118,36 @@ test('a reel is carded like a photo post, with a clean frame and no link', async
   // play button into the OpenGraph thumbnail.
   assert.equal(card.embeds[0].image.url, EMBED_FRAME);
   assert.notEqual(card.embeds[0].image.url, OG_IMAGE);
-  assert.equal(card.followUp, undefined, 'no video link is offered');
+  assert.equal(card.followUp, undefined, 'a dead video URL is not offered');
   assert.deepEqual(card.files, []);
+});
+
+test('a reel that fits the budget carries its video, not the frame', async () => {
+  const { impl } = fakeFetch([
+    ['https://www.instagram.com/p/DcuMLVagTPh/embed/captioned/', EMBED_VIDEO],
+    ['https://www.instagram.com/', REEL_HTML],
+    [VIDEO_URL, mp4()],
+  ]);
+  const [card] = await buildCards(URL, { fetchImpl: impl });
+
+  assert.equal(card.files.length, 1);
+  assert.equal(card.files[0].name, 'video.mp4');
+  assert.equal(card.embeds[0].image, undefined, 'the player replaces the frame');
+  assert.equal(card.followUp, undefined);
+});
+
+test('a reel over the budget follows up with its video URL', async () => {
+  const { impl } = fakeFetch([
+    ['https://www.instagram.com/p/DcuMLVagTPh/embed/captioned/', EMBED_VIDEO],
+    ['https://www.instagram.com/', REEL_HTML],
+    [VIDEO_URL, mp4(15 * 1024 * 1024)],
+  ]);
+  const [card] = await buildCards(URL, { fetchImpl: impl });
+
+  assert.deepEqual(card.files, []);
+  assert.equal(card.followUp, VIDEO_URL);
+  assert.equal(card.embeds[0].image, undefined);
+  assert.ok(card.embeds[0].description, 'the card keeps the caption');
 });
 
 test('a photo post with no OpenGraph title gets no card', async () => {

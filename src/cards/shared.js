@@ -245,16 +245,13 @@ export function extensionOf(url) {
 }
 
 /**
- * Download a video with yt-dlp and hand back an attachment.
+ * The direct media URL for a page, via yt-dlp, or null.
  *
- * Optional by design: no yt-dlp, an unparseable video, or a file larger than
- * the message budget all return null, and the caller falls back to a poster
- * frame or a link. yt-dlp is spawned with an argv array (never a shell), under
- * a timeout, into a temporary directory that is always removed.
+ * Optional by design: no yt-dlp, or a page it cannot parse, returns null and
+ * the caller keeps its still. Spawned with an argv array (never a shell) under
+ * a timeout.
  *
  * @param {string} href page URL, already validated by the caller's matcher
- * @param {object} options card options, for the shared attachment budget
- * @param {object} [format] extra yt-dlp arguments, e.g. a height cap
  */
 export async function videoLink(href, options = {}) {
   try {

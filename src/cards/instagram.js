@@ -9,18 +9,21 @@
 //                    clean frame
 //
 // Discord renders nothing for the link on its own — a raw post produced zero
-// embeds — which is why this exists at all. A video post is carded like any
-// other, and unlike X or TikTok there is no follow-up either: a bare signed
-// CDN video URL produced no embed at all when tested, so the still is all a
-// card can offer.
+// embeds — which is why this exists at all. A reel's video comes from the
+// embed payload's `video_url` and is handled like X and TikTok: attached when
+// it fits the upload budget, otherwise posted as a follow-up link that Discord
+// unfurls into a player. When the payload omits `video_url`, yt-dlp supplies
+// it. The clean frame is shown only when no video can be had.
 
 import {
+  attachMedia,
   authorBlock,
   getHtml,
   getJson,
   INSTAGRAM_PINK,
   metaContent,
   toField,
+  videoLink,
 } from './shared.js';
 
 /** OpenGraph caption: `Name on Instagram: "caption"`. */
@@ -83,7 +86,16 @@ export async function buildInstagramCard({ href }, options) {
     ];
   }
 
-  const images = imagesFor(embedPage?.html ?? '', source, oembed);
+  // Fetched before the frame is chosen: once the player is in the message, the
+  // frame only repeats the video's first second.
+  const media = embedMedia(embedPage?.html ?? '');
+  // Some reels - seen with licensed music - are marked as video in the payload
+  // but carry no `video_url`. yt-dlp still resolves the same CDN file.
+  const video = media.video ?? (media.isVideo ? await videoLink(href, options) : null);
+  const { files, followUp } = await attachMedia(video, options);
+  const playing = files.length > 0 || Boolean(followUp);
+
+  const images = playing ? [] : imagesFor(media, source, oembed);
   if (images.length > 0) {
     embed.image = { url: images[0] };
     if (images.length > 1) embed.footer = { text: `Instagram · 1/${images.length}` };
@@ -99,7 +111,7 @@ export async function buildInstagramCard({ href }, options) {
     })),
   ];
 
-  return { embeds, files: [] };
+  return { embeds, files, ...(followUp ? { followUp } : {}) };
 }
 
 /**
@@ -109,8 +121,8 @@ export async function buildInstagramCard({ href }, options) {
  * oEmbed thumbnail keeps the aspect ratio (640×800 rather than a 640×640 crop)
  * and carries no play button, and `og:image` is the last resort.
  */
-function imagesFor(embedHtml, source, oembed) {
-  const carousel = embedMedia(embedHtml).images.slice(0, MAX_IMAGES);
+function imagesFor(media, source, oembed) {
+  const carousel = media.images.slice(0, MAX_IMAGES);
   if (carousel.length > 0) return carousel;
 
   const single = oembed?.thumbnail_url ?? metaContent(source, 'og:image');
@@ -125,14 +137,15 @@ function imagesFor(embedHtml, source, oembed) {
  * needs none) and collapses all of it to plain text. These are signed CDN URLs,
  * which is fine: Discord proxies them as it renders the message.
  *
- * For a video post the blob's `display_url` is the clean frame. `video_url` is
- * deliberately not returned: the signed CDN URL produced no embed when sent on
- * its own, so no player is possible and nothing consumes it.
+ * For a video post the blob's `display_url` is the clean frame and `video_url`
+ * is the MP4 itself.
  */
 function embedMedia(html) {
   const plain = html.replace(/\\/g, '');
   const images = [...plain.matchAll(/"display_url":"([^"]+)"/g)].map((match) => match[1]);
-  return { images: [...new Set(images)] };
+  const video = /"video_url":"([^"]+)"/.exec(plain)?.[1] ?? null;
+  const isVideo = /"is_video":true/.test(plain);
+  return { images: [...new Set(images)], video, isVideo };
 }
 
 /**
