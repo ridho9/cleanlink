@@ -6,19 +6,15 @@
 // older logs without `[msg]` lines produce an empty report, not an error.
 
 import { createInterface } from 'node:readline';
+import type { Marks, Outcome } from '../src/trace.ts';
 
 interface JournalEntry {
   MESSAGE?: unknown;
   __REALTIME_TIMESTAMP?: unknown;
 }
 
-interface UrlRecord {
+interface UrlRecord extends Partial<Marks> {
   in: string;
-  resolve?: string;
-  redirect?: string;
-  clean?: string;
-  card?: string;
-  media?: string;
   notes?: string[];
 }
 
@@ -26,7 +22,7 @@ interface MessageRecord {
   id: string;
   where: string;
   ms: number;
-  reply: string;
+  reply: Outcome;
   urls: UrlRecord[];
   notes?: string[];
 }

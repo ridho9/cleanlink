@@ -7,11 +7,26 @@
 // it under the URL it belongs to.
 
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { MediaKind, SiteId } from './cards/index.ts';
 
-export interface TraceEntry {
+/**
+ * The outcome fields `mark()` writes for each URL, and the values each one
+ * takes. `scripts/review.ts` reads the same type, so the two cannot drift.
+ */
+export interface Marks {
+  /** The cleaned URL, `unchanged`, or `error`. */
+  clean: string;
+  /** `failed`: the request failed twice. `fallback`: it landed on a front page. */
+  resolve: 'failed' | 'fallback';
+  /** A share link that did not redirect (fake or expired code). */
+  redirect: 'none';
+  card: SiteId | `${SiteId}:${'none' | 'budget' | 'error'}`;
+  media: MediaKind;
+}
+
+export interface TraceEntry extends Partial<Marks> {
   in: string;
   notes: string[];
-  [field: string]: string | string[];
 }
 
 /**
@@ -69,10 +84,11 @@ export function note(text: string) {
  * Record an outcome for the current URL: a field the review counts, so values
  * come from a small fixed set (see README, "Logs and the daily review").
  */
-export function mark(field: string, value: string) {
+export function mark<F extends keyof Marks>(field: F, value: Marks[F]) {
   const current = store.getStore();
   if (!current?.url) return;
-  entryFor(current.trace, current.url)[field] = value;
+  const entry: Partial<Marks> = entryFor(current.trace, current.url);
+  entry[field] = value;
 }
 
 /** Record how the message itself ended. */

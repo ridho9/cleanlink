@@ -21,13 +21,19 @@ import { mark, note, withUrl } from '../trace.ts';
 //
 // Adding a site is a table entry plus a builder module. Keep it that way.
 
-export interface Card extends BuiltCard {
+export type Card = BuiltCard & {
   from: string;
   url: string;
-}
+};
+
+/** The sites that own a card; the `card` field of the log names one of them. */
+export type SiteId = 'x' | 'pixiv' | 'instagram' | 'threads' | 'facebook' | 'nhentai' | 'tiktok';
+
+/** What a card shows besides text, as the `media` field of the log names it. */
+export type MediaKind = 'video' | 'follow_up' | 'unfurl' | `images:${number}` | 'text';
 
 interface CardSite {
-  id: string;
+  id: SiteId;
   hosts: string[];
   match: (url: URL) => (string | null)[] | null;
   build: (input: CardInput, options: CardOptions) => Promise<BuiltCard | null>;
@@ -247,12 +253,18 @@ export async function buildCards(text: string, { cleaned = [], fetchImpl = fetch
  * What a card carries besides text, for the review: a video file, a video
  * link sent separately, a link Discord previews itself, images, or nothing.
  */
-function mediaOf(card: BuiltCard): string {
-  if (card.files?.some((file) => /\.mp4$/.test(file.name))) return 'video';
-  if (card.followUp) return 'follow_up';
-  if (card.unfurl) return 'unfurl';
-  // An attached image (Pixiv pages, nhentai's spoilered cover) or an image the
-  // embed points at: either way the card shows a picture.
-  const images = Math.max(card.files?.length ?? 0, card.embeds.filter((embed) => embed.image).length);
-  return images > 0 ? `images:${images}` : 'text';
+function mediaOf(card: BuiltCard): MediaKind {
+  switch (card.video) {
+    case 'attached':
+      return 'video';
+    case 'follow_up':
+    case 'unfurl':
+      return card.video;
+    case undefined: {
+      // An attached image (Pixiv pages, nhentai's spoilered cover) or an image
+      // the embed points at: either way the card shows a picture.
+      const images = Math.max(card.files.length, card.embeds.filter((embed) => embed.image).length);
+      return images > 0 ? `images:${images}` : 'text';
+    }
+  }
 }

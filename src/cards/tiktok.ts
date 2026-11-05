@@ -5,6 +5,7 @@
 import {
   authorBlock,
   attachMedia,
+  playback,
   getJson,
   statFields,
   TIKTOK_BLACK,
@@ -46,8 +47,8 @@ async function buildTikTokCard({ match, href }: CardInput, options: CardOptions)
   // tikwm's `play` is a TikTok CDN file, not a tikwm one, so it is the same
   // first-party media the platform serves - attach it like an X video.
   const play = typeof video.play === 'string' ? video.play : null;
-  const { files, followUp } = await attachMedia(play, options);
-  const playing = files.length > 0 || Boolean(followUp);
+  const played = await attachMedia(play, options);
+  const playing = played.kind !== 'none';
 
   const embed: CardEmbed = {
     url: href,
@@ -77,7 +78,7 @@ async function buildTikTokCard({ match, href }: CardInput, options: CardOptions)
   ]);
   if (fields) embed.fields = fields;
 
-  return { embeds: [embed], files, ...(followUp ? { followUp } : {}) };
+  return { embeds: [embed], ...playback(played) };
 }
 
 export { buildTikTokCard };

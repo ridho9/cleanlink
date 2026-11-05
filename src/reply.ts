@@ -66,8 +66,8 @@ export async function sendReply<T>(
   const content = fitLines([
     // One line per card, the link in angle brackets so Discord does not unfurl
     // it a second time next to the card. A card that hands the link over
-    // (`unfurl`) is the opposite: its URL is the preview, so it goes bare.
-    ...cards.map((card) => (card.unfurl ? card.url : `<${card.url}>`)),
+    // (`video: 'unfurl'`) is the opposite: its URL is the preview, so it goes bare.
+    ...cards.map((card) => (card.video === 'unfurl' ? card.url : `<${card.url}>`)),
     ...lines.filter(({ from }) => !carded.has(from)).map(({ to }) => to),
   ]).join('\n');
 

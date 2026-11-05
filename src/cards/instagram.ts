@@ -17,6 +17,7 @@
 
 import {
   attachMedia,
+  playback,
   authorBlock,
   getHtml,
   getJson,
@@ -108,8 +109,8 @@ export async function buildInstagramCard(
   // Some reels - seen with licensed music - are marked as video in the payload
   // but carry no `video_url`. yt-dlp still resolves the same CDN file.
   const video = media.video ?? (media.isVideo ? await videoLinks(href, options) : null);
-  const { files, followUp } = await attachMedia(video, options);
-  const playing = files.length > 0 || Boolean(followUp);
+  const played = await attachMedia(video, options);
+  const playing = played.kind !== 'none';
 
   const images = playing ? [] : imagesFor(media, source, oembed);
   if (images.length > 0) {
@@ -127,7 +128,7 @@ export async function buildInstagramCard(
     })),
   ];
 
-  return { embeds, files, ...(followUp ? { followUp } : {}) };
+  return { embeds, ...playback(played) };
 }
 
 /**

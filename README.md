@@ -155,6 +155,8 @@ Every message the bot acts on ends with one `[msg]` line in the journal: where i
 | `media` | `video`, `follow_up` (too large, sent separately), `unfurl` (handed to a mirror), `images:<n>`, `text` |
 | `notes` | the log lines written while that URL was handled |
 
+The code enforces these values. `Outcome` and `Marks` in [src/trace.ts](src/trace.ts) define the `reply` field and the per-URL fields, and `mark()` accepts only a field and value from `Marks`, so `tsc` rejects a misspelled field or value. `scripts/review.ts` reads the same types. To add a value, add it to the type first.
+
 The review reads them back:
 
 ```sh

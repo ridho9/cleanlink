@@ -5,6 +5,7 @@ import {
   authorBlock,
   clip,
   attachMedia,
+  playback,
   escapeMarkdown,
   getJson,
   statFields,
@@ -53,8 +54,8 @@ async function buildXCard({ match, href }: CardInput, options: CardOptions): Pro
   // download changes what a poster frame is worth: once the player is in the
   // message, the frame repeats the video's own first second.
   const video = videoUrls(tweet.media?.all) ?? videoUrls(tweet.quote?.media?.all);
-  const { files, followUp } = await attachMedia(video, options);
-  const playing = files.length > 0 || Boolean(followUp);
+  const played = await attachMedia(video, options);
+  const playing = played.kind !== 'none';
 
   // The main tweet's picture first, then the quoted tweet's. A quote can carry
   // photos of its own and they were being dropped; the API exposes them as
@@ -124,7 +125,7 @@ async function buildXCard({ match, href }: CardInput, options: CardOptions): Pro
     })),
   ];
 
-  return { embeds, files, ...(followUp ? { followUp } : {}) };
+  return { embeds, ...playback(played) };
 }
 
 /**

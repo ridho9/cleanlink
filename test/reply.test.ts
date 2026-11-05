@@ -62,6 +62,7 @@ test('media that could not be attached goes out as its own message', async () =>
       url: 'https://x.com/a/status/1',
       embeds: [{ title: 'x' }],
       files: [],
+      video: 'follow_up',
       followUp: 'https://video.twimg.com/big.mp4',
     }],
   });
@@ -78,7 +79,7 @@ test('every posted message is reported, so it can be deleted with its original',
   const reported = [];
   await sendReply(message, {
     lines: [],
-    cards: [{ ...card, files: [{ attachment: Buffer.alloc(1), name: 'p0.jpg' }], followUp: 'https://video.twimg.com/v.mp4' }],
+    cards: [{ ...card, files: [{ attachment: Buffer.alloc(1), name: 'p0.jpg' }], video: 'follow_up', followUp: 'https://video.twimg.com/v.mp4' }],
   }, { onSent: async (sent) => reported.push(sent) });
 
   // The first attempt was rejected and posted nothing; the fallback reply and
@@ -94,6 +95,7 @@ test('at most two follow-ups, and a failed one never breaks the reply', async ()
     url: `https://x.com/a/status/${i}`,
     embeds: [{ title: `x${i}` }],
     files: [],
+    video: 'follow_up' as const,
     followUp: `https://video.twimg.com/${i}.mp4`,
   }));
 
@@ -187,7 +189,7 @@ test('a card that hands the link over sends it bare, so it unfurls', async () =>
         url: 'https://www.facebed.com/reel/1/',
         embeds: [],
         files: [],
-        unfurl: true,
+        video: 'unfurl',
       },
     ],
   });

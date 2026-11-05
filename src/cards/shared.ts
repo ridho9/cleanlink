@@ -28,14 +28,30 @@ export interface CardFile {
   name: string;
 }
 
-export interface BuiltCard {
+/**
+ * How a card's video reaches the channel, if it has one. `attached`: a file in
+ * the message. `follow_up`: too large to attach, so `followUp` goes out as its
+ * own message, which Discord unfurls into a player. `unfurl`: no card of ours;
+ * the card's `url` is a mirror page that Discord previews itself.
+ */
+export type Playback =
+  | { video?: undefined; followUp?: undefined }
+  | { video: 'attached'; followUp?: undefined }
+  | { video: 'follow_up'; followUp: string }
+  | { video: 'unfurl'; followUp?: undefined };
+
+export type BuiltCard = Playback & {
   embeds: CardEmbed[];
   files: CardFile[];
-  followUp?: string | null;
-  unfurl?: boolean;
   degraded?: boolean;
   url?: string;
-}
+};
+
+/** What attachMedia got: a file that fits, a URL to send on its own, or nothing. */
+export type Media =
+  | { kind: 'attached'; files: CardFile[] }
+  | { kind: 'follow_up'; url: string }
+  | { kind: 'none' };
 
 type RequestOptions = CardOptions & { accept?: string };
 type RefusedMedia = { url: string; size: number };
@@ -164,13 +180,26 @@ export async function getHtml(url: string, options?: CardOptions): Promise<{ sta
  *
  * Candidates are ordered best rendition first.
  */
-export async function attachMedia(candidates: string | string[] | null, options: CardOptions = {}, name = 'video.mp4'): Promise<{ files: CardFile[]; followUp: string | null }> {
+export async function attachMedia(candidates: string | string[] | null, options: CardOptions = {}, name = 'video.mp4'): Promise<Media> {
   const urls = [candidates].flat().filter((url): url is string => Boolean(url));
-  if (urls.length === 0) return { files: [], followUp: null };
+  if (urls.length === 0) return { kind: 'none' };
 
   const media = await downloadMedia(urls, options, name);
-  if (media.files) return { files: media.files, followUp: null };
-  return { files: [], followUp: followUpOf(media.refused) };
+  if (media.files) return { kind: 'attached', files: media.files };
+  const url = followUpOf(media.refused);
+  return url ? { kind: 'follow_up', url } : { kind: 'none' };
+}
+
+/** The card fields for a video that attachMedia got. */
+export function playback(media: Media): Playback & { files: CardFile[] } {
+  switch (media.kind) {
+    case 'attached':
+      return { files: media.files, video: 'attached' };
+    case 'follow_up':
+      return { files: [], video: 'follow_up', followUp: media.url };
+    case 'none':
+      return { files: [] };
+  }
 }
 
 /**

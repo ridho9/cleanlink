@@ -196,7 +196,7 @@ test('a facebed reel past the budget hands the link to the mirror page', async (
   // The CDN URL produced no embed when posted alone; the page does, so it
   // becomes the link that Discord unfurls.
   assert.equal(card.url, 'https://www.facebed.com/reel/2241600476763618/');
-  assert.equal(card.unfurl, true);
+  assert.equal(card.video, 'unfurl');
 });
 
 test('a facebed login wall is still no card', async () => {

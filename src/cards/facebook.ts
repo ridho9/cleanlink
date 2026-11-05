@@ -5,6 +5,7 @@
 import {
   authorBlock,
   attachMedia,
+  playback,
   decodeEntities,
   getHtml,
   downloadVideo,
@@ -184,7 +185,7 @@ async function fromEmbedPage({ match, href }: CardInput, options: CardOptions): 
           // The player's own frame is the picture; the author name is all the
           // page gave us.
           Object.assign(embed, blocked?.embeds[0] ?? {});
-          return { embeds: [embed], files };
+          return { embeds: [embed], files, video: 'attached' };
         }
       }
       // The layout named the video but no player could be had. Handed back as
@@ -245,16 +246,16 @@ async function fromEmbedPage({ match, href }: CardInput, options: CardOptions): 
       const files = await downloadVideo(href, options);
       if (files) {
         delete embed.image;
-        return { embeds: [embed], files };
+        return { embeds: [embed], files, video: 'attached' };
       }
 
       // No merged file fits. A single-file rendition may still fit, or play
       // as a follow-up: Discord unfurls it when it arrives on its own. The URLs
       // are signed and expire, so they are only worth sending straight away.
-      const media = await attachMedia(await videoLinks(href, options), options);
-      if (media.files.length > 0 || media.followUp) {
+      const played = await attachMedia(await videoLinks(href, options), options);
+      if (played.kind !== 'none') {
         delete embed.image;
-        return { embeds: [embed], ...media };
+        return { embeds: [embed], ...playback(played) };
       }
 
       return { embeds, files: [], degraded: true };
@@ -294,16 +295,16 @@ async function fromFacebed(href: string, options: CardOptions): Promise<BuiltCar
 
   // A reel's `og:video` is the full file on Facebook's own CDN, usually past
   // the upload budget (a 17 s reel measured 24 MB).
-  const { files, followUp } = await attachMedia(metaContent(page.html, 'og:video'), options);
+  const played = await attachMedia(metaContent(page.html, 'og:video'), options);
   const image = metaContent(page.html, 'og:image');
-  if (files.length === 0 && !followUp && image) embed.image = { url: image };
+  if (played.kind === 'none' && image) embed.image = { url: image };
 
   // The file would not fit, and the CDN URL does not unfurl when posted alone
   // (measured: no embed). The page does, so the page is the link that gets
   // shown - one message, one player, and no caption twice.
-  if (followUp) return { url: mirror.href, embeds: [], files: [], unfurl: true };
+  if (played.kind === 'follow_up') return { url: mirror.href, embeds: [], files: [], video: 'unfurl' };
 
-  return { embeds: [embed], files };
+  return { embeds: [embed], ...playback(played) };
 }
 
 /** Fetch the facebed page and build the text part of a card from its tags. */
@@ -348,7 +349,7 @@ async function buildFacebookCard(input: CardInput, options: CardOptions): Promis
   const card = await fromEmbedPage(input, options);
 
   // A player in the message beats any mirror: one message, no unfurl needed.
-  const plays = card && (card.files.length > 0 || card.followUp);
+  const plays = card && (card.video === 'attached' || card.video === 'follow_up');
   if (plays) {
     // A refused reel that yt-dlp still fetched carries the video and nothing
     // else: the plugin page has no author or caption. Facebed's tags have
