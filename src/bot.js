@@ -152,6 +152,12 @@ export async function handleMessage(message) {
     console.log(`[ack] could not react: ${error.message}`);
   }
 
+  // Hide the original preview at once, so the channel does not show it and
+  // then swap it for our card a few seconds later. Every path that ends
+  // without a reply hands it back (see finally): it was our doing.
+  const suppressed = isDM ? false : await suppressOriginalEmbed(message);
+  let replied = false;
+
   try {
     const cleaned = await cleanMessage(message.content);
     // Cards are built from the cleaned URL, so a carded link shows its clean
@@ -167,22 +173,21 @@ export async function handleMessage(message) {
       console.log(`card ${card.from} -> ${card.embeds[0]?.url ?? card.followUp}`);
     }
 
-    const suppressed = isDM ? false : await suppressOriginalEmbed(message);
-
     try {
       await sendReply(message, { lines: cleaned, cards });
+      replied = true;
     } catch (error) {
       // A permission the bot lacks — most often Send Messages in Threads — is
-      // not a gateway fault and not something a retry fixes. Say so once, and
-      // hand the original preview back, because suppressing it was our doing.
+      // not a gateway fault and not something a retry fixes. Say so once; the
+      // preview comes back in finally.
       if (error?.status === 403 || error?.status === 404) {
         console.log(`[reply] cannot post in this channel: ${error.message} (${error.code})`);
-        if (suppressed) await restoreOriginalEmbed(message);
         return;
       }
       throw error;
     }
   } finally {
+    if (suppressed && !replied) await restoreOriginalEmbed(message);
     if (ack) {
       try {
         await ack.users.remove(client.user);
