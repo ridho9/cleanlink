@@ -9,7 +9,8 @@ import {
   PermissionFlagsBits,
 } from 'discord.js';
 import type { GuildTextBasedChannel, Message, OmitPartialGroupDMChannel } from 'discord.js';
-import type { Trace } from './trace.ts';
+import type { Outcome } from './trace.ts';
+import type { Replies } from './replies.ts';
 import { cleanMessage, handlesAny } from './clean.ts';
 import { buildCards, hasCardFor } from './cards/index.ts';
 import { sendReply } from './reply.ts';
@@ -155,27 +156,48 @@ export async function handleMessage(message: OmitPartialGroupDMChannel<Message>)
     where: isDM ? 'dm' : `${message.guild!.name} #${(message.channel as GuildTextBasedChannel).name ?? message.channel.id}`,
   });
   await runTraced(trace, async () => {
+    // A throw anywhere below leaves this value in place.
+    let outcome: Outcome = 'error';
     try {
-      await work(message, isDM, trace);
+      outcome = await work(message, isDM);
     } catch (error) {
-      markReply(trace, 'error');
       logError('handler', error, { id: message.id });
     } finally {
+      markReply(trace, outcome);
       finishTrace(trace);
     }
   });
 }
 
-/** Hide, react, clean, card, reply - the part of the path that is traced. */
-async function work(message: OmitPartialGroupDMChannel<Message>, isDM: boolean, trace: Trace) {
+/**
+ * Whether the original preview must come back. It was hidden on receipt, so
+ * it is handed back on every path where no reply of ours took its place.
+ */
+function mustRestore(outcome: Outcome): boolean {
+  switch (outcome) {
+    case 'sent':
+    case 'withdrawn':
+    case 'deleted':
+      return false;
+    case 'nothing':
+    case 'refused':
+    case 'error':
+      return true;
+    default: {
+      const unhandled: never = outcome;
+      return unhandled;
+    }
+  }
+}
+
+/** Hide, react, then deliver; hand the preview back and drop the reaction after. */
+async function work(message: OmitPartialGroupDMChannel<Message>, isDM: boolean): Promise<Outcome> {
   // Tracked from receipt, so a delete during the work below is not missed.
   const replies = track(message.id);
 
   // Hide the original preview first, before anything else, so the channel
-  // does not show it and then swap it for our card a few seconds later. Every
-  // path that ends without a reply hands it back (see finally): it was our doing.
+  // does not show it and then swap it for our card a few seconds later.
   const suppressed = isDM ? false : await suppressOriginalEmbed(message);
-  let replied = false;
 
   // Acknowledge on receipt so it is obvious the message landed, and drop the
   // reaction once the reply is out (or once we know there is nothing to do).
@@ -187,48 +209,16 @@ async function work(message: OmitPartialGroupDMChannel<Message>, isDM: boolean, 
     note(`[ack] could not react: ${(error as Error).message}`);
   }
 
+  let outcome: Outcome = 'error';
   try {
-    const cleaned = await cleanMessage(message.content);
-    // Cards are built from the cleaned URL, so a carded link shows its clean
-    // form even though it is the one being replaced by an embed.
-    const cards = await buildCards(message.content, { cleaned });
-
-    if (cleaned.length === 0 && cards.length === 0) {
-      markReply(trace, 'nothing');
-      return;
-    }
-
-    for (const { from, to } of cleaned) {
-      console.log(`cleaned ${from} -> ${to}`);
-    }
-    for (const card of cards) {
-      console.log(`card ${card.from} -> ${card.embeds[0]?.url ?? card.followUp}`);
-    }
-
-    // The user may delete the message while the cards are built; then there
-    // is no one left to answer.
-    if (replies.deleted()) {
-      markReply(trace, 'deleted');
-      return;
-    }
-    try {
-      await sendReply(message, { lines: cleaned, cards }, { onSent: replies.add });
-      replied = true;
-      markReply(trace, replies.deleted() ? 'deleted' : 'sent');
-    } catch (error) {
-      // A permission the bot lacks — most often Send Messages in Threads — is
-      // not a gateway fault and not something a retry fixes. Say so once; the
-      // preview comes back in finally.
-      const detail = error as { status?: number; message?: string; code?: string } | null | undefined;
-      if (detail?.status === 403 || detail?.status === 404) {
-        note(`[reply] cannot post in this channel: ${detail.message} (${detail.code})`);
-        markReply(trace, 'refused');
-        return;
-      }
-      throw error;
-    }
+    outcome = await deliver(message, replies);
+    return outcome;
   } finally {
-    if (suppressed && !replied && !replies.deleted()) await restoreOriginalEmbed(message);
+    replies.close();
+    // A deleted original has no preview left to restore, whatever the outcome.
+    if (suppressed && mustRestore(outcome) && !replies.deleted()) {
+      await restoreOriginalEmbed(message);
+    }
     if (ack) {
       try {
         await ack.users.remove(client.user!);
@@ -237,6 +227,46 @@ async function work(message: OmitPartialGroupDMChannel<Message>, isDM: boolean, 
       }
     }
   }
+}
+
+/** Clean, card, reply. Returns how it ended; throws only on an unexpected error. */
+async function deliver(
+  message: OmitPartialGroupDMChannel<Message>,
+  replies: Replies,
+): Promise<Outcome> {
+  const cleaned = await cleanMessage(message.content);
+  // Cards are built from the cleaned URL, so a carded link shows its clean
+  // form even though it is the one being replaced by an embed.
+  const cards = await buildCards(message.content, { cleaned });
+
+  if (cleaned.length === 0 && cards.length === 0) return 'nothing';
+
+  for (const { from, to } of cleaned) {
+    console.log(`cleaned ${from} -> ${to}`);
+  }
+  for (const card of cards) {
+    console.log(`card ${card.from} -> ${card.embeds[0]?.url ?? card.followUp}`);
+  }
+
+  // The user may delete the message while the cards are built; then there
+  // is no one left to answer.
+  if (replies.deleted()) return 'deleted';
+
+  try {
+    await sendReply(message, { lines: cleaned, cards }, { onSent: replies.add });
+  } catch (error) {
+    // A permission the bot lacks — most often Send Messages in Threads — is
+    // not a gateway fault and not something a retry fixes. Say so once; the
+    // preview comes back in work().
+    const detail = error as { status?: number; message?: string; code?: string } | null | undefined;
+    if (detail?.status === 403 || detail?.status === 404) {
+      note(`[reply] cannot post in this channel: ${detail.message} (${detail.code})`);
+      return 'refused';
+    }
+    throw error;
+  }
+  // Deleted while the reply was in flight: add() has already removed it.
+  return replies.deleted() ? 'withdrawn' : 'sent';
 }
 
 client.on(Events.MessageCreate, (message) => handleMessage(message));

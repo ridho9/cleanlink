@@ -14,11 +14,18 @@ export interface TraceEntry {
   [field: string]: string | string[];
 }
 
+/**
+ * How a handled message ended. `deleted`: the original was deleted before a
+ * reply went out. `withdrawn`: a reply went out and was then removed because
+ * the original was deleted.
+ */
+export type Outcome = 'nothing' | 'deleted' | 'withdrawn' | 'sent' | 'refused' | 'error';
+
 export interface Trace {
   id: string;
   where: string;
   started: number;
-  reply: string | null;
+  reply: Outcome | null;
   notes: string[];
   urls: Map<string, TraceEntry>;
 }
@@ -68,8 +75,8 @@ export function mark(field: string, value: string) {
   entryFor(current.trace, current.url)[field] = value;
 }
 
-/** Record how the message itself ended: sent, nothing, refused, deleted, error. */
-export function markReply(trace: Trace, value: string) {
+/** Record how the message itself ended. */
+export function markReply(trace: Trace, value: Outcome) {
   trace.reply = value;
 }
 

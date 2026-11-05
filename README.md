@@ -147,7 +147,7 @@ Every message the bot acts on ends with one `[msg]` line in the journal: where i
 
 | Field | Values |
 |---|---|
-| `reply` | `sent`, `nothing` (no change, no card), `refused` (403/404 from Discord), `deleted` (original deleted first), `error` |
+| `reply` | `sent`, `nothing` (no change, no card), `refused` (403/404 from Discord), `deleted` (original deleted before the reply), `withdrawn` (reply sent, then removed because the original was deleted), `error`. Logs from before `withdrawn` existed count both cases as `deleted`. |
 | `clean` | the cleaned URL, `unchanged`, `error` |
 | `resolve` | `failed` (request failed twice), `fallback` (share link landed on a front page) |
 | `redirect` | `none`: a share link that did not redirect (fake or expired code) |

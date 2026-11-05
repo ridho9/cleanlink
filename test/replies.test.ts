@@ -58,3 +58,20 @@ test('a reply that is already gone does not stop the others', async () => {
 
   assert.deepEqual(log, ['reply']);
 });
+
+test('a message still being handled is not evicted by 1000 newer ones', async () => {
+  const log: string[] = [];
+  const slow = track('slow');
+  const old = track('old');
+  old.close();
+  await old.add(botMessage('old reply', log));
+
+  for (let i = 0; i < 1000; i += 1) track(`busy-${i}`).close();
+
+  // The slow handler replies only now, and then the user deletes the message.
+  await slow.add(botMessage('slow reply', log));
+  await originalDeleted('slow');
+  await originalDeleted('old');
+
+  assert.deepEqual(log, ['slow reply'], 'the finished, older entry was the one evicted');
+});
