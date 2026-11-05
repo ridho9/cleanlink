@@ -53,7 +53,7 @@ export type Media =
   | { kind: 'follow_up'; url: string }
   | { kind: 'none' };
 
-type RequestOptions = CardOptions & { accept?: string };
+type RequestOptions = CardOptions & { accept?: string; method?: 'HEAD' };
 type RefusedMedia = { url: string; size: number };
 type VideoFormat = { url?: string; protocol?: string; vcodec?: string; acodec?: string };
 type VideoInfo = { formats?: VideoFormat[] };
@@ -130,8 +130,9 @@ export function toField(text: unknown, max: number): string {
  * because a dropped connection there costs the whole card. An HTTP error status
  * is not retried: that is an answer, not a hiccup.
  */
-async function request(url: string, { fetchImpl = fetch, accept, headers = {}, timeout = TIMEOUT_MS }: RequestOptions = {}): Promise<Response> {
+async function request(url: string, { fetchImpl = fetch, accept, method, headers = {}, timeout = TIMEOUT_MS }: RequestOptions = {}): Promise<Response> {
   const init = {
+    ...(method ? { method } : {}),
     headers: {
       'user-agent': BROWSER_UA,
       ...(accept ? { accept } : {}),
@@ -161,6 +162,19 @@ export async function getJson<T>(url: string, options?: CardOptions): Promise<T 
     // A JSON endpoint answering HTML is an error page, not a card.
     note(`[card] ${new URL(url).host} answered non-JSON`);
     return null;
+  }
+}
+
+/**
+ * Whether `url` ends at an image, asked with HEAD so nothing is downloaded.
+ * A mirror's media path can lead to a video, which an embed cannot show.
+ */
+export async function servesImage(url: string, options?: CardOptions): Promise<boolean> {
+  try {
+    const res = await request(url, { ...options, method: 'HEAD' });
+    return res.ok && (res.headers.get('content-type') ?? '').startsWith('image/');
+  } catch {
+    return false;
   }
 }
 

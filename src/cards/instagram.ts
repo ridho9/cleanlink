@@ -14,6 +14,12 @@
 // it fits the upload budget, otherwise posted as a follow-up link that Discord
 // unfurls into a player. When the payload omits `video_url`, yt-dlp supplies
 // it. The clean frame is shown only when no video can be had.
+//
+// Instagram sometimes answers a server with a login wall: a 200 page with no
+// OpenGraph tags. Only then are two mirrors used, each for what it has:
+// oginstagram for the text, counts and image count, and vxinstagram for the
+// images, which it serves unsigned by index (oginstagram signs all but the
+// first). Both were checked live on 2026-11-05.
 
 import {
   attachMedia,
@@ -22,10 +28,12 @@ import {
   getHtml,
   getJson,
   INSTAGRAM_PINK,
+  servesImage,
   metaContent,
   toField,
   videoLinks,
 } from './shared.ts';
+import { note } from '../trace.ts';
 import type { BuiltCard, CardEmbed, CardInput, CardOptions } from './shared.ts';
 
 type InstagramOEmbed = {
@@ -44,6 +52,8 @@ type InstagramMedia = {
 const CAPTION_IN_TITLE = /on Instagram:\s*"?(.*?)"?$/s;
 /** OpenGraph counts: `1M likes, 11K comments - handle on date: …`. */
 const COUNT_PREFIX = /^([\d.,]+[KMB]?)\s+likes?,\s+([\d.,]+[KMB]?)\s+comments?\s*-\s*/i;
+/** oginstagram's description: `🖼️ 4 ❤️ 3,578 💬 47 caption`; the image count only on carousels. */
+const MIRROR_PREFIX = /^(?:🖼️\s*(\d+)\s+)?❤️\s*([\d.,]+[KMB]?)\s+💬\s*([\d.,]+[KMB]?)\s*/u;
 
 /** Instagram allows 20 images per carousel; Discord allows 10 embeds a message. */
 const MAX_IMAGES = 10;
@@ -63,10 +73,12 @@ export async function buildInstagramCard(
   // The handler's own URL is only a fallback: an embed-only answer still has a
   // usable caption.
   const source = page?.html ?? embedPage?.html;
-  if (!source) return null;
-
-  const title = metaContent(source, 'og:title');
-  if (!title) return null;
+  const title = source ? metaContent(source, 'og:title') : null;
+  if (!source || !title) {
+    // Say why, so the review can tell a login wall from a dead post.
+    note(`[card] instagram ${page ? `page had no og:title (${page.html.length} bytes)` : 'page did not answer 200'}`);
+    return fromMirrors(shortcode!, options);
+  }
 
   const description = metaContent(source, 'og:description') ?? '';
   const counts = COUNT_PREFIX.exec(description);
@@ -178,4 +190,90 @@ function handleFrom(title: string, canonical: string): string {
   const reserved = new Set(['p', 'reel', 'reels', 'tv', 'share']);
   const first = new URL(canonical).pathname.split('/').filter(Boolean)[0];
   return first && !reserved.has(first) ? first : '';
+}
+
+/**
+ * The card from the mirrors, for when Instagram walls the bot off. Stills only:
+ * a mirror's video path is not checked, and a still beats no card.
+ */
+async function fromMirrors(shortcode: string, options: CardOptions): Promise<BuiltCard | null> {
+  const og = await getHtml(`https://www.oginstagram.com/p/${shortcode}/`, options);
+  const ogTitle = og && metaContent(og.html, 'og:title');
+
+  let title: string;
+  let caption = '';
+  let count = 1;
+  let counts: RegExpExecArray | null = null;
+  // oginstagram's own og:image is signed and always a still, video posts
+  // included; its other images are signed too, so they come from vxinstagram.
+  let preview: string | null = null;
+  let from = 'oginstagram';
+  if (og && ogTitle) {
+    title = ogTitle;
+    const description = metaContent(og.html, 'og:description') ?? '';
+    counts = MIRROR_PREFIX.exec(description);
+    caption = description.replace(MIRROR_PREFIX, '');
+    count = Number(counts?.[1] ?? 1);
+    preview = metaContent(og.html, 'og:image');
+  } else {
+    // vxinstagram has the text too, but no image count: one image only.
+    const vx = await getHtml(`https://vxinstagram.com/p/${shortcode}/`, options);
+    const vxTitle = vx && metaContent(vx.html, 'og:title');
+    if (!vx || !vxTitle) {
+      note('[card] instagram mirrors had nothing either');
+      return null;
+    }
+    title = vxTitle;
+    caption = metaContent(vx.html, 'og:description') ?? '';
+    from = 'vxinstagram';
+  }
+  note(`[card] instagram fell back to ${from}`);
+
+  const canonical = `https://www.instagram.com/p/${shortcode}/`;
+  const handle = /\(@([\w.]+)\)\s*$/.exec(title)?.[1] ?? '';
+  const name = title.replace(/\s*\(@[\w.]+\)\s*$/, '');
+  const embed: CardEmbed = {
+    url: canonical,
+    color: INSTAGRAM_PINK,
+    footer: { text: 'Instagram' },
+  };
+  if (name || handle) {
+    embed.author = authorBlock(
+      [name, handle && `(@${handle})`].filter(Boolean).join(' '),
+      'Instagram',
+      { url: handle ? `https://www.instagram.com/${handle}/` : canonical },
+    );
+  }
+  if (caption.trim()) embed.description = toField(caption.trim(), 4096);
+  if (counts) {
+    embed.fields = [
+      { name: 'Likes', value: counts[2]!, inline: true },
+      { name: 'Comments', value: counts[3]!, inline: true },
+    ];
+  }
+
+  // An index past the end repeats the last image, so the count must come
+  // from oginstagram; without it, one image is all that is safe. A video item
+  // answers with an MP4, which an embed cannot show, so each is checked.
+  const candidates = Array.from(
+    { length: Math.min(Math.max(count, 1), MAX_IMAGES) },
+    (_, index) => (index === 0 && preview ? preview : `https://vxinstagram.com/offload/${shortcode}/${index}`),
+  );
+  const stills = await Promise.all(candidates.map((url) => (url === preview ? true : servesImage(url, options))));
+  const images = candidates.filter((_, index) => stills[index]);
+  if (images.length > 0) embed.image = { url: images[0]! };
+  if (images.length > 1) embed.footer = { text: `Instagram · 1/${images.length}` };
+
+  return {
+    embeds: [
+      embed,
+      ...images.slice(1).map((image, index) => ({
+        url: canonical,
+        color: INSTAGRAM_PINK,
+        image: { url: image },
+        footer: { text: `Instagram · ${index + 2}/${images.length}` },
+      })),
+    ],
+    files: [],
+  };
 }

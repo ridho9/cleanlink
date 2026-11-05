@@ -25,7 +25,7 @@ Treatment is one of four things:
 | FurAffinity | `furaffinity.net/view/<id>`, `/full/<id>` | Embed | image via the faexport API | working | no |
 | FurAffinity (alt) | same | **Rename** → `xfuraffinity.net` | plain link | alternative to the above | no |
 | HentaiFoundry | `hentai-foundry.com/pictures/user/<user>/<id>/<slug>` | Embed | image | working | no |
-| **Instagram** | `instagram.com/(p\|reel\|reels)/<id>` | **Rename** → `vxinstagram.com` | plain link | **disabled** upstream (broken) | **params + card** — carded from Instagram's own page, oEmbed and embed payload; reels are carded with their still, and no third-party renderer is used |
+| **Instagram** | `instagram.com/(p\|reel\|reels)/<id>` | **Rename** → `vxinstagram.com` | plain link | `vxinstagram.com` answers again (checked 2026-11-05) | **params + card** — carded from Instagram's own page, oEmbed and embed payload; reels are carded with their still. Only when Instagram answers with a login page, the card comes from `oginstagram.com` (text, counts, image count) and `vxinstagram.com` (the other images) |
 | Misskey | `misskey.io` / `misskey.design` / `oekakiskey.com` + `/notes/<id>` | Embed | text, images, NSFW gate | misskey.io only | no card — Discord's own preview already shows author, text and image |
 | Newgrounds | `newgrounds.com/art/view/<user>/<slug>` | Embed | image + rating | **broken** upstream | no |
 | Pixiv | `pixiv.net/…/artworks/<id>` | **Attach** | up to 5 images; ugoira → mp4 via ffmpeg | working (needs cookie) | **attach** — built; up to 5 pages re-uploaded, because `i.pximg.net` is 403 without a Referer |

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { buildCards } from '../../src/cards/index.ts';
-import { fakeFetch, fixture, fixtureText } from '../../test-support/harness.ts';
+import { fakeFetch, fixture, fixtureText, imageResponse } from '../../test-support/harness.ts';
 
 const REEL_HTML = fixtureText('instagram-reel.html');
 const CAROUSEL_PAGE = fixtureText('instagram-carousel-page.html');
@@ -150,10 +150,83 @@ test('a reel over the budget follows up with its video URL', async () => {
   assert.ok(card.embeds[0].description, 'the card keeps the caption');
 });
 
-test('a photo post with no OpenGraph title gets no card', async () => {
+test('a login wall with no mirror answering gets no card', async () => {
   const { impl } = fakeFetch([['https://www.instagram.com/', '<html><head></head></html>']]);
   const cards = await buildCards('https://www.instagram.com/p/AbCdEf12345/', { fetchImpl: impl });
   assert.deepEqual(cards, []);
+});
+
+const LOGIN_WALL = '<html><head><title>Login • Instagram</title></head></html>';
+const PREVIEW = 'https://www.oginstagram.com/offload/DeKG8FGDKX3/1?thumbnail=1&sig=x';
+const mirrorPage = (title: string, description: string, image = PREVIEW) =>
+  `<html><head><meta property="og:title" content="${title}"><meta property="og:description" content="${description}"><meta property="og:image" content="${image}"></head></html>`;
+const video = () => new Response('', { status: 200, headers: { 'content-type': 'video/mp4' } });
+
+test('behind a login wall, oginstagram gives the text and vxinstagram the other images', async () => {
+  const { impl } = fakeFetch([
+    ['https://www.instagram.com/', LOGIN_WALL],
+    ['https://www.oginstagram.com/p/DeKG8FGDKX3/', mirrorPage('Nil Mısırlıoğlu (@nilsworks)', '🖼️ 3 ❤️ 3,578 💬 47 Best villainess manhwa ever')],
+    ['https://vxinstagram.com/offload/', imageResponse()],
+  ]);
+  const [card] = await buildCards('https://www.instagram.com/p/DeKG8FGDKX3/', { fetchImpl: impl });
+
+  assert.equal(card!.embeds[0]!.author!.name, 'Nil Mısırlıoğlu (@nilsworks)');
+  assert.equal(card!.embeds[0]!.description, 'Best villainess manhwa ever');
+  assert.deepEqual(card!.embeds[0]!.fields!.map((field) => field.value), ['3,578', '47']);
+  // The count comes from oginstagram: vxinstagram repeats its last image past the end.
+  assert.deepEqual(card!.embeds.map((embed) => embed.image?.url), [
+    PREVIEW,
+    'https://vxinstagram.com/offload/DeKG8FGDKX3/1',
+    'https://vxinstagram.com/offload/DeKG8FGDKX3/2',
+  ]);
+  assert.ok(card!.embeds.every((embed) => embed.url === 'https://www.instagram.com/p/DeKG8FGDKX3/'), 'one gallery, linked to Instagram');
+});
+
+test('a carousel item that is a video is left out, not shown as a broken image', async () => {
+  const { impl, calls } = fakeFetch([
+    ['https://www.instagram.com/', LOGIN_WALL],
+    ['https://www.oginstagram.com/', mirrorPage('Nil (@nilsworks)', '🖼️ 3 ❤️ 3 💬 9 caption')],
+    ['https://vxinstagram.com/offload/DeKG8FGDKX3/1', video()],
+    ['https://vxinstagram.com/offload/', imageResponse()],
+  ]);
+  const [card] = await buildCards('https://www.instagram.com/p/DeKG8FGDKX3/', { fetchImpl: impl });
+
+  assert.deepEqual(card!.embeds.map((embed) => embed.image?.url), [PREVIEW, 'https://vxinstagram.com/offload/DeKG8FGDKX3/2']);
+  assert.deepEqual(card!.embeds.map((embed) => embed.footer?.text), ['Instagram · 1/2', 'Instagram · 2/2']);
+  assert.ok(!calls.some((call) => call.url === PREVIEW), 'the signed preview is not fetched by the bot');
+});
+
+test('a reel behind a login wall shows oginstagram\'s still', async () => {
+  const { impl } = fakeFetch([
+    ['https://www.instagram.com/', LOGIN_WALL],
+    ['https://www.oginstagram.com/', mirrorPage('Zerven (@zervennn)', '❤️ 1,670 💬 14 Mie ayam date')],
+    ['https://vxinstagram.com/offload/', video()],
+  ]);
+  const [card] = await buildCards('https://www.instagram.com/reel/DfNefQ7kv-r/', { fetchImpl: impl });
+
+  assert.equal(card!.embeds.length, 1);
+  assert.equal(card!.embeds[0]!.description, 'Mie ayam date');
+  assert.equal(card!.embeds[0]!.image!.url, PREVIEW);
+});
+
+test('when oginstagram fails too, vxinstagram gives the text and one image', async () => {
+  const { impl } = fakeFetch([
+    ['https://www.instagram.com/', LOGIN_WALL],
+    ['https://vxinstagram.com/p/DeKG8FGDKX3/', mirrorPage('Nil (@nilsworks)', 'Best villainess manhwa ever')],
+    ['https://vxinstagram.com/offload/', imageResponse()],
+  ]);
+  const [card] = await buildCards('https://www.instagram.com/p/DeKG8FGDKX3/', { fetchImpl: impl });
+
+  assert.equal(card!.embeds.length, 1);
+  assert.equal(card!.embeds[0]!.author!.name, 'Nil (@nilsworks)');
+  assert.equal(card!.embeds[0]!.fields, undefined);
+  assert.equal(card!.embeds[0]!.image!.url, 'https://vxinstagram.com/offload/DeKG8FGDKX3/0');
+});
+
+test('a working Instagram page never touches the mirrors', async () => {
+  const { impl, calls } = fakeFetch([['https://www.instagram.com/', REEL_HTML]]);
+  await buildCards('https://www.instagram.com/p/AbCdEf12345/', { fetchImpl: impl });
+  assert.ok(calls.every((call) => call.url.startsWith('https://www.instagram.com/')));
 });
 
 test('Instagram card matches every permalink shape', async () => {
