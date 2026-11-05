@@ -81,7 +81,7 @@ test('a TikTok video over the budget becomes a follow-up, not a dead cover', asy
     ['https://www.tikwm.com/api/', TIKWM],
     [TIKWM.data.play, new Response(MP4_BYTES, {
       status: 200,
-      headers: { 'content-length': String(9 * 1024 * 1024) },
+      headers: { 'content-length': String(12 * 1024 * 1024) },
     })],
   ]);
   const [card] = await buildCards('https://www.tiktok.com/@tiktok/video/7666123874932722974', {

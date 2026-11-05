@@ -18,8 +18,9 @@ test('buildCards stops at the image budget', async () => {
       urls: { regular: `https://i.pximg.net/img-master/img/x_p${index}_master1200.jpg` },
     })),
   };
-  // 6 MB each: the second page would pass 8 MB, so only the first survives.
-  const big = new Response(Buffer.alloc(6_000_000), { status: 200 });
+  // 6 MB each: the second page would pass the limit, so only the first survives.
+  // A factory, because the pages are fetched in parallel.
+  const big = () => new Response(Buffer.alloc(6_000_000), { status: 200 });
   const { impl } = fakeFetch([
     ['https://www.pixiv.net/ajax/illust/151616953/pages', pages],
     ['https://www.pixiv.net/ajax/illust/151616953', heavy],
@@ -99,8 +100,8 @@ test('buildCards shares the attachment byte budget across cards', async () => {
   const page = {
     body: [{ urls: { regular: 'https://i.pximg.net/img-master/img/x_p0_master1200.jpg' } }],
   };
-  // 6 MB each: the first card fits, the second has only 2 MB left.
-  const big = new Response(Buffer.alloc(6_000_000), { status: 200 });
+  // 6 MB each: the first card fits, the second has only 3.5 MB left.
+  const big = () => new Response(Buffer.alloc(6_000_000), { status: 200 });
   const { impl } = fakeFetch([
     ['https://www.pixiv.net/ajax/illust/1/pages', page],
     ['https://www.pixiv.net/ajax/illust/2/pages', page],

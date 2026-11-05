@@ -58,7 +58,7 @@ test('X card carries text, author, still, stats and timestamp', async () => {
 test('a video over the budget becomes a follow-up, not a dead poster', async () => {
   const huge = new Response(MP4_BYTES, {
     status: 200,
-    headers: { 'content-type': 'video/mp4', 'content-length': String(9 * 1024 * 1024) },
+    headers: { 'content-type': 'video/mp4', 'content-length': String(12 * 1024 * 1024) },
   });
   const { impl } = fakeFetch([
     ['https://api.fxtwitter.com/', X_VIDEO],
@@ -77,8 +77,8 @@ test('a video over the budget becomes a follow-up, not a dead poster', async () 
 });
 
 test('a rendition over the budget is skipped so a smaller one can play', async () => {
-  // The real OHIOISONFIRE video: the 2176 kbps rendition is 8.21 MB, just over
-  // the 8 MB limit; the 832 kbps one fits.
+  // Shaped like the real OHIOISONFIRE video: a high-bitrate rendition over the
+  // upload limit, and a lower one that fits.
   const tweet = structuredClone(X_VIDEO);
   const big = 'https://video.twimg.com/amplify_video/1/vid/1280x720/big.mp4?tag=12';
   const small = 'https://video.twimg.com/amplify_video/1/vid/640x360/small.mp4?tag=12';
@@ -89,7 +89,7 @@ test('a rendition over the budget is skipped so a smaller one can play', async (
   ];
   const { impl, calls } = fakeFetch([
     ['https://api.fxtwitter.com/', tweet],
-    [big, new Response(MP4_BYTES, { status: 200, headers: { 'content-length': String(8_611_539) } })],
+    [big, new Response(MP4_BYTES, { status: 200, headers: { 'content-length': String(11_000_000) } })],
     [small, mp4Response()],
   ]);
 
@@ -242,4 +242,32 @@ test('X card is skipped when the API fails', async () => {
   const { impl } = fakeFetch([['https://api.fxtwitter.com/', new Response('gone', { status: 404 })]]);
   const cards = await buildCards('https://x.com/jack/status/20', { fetchImpl: impl });
   assert.deepEqual(cards, []);
+});
+
+test('a body with no content-length is counted while it streams, and refused past the limit', async () => {
+  // A chunked response declares no length; the size is only known by reading.
+  // Every rendition gets its own stream; record the most read from any one.
+  let pulled = 0;
+  const chunk = Buffer.alloc(1024 * 1024);
+  const endless = () => {
+    let reads = 0;
+    return new Response(new ReadableStream({
+      pull(controller) {
+        reads += 1;
+        pulled = Math.max(pulled, reads);
+        controller.enqueue(chunk);
+        if (reads > 50) controller.close();
+      },
+    }), { status: 200 });
+  };
+  const { impl } = fakeFetch([
+    ['https://api.fxtwitter.com/', X_VIDEO],
+    ['https://video.twimg.com/', endless],
+  ]);
+
+  const [card] = await buildCards('https://x.com/someone/status/2117280148445962692', { fetchImpl: impl });
+
+  assert.deepEqual(card.files, [], 'nothing attached');
+  assert.equal(card.followUp, X_VIDEO.tweet.media.all[0].url, 'a live URL refused for size still plays');
+  assert.ok(pulled <= 12, `stopped near the limit, not at the end (read ${pulled} MiB)`);
 });

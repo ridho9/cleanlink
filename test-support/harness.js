@@ -18,6 +18,8 @@ export function fakeFetch(routes) {
     const [, value] = route;
     // A Response body can be read once, so hand out a clone per request; the
     // pixiv builder fetches the same image host several times.
+    // A factory builds a fresh response per request, e.g. a streaming body.
+    if (typeof value === 'function') return value();
     if (value instanceof Response) return value.clone();
     if (typeof value === 'string') return new Response(value, { status: 200 });
     return new Response(JSON.stringify(value), {

@@ -21,7 +21,10 @@ export const MAX_CARDS = 5; // mirrors the cleaner's 5-link cap
 export const MAX_EMBEDS = 10; // Discord's hard limit per message
 export const MAX_FILES = 10; // Discord's hard limit per message
 export const MAX_IMAGES = 5; // pages per Pixiv work, matching SaucyBot's cap
-export const MAX_ATTACH_BYTES = 8_000_000; // below Discord's default 10 MB limit
+// Discord's upload limit is 10 MiB on unboosted and tier 1 servers and in DMs.
+// The margin covers the rest of the request: the JSON payload and the
+// multipart framing.
+export const MAX_ATTACH_BYTES = 9_500_000;
 
 export const X_BLUE = 0x1d9bf0;
 export const PIXIV_BLUE = 0x0096fa;
@@ -139,7 +142,7 @@ export async function attachMedia(candidates, options = {}, name = 'video.mp4') 
  *
  * The declared length is checked before the body is read, so an oversized
  * video is refused rather than pulled into memory and then discarded. The
- * deadline is longer than a page fetch because an 8 MB file over a slow link
+ * deadline is longer than a page fetch because a 9 MB file over a slow link
  * is not a hung request.
  */
 export async function downloadMedia(urls, options = {}, name = 'video.mp4') {
@@ -170,8 +173,8 @@ export async function downloadMedia(urls, options = {}, name = 'video.mp4') {
       continue;
     }
 
-    const buffer = Buffer.from(await res.arrayBuffer());
-    if (buffer.length > cap) {
+    const buffer = await readCapped(res, cap);
+    if (buffer === null) {
       refusedForSize = true;
       continue;
     }
@@ -182,12 +185,39 @@ export async function downloadMedia(urls, options = {}, name = 'video.mp4') {
   return { files: null, refusedForSize };
 }
 
-export async function getBytes(url, options) {
+/** Download one image, or null when it fails, is empty, or exceeds `cap`. */
+export async function getBytes(url, options, cap = MAX_ATTACH_BYTES) {
   const res = await request(url, options);
   if (!res.ok) return null;
-  const buffer = Buffer.from(await res.arrayBuffer());
-  if (buffer.length === 0) return null;
+  const buffer = await readCapped(res, cap);
+  if (!buffer || buffer.length === 0) return null;
   return buffer;
+}
+
+/**
+ * Read a response body, but stop at `cap` bytes and return null.
+ *
+ * `content-length` is only a claim, and a chunked response has none, so the
+ * body is counted while it streams: a file over the budget is never held in
+ * memory in full.
+ */
+async function readCapped(res, cap) {
+  if (!res.body) return Buffer.alloc(0);
+  const reader = res.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return Buffer.concat(chunks, total);
+    total += value.length;
+    if (total > cap) {
+      // Not awaited: the answer is already known, and a cancel can wait on
+      // the other side of the connection.
+      reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
 }
 
 /** Decode the handful of HTML entities Meta puts in its meta tags. */

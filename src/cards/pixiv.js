@@ -45,8 +45,13 @@ async function buildPixivCard({ match, href }, options) {
   const files = [];
   let bytes = 0;
   const restricted = (meta.body.xRestrict ?? 0) !== 0;
+  // Fetched together, kept in page order: the wait is the slowest page, not
+  // the sum of them.
+  const buffers = await Promise.all(
+    urls.map((url) => getBytes(url, { ...options, headers }, byteCap)),
+  );
   for (const [index, url] of urls.entries()) {
-    const buffer = await getBytes(url, { ...options, headers });
+    const buffer = buffers[index];
     if (!buffer) continue;
     if (bytes + buffer.length > byteCap) break;
     bytes += buffer.length;

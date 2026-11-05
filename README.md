@@ -72,7 +72,7 @@ Note that server mode means the bot reads message content in every channel it ca
 | Site | Handles | Card |
 |---|---|---|
 | Threads | `/share/<code>` share links, strips `xmt`, `slof` | **yes** — post text, author, image from the page's OpenGraph tags |
-| Instagram | `/share/…` links, strips `igsh`, `igshid`, `mdxt`, `psln` | **yes** — one embed per image, for photos, carousels and reels; a reel gets its video: attached when it fits 8 MB, otherwise a follow-up link that plays |
+| Instagram | `/share/…` links, strips `igsh`, `igshid`, `mdxt`, `psln` | **yes** — one embed per image, for photos, carousels and reels; a reel gets its video: attached when it fits 9.5 MB, otherwise a follow-up link that plays |
 | TikTok | `vm.` / `vt.` short links, strips `is_from_webapp`, `sender_device`, `web_id`, `_t`, … | **yes** — caption, author, cover, counts from `tikwm.com` |
 | Twitter / X | strips `s`, `t`, `ref_src`, `ref_url` | **yes** — text, avatar, stats, quote, still |
 | YouTube | on `watch` links keeps only `v`, so playlist and radio parameters go; short links lose `si`, `feature` | no, the native player is better |
@@ -91,7 +91,7 @@ Seven sites get a card the bot builds itself, because Discord's own preview fail
 
 | Site | Source | What the card shows |
 |---|---|---|
-| **X** | `api.fxtwitter.com`, `video.twimg.com` | full text, avatar, quote as a blockquote, Replies/Retweets/Likes/Views, one full-size embed per image (the quoted tweet's pictures included), and the video or GIF attached as `video.mp4` — Discord cannot play X video inside an embed, but it plays an attached file. X offers several renditions; the bot takes the **largest that fits the 8 MB budget**, and the poster frame appears only when nothing could be attached, so the player is not shown twice |
+| **X** | `api.fxtwitter.com`, `video.twimg.com` | full text, avatar, quote as a blockquote, Replies/Retweets/Likes/Views, one full-size embed per image (the quoted tweet's pictures included), and the video or GIF attached as `video.mp4` — Discord cannot play X video inside an embed, but it plays an attached file. X offers several renditions; the bot takes the **largest that fits the 9.5 MB budget**, and the poster frame appears only when nothing could be attached, so the player is not shown twice |
 | **Pixiv** | `ajax/illust` + `ajax/illust/<id>/pages` | title, author, tags, up to 5 pages downloaded with a pixiv `Referer` and re-uploaded, because `i.pximg.net` answers `403` without it and Discord never sends one |
 | **Threads** | the page's OpenGraph tags, fetched as `Mozilla/5.0` | author, post text, image or avatar. Crawled as `Discordbot` the page returns a 107 KB shell with no description, which is why Discord's own Threads card has no words |
 | **Instagram** | page + `api/v1/oembed` + `/p/<shortcode>/embed/captioned/` | display name, the **full** caption, Likes/Comments, one embed per carousel image. A reel's MP4 comes from the payload's `video_url`, or from `yt-dlp` when the payload omits it (seen on reels with licensed music); it is attached when it fits, otherwise posted as a follow-up link that Discord plays. The clean frame is used only when no video can be had. |
@@ -107,7 +107,7 @@ Why the other two get no card: **Misskey** already answers Discord's crawler wit
 - **An embed suppresses link unfurls.** A message holding our card never creates Discord's own preview, and an MP4 in `embed.video` is dropped outright. That is why a video can only arrive as an attachment or as its own message.
 - **When nothing fits the upload budget, the media URL goes out as a second message.** Discord unfurls the video URL into a player with no upload and no size limit; it just has to be alone in its message. The URL is masked as `[▶ Play video](…)`, because a signed CDN URL runs past 1000 characters and Discord would print it in full. At most two such follow-ups per reply, one per card, and the card then omits the poster frame so the player is not shown twice.
 - **No spoiler for embed images.** Only an attachment honours the `SPOILER_` filename prefix, which is why the nhentai cover leaves the embed. A spoiler is redaction, not permission.
-- **Budgets per message, shared by every card:** 5 cards, 10 embeds, 10 files, 8 MB of attachments. A card that would break a budget is skipped whole.
+- **Budgets per message, shared by every card:** 5 cards, 10 embeds, 10 files, 9.5 MB of attachments. A card that would break a budget is skipped whole.
 - **A card is decoration and degrades:** a rejected attachment resends the embeds alone, a missing **Embed Links** permission resends the plain links. Never an error, never a lost clean link.
 - **Card text is third-party text:** everything passes through `escapeMarkdown`, and composition happens before clipping so our own `> **Quoting …**` markup survives.
 
@@ -176,4 +176,4 @@ The cleaning logic is plain functions with `fetch` injected, so the whole suite 
 - **The bot cannot remove an embed from your message in a DM.** Suppressing embeds on a message you did not author needs `Manage Messages`, and DM channels have no permissions, so Discord answers `404` (verified). Wrap the link in angle brackets — `<https://…>` — and Discord shows no preview on your message; the bot still parses it and its own reply carries the preview.
 - Nothing is stored: no database, no cache, no message logging beyond the one `console.log` per cleaned link.
 - Limits: 4 s per hop, 3 hops, 5 links per message. A failed lookup leaves the link untouched rather than guessing.
-- Card limits, shared by every card in the message: 10 embeds, 10 attachments, 5 Pixiv pages per work, 8 MB of attachments, 6 s per request. A card that does not fit the budget is skipped whole, and a card that cannot be built leaves the plain cleaned reply — never an error.
+- Card limits, shared by every card in the message: 10 embeds, 10 attachments, 5 Pixiv pages per work, 9.5 MB of attachments, 6 s per request. A card that does not fit the budget is skipped whole, and a card that cannot be built leaves the plain cleaned reply — never an error.

@@ -61,8 +61,8 @@ export async function buildNhentaiCard({ match, href }, options) {
   const filesLeft = budget.files ?? 1;
   const byteCap = Math.min(MAX_ATTACH_BYTES, budget.bytes ?? MAX_ATTACH_BYTES);
   if (cover && filesLeft > 0) {
-    const buffer = await getBytes(cover, options);
-    if (buffer && buffer.length <= byteCap) {
+    const buffer = await getBytes(cover, options, byteCap);
+    if (buffer) {
       return {
         embeds: [embed],
         files: [{ attachment: buffer, name: 'SPOILER_cover.webp' }],
