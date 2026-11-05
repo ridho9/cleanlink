@@ -76,7 +76,10 @@ if (process.env.DEBUG) {
 
 client.on(Events.Warn, (msg) => console.log(`[warn] ${msg}`));
 
-/** Strip the preview card from someone else's message, when allowed. */
+/**
+ * Strip the preview card from someone else's message, when allowed.
+ * @returns {Promise<boolean>} true when the embed was actually suppressed
+ */
 async function suppressOriginalEmbed(message) {
   // Needs Manage Messages, which only exists in guilds. A DM channel has no
   // permission model at all and answers 50003, so this is guild-only by nature.
@@ -100,8 +103,20 @@ async function suppressOriginalEmbed(message) {
   try {
     await message.suppressEmbeds(true);
     console.log('[guild] suppressed the original embed');
+    return true;
   } catch (error) {
     console.log(`[guild] suppress failed: ${error.message}`);
+    return false;
+  }
+}
+
+/** Put the original preview back after a reply that never went out. */
+async function restoreOriginalEmbed(message) {
+  try {
+    await message.suppressEmbeds(false);
+    console.log('[guild] restored the original embed');
+  } catch (error) {
+    console.log(`[guild] could not restore the embed: ${error.message}`);
   }
 }
 
@@ -152,9 +167,21 @@ export async function handleMessage(message) {
       console.log(`card ${card.from} -> ${card.embeds[0]?.url ?? card.extraLines?.[0]}`);
     }
 
-    if (!isDM) await suppressOriginalEmbed(message);
+    const suppressed = isDM ? false : await suppressOriginalEmbed(message);
 
-    await sendReply(message, { lines: cleaned, cards });
+    try {
+      await sendReply(message, { lines: cleaned, cards });
+    } catch (error) {
+      // A permission the bot lacks — most often Send Messages in Threads — is
+      // not a gateway fault and not something a retry fixes. Say so once, and
+      // hand the original preview back, because suppressing it was our doing.
+      if (error?.status === 403 || error?.status === 404) {
+        console.log(`[reply] cannot post in this channel: ${error.message} (${error.code})`);
+        if (suppressed) await restoreOriginalEmbed(message);
+        return;
+      }
+      throw error;
+    }
   } finally {
     if (ack) {
       try {

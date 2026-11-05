@@ -21,7 +21,7 @@ Short version:
 
 1. Create an application at <https://discord.com/developers/applications>.
 2. **Bot → Privileged Gateway Intents → Message Content Intent: on.** Without this the bot receives DMs with empty content and silently does nothing.
-3. **OAuth2 → URL Generator**: scope `bot`, permissions `0` — it needs no server permissions. Invite it to any server you are in (that is how Discord lets you DM a bot).
+3. **OAuth2 → URL Generator**: scope `bot`, permissions `274878032960` — View Channel, Send Messages, **Send Messages in Threads**, Add Reactions, Manage Messages, Embed Links, Attach Files, Read Message History. Invite it to any server you are in (that is how Discord lets you DM a bot). Without *Send Messages in Threads* the bot can read a thread but not answer in it, which Discord reports as `Missing Access`.
 4. Copy the token:
 
    ```sh
@@ -171,6 +171,7 @@ The cleaning logic is plain functions with `fetch` injected, so the whole suite 
 
   Rejected by a generic rule (redirect landed on the site root, or the target path is a prefix of the original) plus per-site `failure` patterns where the shape is not generic.
 - **Only allowlisted hosts are ever fetched.** A hop is followed only while the current URL is a share/shortener URL belonging to a rule. Redirect targets outside the rule table are returned but never requested, which is what keeps this SSRF-safe.
+- **A thread needs its own permission.** `Send Messages` does not cover threads; without *Send Messages in Threads* the reply fails with `50001 Missing Access`, and the bot now logs that, gives the original preview back and stays quiet instead of reporting a gateway error.
 - **The bot cannot remove an embed from your message in a DM.** Suppressing embeds on a message you did not author needs `Manage Messages`, and DM channels have no permissions, so Discord answers `404` (verified). Wrap the link in angle brackets — `<https://…>` — and Discord shows no preview on your message; the bot still parses it and its own reply carries the preview.
 - Nothing is stored: no database, no cache, no message logging beyond the one `console.log` per cleaned link.
 - Limits: 4 s per hop, 3 hops, 5 links per message. A failed lookup leaves the link untouched rather than guessing.

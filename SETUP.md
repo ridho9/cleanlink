@@ -44,7 +44,7 @@ Discord only lets you DM a bot that shares a server with you, so this step is re
    Or build it by hand:
 
    ```
-   https://discord.com/oauth2/authorize?client_id=YOUR_APPLICATION_ID&scope=bot&permissions=0
+   https://discord.com/oauth2/authorize?client_id=YOUR_APPLICATION_ID&scope=bot&permissions=274878032960
    ```
 
 5. Pick your server → **Continue** → **Authorize**.
@@ -144,10 +144,10 @@ Create the dev application the same way as the live one: **Bot → Message Conte
 Replace `<id>` with the dev application's id (the **Application ID** on the General Information page):
 
 ```
-https://discord.com/oauth2/authorize?client_id=<id>&permissions=126016&scope=bot
+https://discord.com/oauth2/authorize?client_id=<id>&permissions=274878032960&scope=bot
 ```
 
-`126016` is the same set the live bot uses: View Channel, Send Messages, Add Reactions, Manage Messages, Embed Links, Attach Files, Read Message History. Drop `8192` (`Manage Messages`) if you want a dev bot that never touches other people's messages.
+`274878032960` is the same set the live bot uses: View Channel, Send Messages, Send Messages in Threads, Add Reactions, Manage Messages, Embed Links, Attach Files, Read Message History. Threads are separate: without that bit the bot reads a thread but cannot answer in it (`50001 Missing Access`). Drop `8192` (`Manage Messages`) if you want a dev bot that never touches other people's messages.
 
 ### Files
 
