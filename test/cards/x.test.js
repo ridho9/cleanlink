@@ -34,8 +34,9 @@ test('X card carries text, author, still, stats and timestamp', async () => {
   assert.match(card.embeds[0].author.name, /^Md Ismail .*\(@0x0SojalSec\)$/);
   assert.equal(card.embeds[0].author.icon_url, X_VIDEO.tweet.author.avatar_url);
   assert.ok(card.embeds[0].description.startsWith('Stop chatting with AI.'));
-  // No photo in this tweet: the poster frame stands in for the video.
-  assert.equal(card.embeds[0].image.url, X_VIDEO.tweet.media.all[0].thumbnail_url);
+  // The video is in the message, so its poster frame is not repeated as the
+  // embed image: the player already shows that frame.
+  assert.equal(card.embeds[0].image, undefined);
   assert.equal(card.embeds[0].footer.text, 'Twitter');
   assert.deepEqual(
     card.embeds[0].fields.map((field) => field.name),

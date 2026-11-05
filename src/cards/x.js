@@ -21,10 +21,20 @@ async function buildXCard({ match, href }, options) {
   const tweet = data.tweet;
   const author = tweet.author ?? {};
 
+  // The video is fetched before the images are chosen, because a successful
+  // download changes what a poster frame is worth: once the player is in the
+  // message, the frame repeats the video's own first second.
+  const video = videoUrl(tweet.media?.all) ?? videoUrl(tweet.quote?.media?.all);
+  const files = (video ? await downloadMedia(video, options) : null) ?? [];
+  const playing = files.length > 0;
+
   // The main tweet's picture first, then the quoted tweet's. A quote can carry
   // photos of its own and they were being dropped; the API exposes them as
   // `quote.media.all`, same shape as `media.all`.
-  const images = [...stills(tweet.media?.all), ...stills(tweet.quote?.media?.all)];
+  const images = [
+    ...stills(tweet.media?.all, playing),
+    ...stills(tweet.quote?.media?.all, playing),
+  ];
 
   const parts = [];
   if (tweet.text) parts.push(escapeMarkdown(tweet.text));
@@ -86,15 +96,7 @@ async function buildXCard({ match, href }, options) {
     })),
   ];
 
-  // X serves video and GIFs as MP4 on `video.twimg.com`, the platform's own
-  // CDN, so it is downloaded and attached the same way a Facebook reel is.
-  // Discord drops an embed's `video` field outright, and a bare second message
-  // would cost a whole extra post - an attachment plays in the card message.
-  // The poster frame stays as the embed image: it is what is visible before
-  // anyone presses play.
-  const video = videoUrl(tweet.media?.all) ?? videoUrl(tweet.quote?.media?.all);
-  const files = video ? await downloadMedia(video, options) : [];
-  return { embeds, files: files ?? [] };
+  return { embeds, files };
 }
 
 /**
@@ -117,12 +119,16 @@ function videoUrl(media = []) {
 /**
  * Every image in a media list, full size.
  *
- * A photo contributes its `url`; a video or GIF contributes its poster frame —
- * Discord cannot play X video, so the frame plus the text beats a bare link.
+ * A photo contributes its `url`. A video or GIF contributes its poster frame
+ * only while the video itself is not attached — the frame is the fallback for
+ * when Discord cannot be handed the file, not a second copy of it.
  */
-function stills(media = []) {
+function stills(media = [], playing = false) {
   return media
-    .map((item) => (item.type === 'photo' ? item.url : item.thumbnail_url))
+    .map((item) => {
+      if (item.type === 'photo') return item.url;
+      return playing ? null : item.thumbnail_url;
+    })
     .filter(Boolean);
 }
 
