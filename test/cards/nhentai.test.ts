@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildCards, hasCardFor } from '../../src/cards/index.js';
-import { buildNhentaiCard } from '../../src/cards/nhentai.js';
-import { fakeFetch, fixture, IMAGE_BYTES, imageResponse } from '../../test-support/harness.js';
+import { buildCards, hasCardFor } from '../../src/cards/index.ts';
+import { buildNhentaiCard } from '../../src/cards/nhentai.ts';
+import { fakeFetch, fixture, IMAGE_BYTES, imageResponse } from '../../test-support/harness.ts';
 
 const GALLERY = fixture('nhentai-gallery.json');
 const URL = 'https://nhentai.net/g/693549/';
@@ -22,10 +22,10 @@ test('nhentai card shows the title, the author and a spoilered cover', async () 
   assert.equal(card.embeds.length, 1);
   const embed = card.embeds[0];
   assert.equal(embed.title, GALLERY.title.pretty);
-  assert.equal(embed.author.name, 'takashima shoa (high land)');
-  assert.equal(embed.author.url, 'https://nhentai.net');
+  assert.equal(embed.author!.name, 'takashima shoa (high land)');
+  assert.equal(embed.author!.url, 'https://nhentai.net');
   assert.equal(embed.url, URL);
-  assert.equal(embed.footer.text, 'nhentai');
+  assert.equal(embed.footer!.text, 'nhentai');
   assert.equal(embed.timestamp, new Date(GALLERY.upload_date * 1000).toISOString());
 
   // Nothing explicit in the card itself.
@@ -42,7 +42,7 @@ test('nhentai card downloads the cover from the URL the API reports', async () =
   const { impl, calls } = fetchGallery();
   await buildCards(URL, { fetchImpl: impl });
 
-  assert.equal(calls.at(-1).url, `https://t.nhentai.net/${GALLERY.cover.path}`);
+  assert.equal(calls.at(-1)!.url, `https://t.nhentai.net/${GALLERY.cover.path}`);
 });
 
 test('nhentai card is skipped when the gallery does not exist', async () => {

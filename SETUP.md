@@ -70,7 +70,7 @@ No quotes, no spaces, no `Bearer`, one line. If the token has spaces in it, you 
 ## 6. Install and start
 
 ```sh
-mise install      # Node 24 + pnpm, pinned in .mise.toml
+mise install      # Node 26 + pnpm, pinned in .mise.toml
 pnpm install
 mise run start    # or: pnpm start
 ```
@@ -167,15 +167,17 @@ Manual `mise run start` is fine while you are at the keyboard. For a server, run
 
 ### Deploy
 
-From the machine that holds the repo:
+The host runs Node and pnpm through mise, from the repo's `.mise.toml`, so the NixOS config does not pin the bot's runtime. mise comes from home-manager. `.mise.toml` sets `node.compile = false`: on NixOS mise compiles every tool from source by default, and the prebuilt Node runs because the host has nix-ld.
+
+First time, from the machine that holds the repo:
 
 ```sh
 rsync -az --delete --exclude node_modules --exclude .env ./ bot-host:Project/cleanlink/
 scp .env bot-host:Project/cleanlink/.env
-ssh bot-host 'chmod 600 ~/Project/cleanlink/.env && cd ~/Project/cleanlink && pnpm install --frozen-lockfile'
+ssh bot-host 'chmod 600 ~/Project/cleanlink/.env && cd ~/Project/cleanlink && mise trust && mise install && mise exec -- pnpm install --frozen-lockfile'
 ```
 
-Run `node --test` on the host once — it is offline and catches a Node version mismatch before the bot does.
+`mise trust` is needed once: mise does not read settings from a config file it has not been told to trust. Run `mise exec -- node --test` on the host once — it is offline and catches a Node version mismatch before the bot does.
 
 ### Unit (`~/.config/systemd/user/cleanlink.service`)
 
@@ -189,7 +191,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 WorkingDirectory=%h/Project/cleanlink
-ExecStart=/etc/profiles/per-user/<user>/bin/node --env-file-if-exists=.env src/bot.js
+ExecStart=/etc/profiles/per-user/<user>/bin/mise exec -- node --env-file-if-exists=.env src/bot.ts
 Restart=always
 RestartSec=5
 SyslogIdentifier=cleanlink
@@ -200,7 +202,7 @@ PrivateTmp=yes
 WantedBy=default.target
 ```
 
-`node` reads `.env` itself, so the token is parsed in exactly one place and never appears in a unit file or in `systemctl show`. The file is `600`.
+`mise exec` picks the Node version from `.mise.toml` in `WorkingDirectory`, so a Node upgrade is a change to the repo, not to the unit. `node` reads `.env` itself, so the token is parsed in exactly one place and never appears in a unit file or in `systemctl show`. The file is `600`.
 
 ### Enable
 
@@ -245,10 +247,10 @@ Environment="PATH=/etc/profiles/per-user/<user>/bin:/run/current-system/sw/bin:/
 ### Update
 
 ```sh
-# from your machine
-rsync -az --delete --exclude node_modules --exclude .env ./ bot-host:Project/cleanlink/
-ssh bot-host 'cd ~/Project/cleanlink && pnpm install --frozen-lockfile && systemctl --user restart cleanlink'
+mise run deploy   # from your machine
 ```
+
+It runs `mise run test` (type-check and tests) first and stops on any failure. Then it runs `rsync`, `pnpm install --frozen-lockfile` and `systemctl --user restart cleanlink` on `bot-host`.
 
 `rsync --delete` would remove `.env` too, hence the exclude; if you ever lose it, copy it again and `chmod 600`.
 
@@ -266,7 +268,7 @@ systemd.services.cleanlink = {
     Type = "simple";
     User = "<user>";
     WorkingDirectory = "/home/<user>/Project/cleanlink";
-    ExecStart = "${pkgs.nodejs_24}/bin/node --env-file-if-exists=.env src/bot.js";
+    ExecStart = "${pkgs.nodejs_26}/bin/node --env-file-if-exists=.env src/bot.ts";
     Restart = "always";
     RestartSec = 5;
     SyslogIdentifier = "cleanlink";

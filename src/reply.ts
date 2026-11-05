@@ -2,12 +2,21 @@
 // rejects the payload. Split out of bot.js so the ladder can be tested without
 // a gateway.
 
-import { note } from './trace.js';
+import type { MessageCreateOptions, MessageReplyOptions } from 'discord.js';
+import type { Card } from './cards/index.ts';
+import type { CardEmbed } from './cards/shared.ts';
+import type { CleanedLink } from './clean.ts';
+import { note } from './trace.ts';
+
+export interface ReplyTarget<T> {
+  reply: (payload: MessageReplyOptions) => Promise<T>;
+  channel: { send: (payload: MessageCreateOptions) => Promise<T> };
+}
 
 const MESSAGE_LIMIT = 2000;
 
 /** Keep whole lines only, so a URL is never cut in half. */
-export function fitLines(lines, max = MESSAGE_LIMIT) {
+export function fitLines(lines: string[], max = MESSAGE_LIMIT) {
   const kept = [];
   let length = 0;
   for (const line of lines) {
@@ -20,7 +29,7 @@ export function fitLines(lines, max = MESSAGE_LIMIT) {
 }
 
 /** An embed whose image came from a file we are no longer sending. */
-function withoutAttachmentImages(embed) {
+function withoutAttachmentImages(embed: CardEmbed) {
   if (!embed.image?.url?.startsWith('attachment://')) return embed;
   const copy = { ...embed };
   delete copy.image;
@@ -28,7 +37,7 @@ function withoutAttachmentImages(embed) {
 }
 
 /** False for an embed that only existed to show one of those images. */
-function hasContent(embed) {
+function hasContent(embed: CardEmbed) {
   return Boolean(
     embed.title ||
       embed.description ||
@@ -48,7 +57,11 @@ function hasContent(embed) {
  * A card is decoration: a rejected attachment or a missing Embed Links
  * permission must never cost the clean link itself.
  */
-export async function sendReply(message, { lines, cards }, { onSent = async () => {} } = {}) {
+export async function sendReply<T>(
+  message: ReplyTarget<T>,
+  { lines, cards }: { lines: CleanedLink[]; cards: Card[] },
+  { onSent = async () => {} }: { onSent?: (sent: T) => Promise<unknown> } = {},
+) {
   const carded = new Set(cards.map((card) => card.from));
   const content = fitLines([
     // One line per card, the link in angle brackets so Discord does not unfurl
@@ -61,7 +74,7 @@ export async function sendReply(message, { lines, cards }, { onSent = async () =
   const files = cards.flatMap((card) => card.files ?? []);
   const embeds = cards.flatMap((card) => card.embeds);
 
-  const full = { content, allowedMentions: { parse: [] } };
+  const full: MessageReplyOptions = { content, allowedMentions: { parse: [] } };
   if (embeds.length > 0) full.embeds = embeds;
   if (files.length > 0) full.files = files;
 
@@ -85,7 +98,7 @@ export async function sendReply(message, { lines, cards }, { onSent = async () =
     } catch (error) {
       const last = index === attempts.length - 1;
       if (last) throw error;
-      note(`[reply] attempt ${index + 1} rejected: ${error.message}`);
+      note(`[reply] attempt ${index + 1} rejected: ${(error as Error).message}`);
     }
   }
 
@@ -108,8 +121,8 @@ const FOLLOW_UP_LABEL = '▶ Play video';
  * and Discord prints it in full above the player; a masked link still unfurls
  * into the same player (measured for Instagram and X).
  */
-async function sendFollowUps(message, cards, onSent) {
-  const urls = cards.map((card) => card.followUp).filter(Boolean).slice(0, MAX_FOLLOW_UPS);
+async function sendFollowUps<T>(message: ReplyTarget<T>, cards: Card[], onSent: (sent: T) => Promise<unknown>) {
+  const urls = cards.map((card) => card.followUp).filter((url): url is string => Boolean(url)).slice(0, MAX_FOLLOW_UPS);
 
   for (const url of urls) {
     try {
@@ -118,7 +131,7 @@ async function sendFollowUps(message, cards, onSent) {
     } catch (error) {
       // The clean link and the card are already out; a lost player is not worth
       // a stack trace, but it is worth a line in the log.
-      note(`[reply] follow-up failed: ${error.message}`);
+      note(`[reply] follow-up failed: ${(error as Error).message}`);
     }
   }
 }

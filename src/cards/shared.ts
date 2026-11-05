@@ -6,8 +6,41 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { note } from '../trace.js';
+import type { APIEmbed } from 'discord.js';
+import { note } from '../trace.ts';
 
+export type CardEmbed = APIEmbed;
+
+export interface CardOptions {
+  fetchImpl?: typeof fetch;
+  headers?: Record<string, string>;
+  timeout?: number;
+  budget?: { files?: number; bytes?: number };
+}
+
+export interface CardInput {
+  href: string;
+  match: (string | null)[];
+}
+
+export interface CardFile {
+  attachment: Buffer;
+  name: string;
+}
+
+export interface BuiltCard {
+  embeds: CardEmbed[];
+  files: CardFile[];
+  followUp?: string | null;
+  unfurl?: boolean;
+  degraded?: boolean;
+  url?: string;
+}
+
+type RequestOptions = CardOptions & { accept?: string };
+type RefusedMedia = { url: string; size: number };
+type VideoFormat = { url?: string; protocol?: string; vcodec?: string; acodec?: string };
+type VideoInfo = { formats?: VideoFormat[] };
 const run = promisify(execFile);
 
 const BROWSER_UA = 'Mozilla/5.0';
@@ -48,7 +81,7 @@ export const INSTAGRAM_PINK = 0xe1306c;
  * Escaping runs before clipping so a truncated string can never end on a lone
  * backslash that would swallow the character after it.
  */
-export function escapeMarkdown(text) {
+export function escapeMarkdown(text: unknown): string {
   return String(text ?? '')
     .replace(/([\\`*_~|[])/g, '\\$1')
     .replace(/^(\s*)([>#+-])/gm, '$1\\$2')
@@ -62,7 +95,7 @@ export function escapeMarkdown(text) {
  * Compose first, clip last: escaping a string that already contains our own
  * `> **Quoting …**` markup would neutralise the markup itself.
  */
-export function clip(text, max) {
+export function clip(text: string, max: number): string {
   if (text.length <= max) return text;
   const cut = text.slice(0, max - 1);
   // A trailing backslash means the cut landed inside an escape sequence.
@@ -70,7 +103,7 @@ export function clip(text, max) {
 }
 
 /** Escape free text from a third party, then fit it into a field. */
-export function toField(text, max) {
+export function toField(text: unknown, max: number): string {
   return clip(escapeMarkdown(text), max);
 }
 
@@ -81,7 +114,7 @@ export function toField(text, max) {
  * because a dropped connection there costs the whole card. An HTTP error status
  * is not retried: that is an answer, not a hiccup.
  */
-async function request(url, { fetchImpl = fetch, accept, headers = {}, timeout = TIMEOUT_MS } = {}) {
+async function request(url: string, { fetchImpl = fetch, accept, headers = {}, timeout = TIMEOUT_MS }: RequestOptions = {}): Promise<Response> {
   const init = {
     headers: {
       'user-agent': BROWSER_UA,
@@ -96,18 +129,18 @@ async function request(url, { fetchImpl = fetch, accept, headers = {}, timeout =
       return await fetchImpl(url, init);
     } catch (error) {
       if (attempt === 1) {
-        note(`[card] ${new URL(url).host} failed twice: ${error.message}`);
+        note(`[card] ${new URL(url).host} failed twice: ${(error as Error).message}`);
         throw error;
       }
     }
   }
 }
 
-export async function getJson(url, options) {
+export async function getJson<T>(url: string, options?: CardOptions): Promise<T | null> {
   const res = await request(url, { ...options, accept: 'application/json' });
   if (!res.ok) return null;
   try {
-    return await res.json();
+    return await res.json() as T;
   } catch {
     // A JSON endpoint answering HTML is an error page, not a card.
     note(`[card] ${new URL(url).host} answered non-JSON`);
@@ -115,7 +148,7 @@ export async function getJson(url, options) {
   }
 }
 
-export async function getHtml(url, options) {
+export async function getHtml(url: string, options?: CardOptions): Promise<{ status: number; html: string } | null> {
   const res = await request(url, { ...options, accept: 'text/html' });
   if (!res.ok) return null;
   return { status: res.status, html: await res.text() };
@@ -129,11 +162,10 @@ export async function getHtml(url, options) {
  * own message. A URL that did not answer at all is neither - sending it would
  * add a dead link to the channel.
  *
- * @param {string|string[]|null} candidates best rendition first
- * @returns {Promise<{files: Array, followUp: string|null}>}
+ * Candidates are ordered best rendition first.
  */
-export async function attachMedia(candidates, options = {}, name = 'video.mp4') {
-  const urls = [candidates].flat().filter(Boolean);
+export async function attachMedia(candidates: string | string[] | null, options: CardOptions = {}, name = 'video.mp4'): Promise<{ files: CardFile[]; followUp: string | null }> {
+  const urls = [candidates].flat().filter((url): url is string => Boolean(url));
   if (urls.length === 0) return { files: [], followUp: null };
 
   const media = await downloadMedia(urls, options, name);
@@ -145,10 +177,9 @@ export async function attachMedia(candidates, options = {}, name = 'video.mp4') 
  * The rendition to send as a follow-up: the largest that Discord still
  * unfurls, otherwise the smallest one offered. A URL that never answered is
  * not a candidate, because it would put a dead link in the channel.
- * @param {Array<{url: string, size: number}>} refused files too large to
- *   attach, best first; size is 0 when the server did not declare it
+ * Refused files are best first; size is 0 when the server did not declare it.
  */
-function followUpOf(refused) {
+function followUpOf(refused: RefusedMedia[]): string | null {
   if (refused.length === 0) return null;
   const known = refused.filter((item) => item.size > 0);
   const playable = known.filter((item) => item.size <= MAX_UNFURL_BYTES);
@@ -165,11 +196,11 @@ function followUpOf(refused) {
  * deadline is longer than a page fetch because a 9 MB file over a slow link
  * is not a hung request.
  */
-export async function downloadMedia(urls, options = {}, name = 'video.mp4') {
+export async function downloadMedia(urls: string | string[], options: CardOptions = {}, name = 'video.mp4'): Promise<{ files: CardFile[] | null; refused: RefusedMedia[] }> {
   const cap = Math.min(MAX_ATTACH_BYTES, options.budget?.bytes ?? MAX_ATTACH_BYTES);
   // A file refused for its size is still a live URL, which is what makes it a
   // candidate for the follow-up message. A URL that answered 404 is not.
-  const refused = [];
+  const refused: RefusedMedia[] = [];
 
   // Candidates arrive best first. A rendition that does not fit is skipped
   // before its body is read, so a smaller one can still be attached.
@@ -178,7 +209,7 @@ export async function downloadMedia(urls, options = {}, name = 'video.mp4') {
     try {
       res = await request(url, { ...options, timeout: MEDIA_TIMEOUT_MS });
     } catch (error) {
-      note(`[card] ${new URL(url).host} media failed: ${error.message}`);
+      note(`[card] ${new URL(url).host} media failed: ${(error as Error).message}`);
       continue;
     }
     if (!res.ok) {
@@ -206,7 +237,7 @@ export async function downloadMedia(urls, options = {}, name = 'video.mp4') {
 }
 
 /** Download one image, or null when it fails, is empty, or exceeds `cap`. */
-export async function getBytes(url, options, cap = MAX_ATTACH_BYTES) {
+export async function getBytes(url: string, options?: CardOptions, cap = MAX_ATTACH_BYTES): Promise<Buffer | null> {
   const res = await request(url, options);
   if (!res.ok) return null;
   const buffer = await readCapped(res, cap);
@@ -221,10 +252,10 @@ export async function getBytes(url, options, cap = MAX_ATTACH_BYTES) {
  * body is counted while it streams: a file over the budget is never held in
  * memory in full.
  */
-async function readCapped(res, cap) {
+async function readCapped(res: Response, cap: number): Promise<Buffer | null> {
   if (!res.body) return Buffer.alloc(0);
   const reader = res.body.getReader();
-  const chunks = [];
+  const chunks: Uint8Array[] = [];
   let total = 0;
   for (;;) {
     const { done, value } = await reader.read();
@@ -241,7 +272,7 @@ async function readCapped(res, cap) {
 }
 
 /** Decode the handful of HTML entities Meta puts in its meta tags. */
-export function decodeEntities(text) {
+export function decodeEntities(text: unknown): string {
   return String(text ?? '')
     .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
     .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
@@ -253,7 +284,7 @@ export function decodeEntities(text) {
 }
 
 /** Pull one meta tag out of a page. */
-export function metaContent(html, property) {
+export function metaContent(html: string, property: string): string | null {
   const match = new RegExp(
     `<meta[^>]+(?:property|name)="${property}"[^>]+content="([^"]*)"`,
     'i',
@@ -263,11 +294,13 @@ export function metaContent(html, property) {
 
 /**
  * The stats block every card ends with.
- * @param {Array<[string, unknown]>} entries name/value pairs; a pair is dropped
- *   when its value is not a number
+ * A name/value pair is dropped when its value is not a number.
  */
-export function statFields(entries) {
-  const rows = entries.filter(([, value]) => Number.isFinite(value));
+export function statFields(entries: Array<[string, unknown]>): NonNullable<CardEmbed['fields']> | null {
+  const rows = entries.filter((entry): entry is [string, number] => {
+    const [, value] = entry;
+    return Number.isFinite(value);
+  });
   if (rows.length === 0) return null;
   return rows.map(([name, value]) => ({
     name,
@@ -277,20 +310,20 @@ export function statFields(entries) {
 }
 
 /** Image-only embeds: every image after the first on a card gets one. */
-export function imageEmbeds(url, color, footer, images) {
+export function imageEmbeds(url: string | undefined, color: number, footer: CardEmbed['footer'], images: string[]): CardEmbed[] {
   return images.map((image) => ({ url, color, footer, image: { url: image } }));
 }
 
 /** The author block, with whichever of its two optional fields exist. */
-export function authorBlock(name, fallback, { url, iconUrl } = {}) {
-  const block = { name: toField(name || fallback, 256) };
+export function authorBlock(name: string | null | undefined, fallback: string | null | undefined, { url, iconUrl }: { url?: string | null; iconUrl?: string | null } = {}): NonNullable<CardEmbed['author']> {
+  const block: NonNullable<CardEmbed['author']> = { name: toField(name || fallback, 256) };
   if (url) block.url = url;
   if (iconUrl) block.icon_url = iconUrl;
   return block;
 }
 
 /** Guess an extension from a URL path, defaulting to jpg. */
-export function extensionOf(url) {
+export function extensionOf(url: string): string {
   const path = new URL(url).pathname.toLowerCase();
   const match = /\.(jpg|jpeg|png|gif|webp)$/.exec(path);
   return match ? match[1].replace('jpeg', 'jpg') : 'jpg';
@@ -308,10 +341,9 @@ export function extensionOf(url) {
  * caller keeps its still. Spawned with an argv array (never a shell) under a
  * timeout.
  *
- * @param {string} href page URL, already validated by the caller's matcher
- * @returns {Promise<string[]>}
+ * href is the page URL, already validated by the caller's matcher.
  */
-export async function videoLinks(href, options = {}) {
+export async function videoLinks(href: string, options: CardOptions = {}): Promise<string[]> {
   try {
     const { stdout } = await run('yt-dlp', [
       '-J',
@@ -319,11 +351,11 @@ export async function videoLinks(href, options = {}) {
       '--no-playlist',
       href,
     ], { timeout: MEDIA_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024 });
-    const urls = progressiveUrls(JSON.parse(stdout));
+    const urls = progressiveUrls(JSON.parse(stdout) as VideoInfo);
     note(`[card] ${new URL(href).host} ${urls.length} video link(s) via yt-dlp`);
     return urls;
   } catch (error) {
-    note(`[card] ${new URL(href).host} video link failed: ${(error.shortMessage ?? error.message).split('\n')[0]}`);
+    note(`[card] ${new URL(href).host} video link failed: ${((error as Error & { shortMessage?: string }).shortMessage ?? (error as Error).message).split('\n')[0]}`);
     return [];
   }
 }
@@ -333,9 +365,9 @@ export async function videoLinks(href, options = {}) {
  * yt-dlp lists formats worst first. A codec reported as 'none' marks a DASH
  * half; Facebook's `hd`/`sd` report no codec at all and are complete files.
  */
-export function progressiveUrls(info) {
+export function progressiveUrls(info: VideoInfo | null | undefined): string[] {
   return (info?.formats ?? [])
-    .filter((f) => f.url && f.protocol === 'https' && f.vcodec !== 'none' && f.acodec !== 'none')
+    .filter((f): f is VideoFormat & { url: string } => Boolean(f.url && f.protocol === 'https' && f.vcodec !== 'none' && f.acodec !== 'none'))
     .map((f) => f.url)
     .reverse();
 }
@@ -347,7 +379,7 @@ export function progressiveUrls(info) {
  * message budget all return null. yt-dlp gets an argv array (never a shell),
  * a timeout, and a temporary directory that is always removed.
  */
-export async function downloadVideo(href, options = {}) {
+export async function downloadVideo(href: string, options: CardOptions = {}): Promise<CardFile[] | null> {
   const budget = options.budget ?? {};
   if ((budget.files ?? 1) <= 0) return null;
 
@@ -377,7 +409,7 @@ export async function downloadVideo(href, options = {}) {
     if (buffer.length === 0 || buffer.length > cap) return null;
     return [{ attachment: buffer, name: 'video.mp4' }];
   } catch (error) {
-    note(`[card] video via yt-dlp failed for ${new URL(href).host}: ${(error.shortMessage ?? error.message).split('\n')[0]}`);
+    note(`[card] video via yt-dlp failed for ${new URL(href).host}: ${((error as Error & { shortMessage?: string }).shortMessage ?? (error as Error).message).split('\n')[0]}`);
     return null;
   } finally {
     await rm(dir, { recursive: true, force: true });

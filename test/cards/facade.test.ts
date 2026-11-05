@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildCards } from '../../src/cards/index.js';
-import { fakeFetch, fixture, imageResponse } from '../../test-support/harness.js';
+import { buildCards } from '../../src/cards/index.ts';
+import { fakeFetch, fixture, imageResponse } from '../../test-support/harness.ts';
 
 const X_TEXT = fixture('x-text.json');
 const PIXIV = fixture('pixiv-illust.json');

@@ -6,14 +6,18 @@
   "packageManager": "pnpm@11.28.8",
   "description": "Discord bot that replies in DMs with tracker-free versions of share links.",
   "engines": {
-    "node": ">=22"
+    "node": ">=26"
   },
   "scripts": {
-    "start": "node --env-file-if-exists=.env src/bot.js",
-    "start:dev": "node --env-file-if-exists=.env.dev src/bot.js",
+    "start": "node --env-file-if-exists=.env src/bot.ts",
+    "start:dev": "node --env-file-if-exists=.env.dev src/bot.ts",
     "test": "node --test"
   },
   "dependencies": {
     "discord.js": "^14.28.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
   }
 }

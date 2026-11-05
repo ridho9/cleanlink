@@ -1,0 +1,16 @@
+{
+  // Type-check only. Node runs the .ts files directly by stripping the types,
+  // so only erasable syntax is allowed: no enum, namespace, or parameter
+  // properties. `mise run typecheck` runs this.
+  "compilerOptions": {
+    "noEmit": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "module": "nodenext",
+    "target": "esnext",
+    "types": ["node"],
+    "skipLibCheck": true
+  },
+  "include": ["src", "test", "test-support", "scripts"]
+}

@@ -6,7 +6,7 @@ It exists because the newer share formats (`threads.com/share/<code>`, `vm.tikto
 
 ## Requirements
 
-Node 24 and pnpm are pinned in [.mise.toml](.mise.toml), so [mise](https://mise.jdx.dev) handles both:
+Node 26 and pnpm are pinned in [.mise.toml](.mise.toml), so [mise](https://mise.jdx.dev) handles both:
 
 ```sh
 mise install
@@ -84,7 +84,7 @@ Note that server mode means the bot reads message content in every channel it ca
 
 Common trackers (`utm_*`, `fbclid`, `gclid`, `twclid`, `yclid`, `mibextid`, `_ga`, `_gl`) are stripped everywhere.
 
-Reddit, Spotify and Google were removed on purpose: only fake share codes had ever been tried against them, so they sat in the table as untested. Add them back from [src/rules.js](src/rules.js) once a real link from each has been checked.
+Reddit, Spotify and Google were removed on purpose: only fake share codes had ever been tried against them, so they sat in the table as untested. Add them back from [src/rules.ts](src/rules.ts) once a real link from each has been checked.
 
 ## Preview cards
 
@@ -113,7 +113,7 @@ Why the other two get no card: **Misskey** already answers Discord's crawler wit
 - **A card is decoration and degrades:** a rejected attachment resends the embeds alone, a missing **Embed Links** permission resends the plain links. Never an error, never a lost clean link.
 - **Card text is third-party text:** everything passes through `escapeMarkdown`, and composition happens before clipping so our own `> **Quoting …**` markup survives.
 
-Adding a card is a table entry in [src/cards/index.js](src/cards/index.js) plus a builder module beside it.
+Adding a card is a table entry in [src/cards/index.ts](src/cards/index.ts) plus a builder module beside it.
 
 ## What has actually been verified
 
@@ -166,9 +166,9 @@ It prints how messages ended, a per-site table, problems grouped by kind with up
 
 ## Adding a site
 
-Everything site-specific is data in [src/rules.js](src/rules.js):
+Everything site-specific is data in [src/rules.ts](src/rules.ts):
 
-```js
+```ts
 {
   id: 'example',
   hosts: ['example.com'],            // subdomains match automatically
@@ -181,15 +181,22 @@ Everything site-specific is data in [src/rules.js](src/rules.js):
 }
 ```
 
-The engine ([src/clean.js](src/clean.js)) needs no changes. Add a case to [test/clean.test.js](test/clean.test.js) with a stubbed `fetch`, then try one real link by hand.
+The engine ([src/clean.ts](src/clean.ts)) needs no changes. Add a case to [test/clean.test.ts](test/clean.test.ts) with a stubbed `fetch`, then try one real link by hand.
 
 ## Tests
 
 ```sh
-mise run test        # or: pnpm test
+mise run test        # type-check, then the unit tests
+mise run typecheck   # type-check only
 ```
 
 The cleaning logic is plain functions with `fetch` injected, so the whole suite runs offline in under 100 ms with no Discord token.
+
+## TypeScript
+
+The code is TypeScript that Node runs directly: Node removes the types and runs what is left. There is no build step and no output directory. This works only for *erasable* syntax, so `enum`, `namespace`, parameter properties and `import x = require()` are not allowed; use string-literal unions and `as const` objects in their place. `tsconfig.json` sets `erasableSyntaxOnly`, so `tsc` rejects that syntax before Node does.
+
+Node does not check types. `mise run test` and `mise run deploy` run `tsc` first, so code with a type error cannot be deployed. Relative imports keep the `.ts` extension (`import { note } from './trace.ts'`).
 
 ## Notes and limits
 

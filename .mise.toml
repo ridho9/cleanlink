@@ -1,9 +1,19 @@
 [tools]
-node = "24"
+node = "26"
 pnpm = "11"
 
+# mise compiles every tool from source on NixOS (`all_compile`), which takes
+# a long time for Node. The host has nix-ld, so the prebuilt binary runs there.
+[settings]
+node.compile = false
+
+[tasks.typecheck]
+description = "Type-check with tsc (no output files)"
+run = "pnpm exec tsc"
+
 [tasks.test]
-description = "Run the unit tests"
+description = "Type-check, then run the unit tests"
+depends = ["typecheck"]
 run = "pnpm test"
 
 [tasks.start]
@@ -16,4 +26,12 @@ run = "pnpm start:dev"
 
 [tasks.review]
 description = "Report what the bot handled and what failed (SINCE='24 hours ago', HOST=bot-host)"
-run = "ssh ${HOST:-bot-host} journalctl --user -u cleanlink --since \"'${SINCE:-24 hours ago}'\" -o json --no-pager | node scripts/review.js"
+run = "ssh ${HOST:-bot-host} journalctl --user -u cleanlink --since \"'${SINCE:-24 hours ago}'\" -o json --no-pager | node scripts/review.ts"
+
+[tasks.deploy]
+description = "Type-check and test, then copy to bot-host, install, and restart the bot"
+depends = ["test"]
+run = [
+  "rsync -az --delete --exclude node_modules --exclude .env ./ bot-host:Project/cleanlink/",
+  "ssh bot-host 'cd ~/Project/cleanlink && mise install && mise exec -- pnpm install --frozen-lockfile && systemctl --user restart cleanlink'",
+]

@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cleanMessage, cleanUrl, extractUrls, handlesAny, ruleFor } from '../src/clean.js';
+import { cleanMessage, cleanUrl, extractUrls, handlesAny, ruleFor } from '../src/clean.ts';
 
 /** Minimal fetch stand-in: returns a 302 when a route matches, else a 200. */
-function stubFetch(routes = {}) {
-  const calls = [];
-  const requests = [];
-  const impl = async (url, options = {}) => {
+function stubFetch(routes: Record<string, string> = {}) {
+  const calls: string[] = [];
+  const requests: (RequestInit & { headers: Record<string, string> })[] = [];
+  const impl = async (url: string, options: RequestInit = {}) => {
     calls.push(url);
-    requests.push(options);
+    requests.push(options as RequestInit & { headers: Record<string, string> });
     const location = routes[url];
     return {
       status: location ? 302 : 200,
@@ -18,7 +18,7 @@ function stubFetch(routes = {}) {
   };
   impl.calls = calls;
   impl.requests = requests;
-  return impl;
+  return impl as unknown as typeof fetch & { calls: string[]; requests: (RequestInit & { headers: Record<string, string> })[] };
 }
 
 test('extractUrls finds links and trims trailing punctuation', () => {
@@ -32,7 +32,7 @@ test('extractUrls finds links and trims trailing punctuation', () => {
 
 test('a transient resolution failure is retried once', async () => {
   let attempts = 0;
-  const fetchImpl = async (url) => {
+  const fetchImpl = async (url: string) => {
     attempts += 1;
     // First call times out, which used to mean a silent drop.
     if (attempts === 1) throw new Error('The operation was aborted due to timeout');
@@ -43,7 +43,7 @@ test('a transient resolution failure is retried once', async () => {
     };
   };
 
-  const cleaned = await cleanMessage('https://www.threads.com/share/abc', { fetchImpl });
+  const cleaned = await cleanMessage('https://www.threads.com/share/abc', { fetchImpl: fetchImpl as unknown as typeof fetch });
   assert.deepEqual(cleaned, [
     {
       from: 'https://www.threads.com/share/abc',
@@ -99,8 +99,8 @@ test('handlesAny is true only for a link a rule owns', () => {
 });
 
 test('ruleFor matches subdomains but not lookalike hosts', () => {
-  assert.equal(ruleFor(new URL('https://www.threads.com/@a/post/b')).id, 'threads');
-  assert.equal(ruleFor(new URL('https://vm.tiktok.com/abc')).id, 'tiktok');
+  assert.equal(ruleFor(new URL('https://www.threads.com/@a/post/b'))!.id, 'threads');
+  assert.equal(ruleFor(new URL('https://vm.tiktok.com/abc'))!.id, 'tiktok');
   assert.equal(ruleFor(new URL('https://notthreads.com/@a/post/b')), null);
 });
 

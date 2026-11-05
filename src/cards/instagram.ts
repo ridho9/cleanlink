@@ -24,7 +24,20 @@ import {
   metaContent,
   toField,
   videoLinks,
-} from './shared.js';
+} from './shared.ts';
+import type { BuiltCard, CardEmbed, CardInput, CardOptions } from './shared.ts';
+
+type InstagramOEmbed = {
+  title?: string | null;
+  author_name?: string | null;
+  thumbnail_url?: string | null;
+};
+
+type InstagramMedia = {
+  images: string[];
+  video: string | null;
+  isVideo: boolean;
+};
 
 /** OpenGraph caption: `Name on Instagram: "caption"`. */
 const CAPTION_IN_TITLE = /on Instagram:\s*"?(.*?)"?$/s;
@@ -34,13 +47,16 @@ const COUNT_PREFIX = /^([\d.,]+[KMB]?)\s+likes?,\s+([\d.,]+[KMB]?)\s+comments?\s
 /** Instagram allows 20 images per carousel; Discord allows 10 embeds a message. */
 const MAX_IMAGES = 10;
 
-export async function buildInstagramCard({ href }, options) {
+export async function buildInstagramCard(
+  { href }: CardInput,
+  options: CardOptions,
+): Promise<BuiltCard | null> {
   const url = new URL(href);
   const shortcode = url.pathname.split('/').filter(Boolean).pop();
   const [page, embedPage, oembed] = await Promise.all([
     getHtml(href, options),
     getHtml(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, options),
-    getJson(`https://www.instagram.com/api/v1/oembed/?url=${encodeURIComponent(href)}`, options),
+    getJson<InstagramOEmbed>(`https://www.instagram.com/api/v1/oembed/?url=${encodeURIComponent(href)}`, options),
   ]);
 
   // The handler's own URL is only a fallback: an embed-only answer still has a
@@ -64,7 +80,7 @@ export async function buildInstagramCard({ href }, options) {
   const canonical = metaContent(source, 'og:url') ?? href;
   const handle = oembed?.author_name || handleFrom(title, canonical);
 
-  const embed = {
+  const embed: CardEmbed = {
     url: canonical,
     color: INSTAGRAM_PINK,
     footer: { text: 'Instagram' },
@@ -121,7 +137,7 @@ export async function buildInstagramCard({ href }, options) {
  * oEmbed thumbnail keeps the aspect ratio (640×800 rather than a 640×640 crop)
  * and carries no play button, and `og:image` is the last resort.
  */
-function imagesFor(media, source, oembed) {
+function imagesFor(media: InstagramMedia, source: string, oembed: InstagramOEmbed | null): string[] {
   const carousel = media.images.slice(0, MAX_IMAGES);
   if (carousel.length > 0) return carousel;
 
@@ -140,7 +156,7 @@ function imagesFor(media, source, oembed) {
  * For a video post the blob's `display_url` is the clean frame and `video_url`
  * is the MP4 itself.
  */
-function embedMedia(html) {
+function embedMedia(html: string): InstagramMedia {
   const plain = html.replace(/\\/g, '');
   const images = [...plain.matchAll(/"display_url":"([^"]+)"/g)].map((match) => match[1]);
   const video = /"video_url":"([^"]+)"/.exec(plain)?.[1] ?? null;
@@ -154,7 +170,7 @@ function embedMedia(html) {
  * `/p/<id>/` has no handle in its path, which is why the canonical URL is used
  * and not the incoming one; `(@handle)` appears only on some surfaces.
  */
-function handleFrom(title, canonical) {
+function handleFrom(title: string, canonical: string): string {
   const inline = /\(@([\w.]+)\)/.exec(title)?.[1];
   if (inline) return inline;
 

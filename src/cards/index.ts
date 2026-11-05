@@ -1,18 +1,19 @@
-import { findUrls, hostMatches } from '../clean.js';
-import { buildFacebookCard } from './facebook.js';
-import { buildInstagramCard } from './instagram.js';
-import { buildNhentaiCard } from './nhentai.js';
-import { buildPixivCard } from './pixiv.js';
-import { buildThreadsCard } from './threads.js';
-import { buildTikTokCard } from './tiktok.js';
-import { buildXCard } from './x.js';
+import { findUrls, hostMatches } from '../clean.ts';
+import { buildFacebookCard } from './facebook.ts';
+import { buildInstagramCard } from './instagram.ts';
+import { buildNhentaiCard } from './nhentai.ts';
+import { buildPixivCard } from './pixiv.ts';
+import { buildThreadsCard } from './threads.ts';
+import { buildTikTokCard } from './tiktok.ts';
+import { buildXCard } from './x.ts';
 import {
   MAX_ATTACH_BYTES,
   MAX_CARDS,
   MAX_EMBEDS,
   MAX_FILES,
-} from './shared.js';
-import { mark, note, withUrl } from '../trace.js';
+} from './shared.ts';
+import type { BuiltCard, CardInput, CardOptions } from './shared.ts';
+import { mark, note, withUrl } from '../trace.ts';
 
 // Preview cards for the links where Discord's own unfurl is broken or thin.
 // Sites with a good native preview need nothing here: Misskey answers Discord's
@@ -20,8 +21,31 @@ import { mark, note, withUrl } from '../trace.js';
 //
 // Adding a site is a table entry plus a builder module. Keep it that way.
 
+export interface Card extends BuiltCard {
+  from: string;
+  url: string;
+}
+
+interface CardSite {
+  id: string;
+  hosts: string[];
+  match: (url: URL) => (string | null)[] | null;
+  build: (input: CardInput, options: CardOptions) => Promise<BuiltCard | null>;
+}
+
+interface CardHit {
+  url: URL;
+  site: CardSite;
+  match: (string | null)[];
+}
+
+interface BuildCardsOptions {
+  cleaned?: Array<{ from: string; to: string }>;
+  fetchImpl?: typeof fetch;
+}
+
 /** Sites that own a card, kept separate from the tracker rules in rules.js. */
-const CARD_SITES = [
+const CARD_SITES: CardSite[] = [
   {
     id: 'x',
     hosts: ['x.com', 'twitter.com'],
@@ -93,12 +117,12 @@ const CARD_SITES = [
  * because this is typed text, not an identifier - but a match *inside* a URL
  * is dropped, so `example.com/docs/nh/123` never turns into a gallery.
  */
-const SHORTHAND = [
+const SHORTHAND: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
   [/\bnh\/#?(\d{1,9})\b/gi, (match) => `https://nhentai.net/g/${Number(match[1])}/`],
 ];
 
 /** Every (from, href) pair worth looking at in a message. */
-function candidateRefs(text, cleanedFor) {
+function candidateRefs(text: string, cleanedFor: Map<string, string>): Array<{ from: string; href: string }> {
   const urls = findUrls(text);
   const refs = urls.map(({ raw }) => ({ from: raw, href: cleanedFor.get(raw) ?? raw }));
 
@@ -114,13 +138,13 @@ function candidateRefs(text, cleanedFor) {
 }
 
 /** True when this text contains something a card could be built from. */
-export function hasCardFor(text) {
+export function hasCardFor(text: unknown): boolean {
   if (typeof text !== 'string' || text.length === 0) return false;
   return candidateRefs(text, new Map()).some(({ href }) => locateCard(href) !== null);
 }
 
 /** The card site that owns one href, or null. */
-function locateCard(href) {
+function locateCard(href: string): CardHit | null {
   let url;
   try {
     url = new URL(href);
@@ -132,7 +156,8 @@ function locateCard(href) {
   const site = CARD_SITES.find((candidate) =>
     hostMatches(url.hostname.toLowerCase(), candidate.hosts),
   );
-  const match = site?.match(url);
+  if (!site) return null;
+  const match = site.match(url);
   return match ? { url, site, match } : null;
 }
 
@@ -142,7 +167,7 @@ function locateCard(href) {
  * The cleaned URL wins: a shortener was resolved into the real target there,
  * and that target is what carries the id a card needs.
  */
-function findCard(raw, cleanedFor, explicit) {
+function findCard(raw: string, cleanedFor: Map<string, string>, explicit?: string): CardHit | null {
   for (const href of [explicit, cleanedFor.get(raw), raw]) {
     if (!href) continue;
     const hit = locateCard(href);
@@ -154,17 +179,13 @@ function findCard(raw, cleanedFor, explicit) {
 /**
  * Build preview cards for the links in a message.
  *
- * @param {string} text raw message content
- * @param {object} [options]
- * @param {Array<{from: string, to: string}>} [options.cleaned] results from
- *   cleanMessage, so a card can show the cleaned URL rather than the tracked one
- * @returns {Promise<Array<{from: string, url: string, embeds: Array, files: Array,
- *   followUp?: string, unfurl?: boolean}>>}
+ * The cleaned results from cleanMessage let a card show the cleaned URL
+ * rather than the tracked one.
  */
-export async function buildCards(text, { cleaned = [], fetchImpl = fetch } = {}) {
+export async function buildCards(text: string, { cleaned = [], fetchImpl = fetch }: BuildCardsOptions = {}): Promise<Card[]> {
   const cleanedFor = new Map(cleaned.map(({ from, to }) => [from, to]));
-  const seen = new Set();
-  const cards = [];
+  const seen = new Set<string>();
+  const cards: Card[] = [];
 
   // Shared across every card in this message, because Discord counts them per
   // message and a rejected payload would cost the whole reply.
@@ -214,7 +235,7 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch } = {})
     } catch (error) {
       // A card is decoration, so the reply still goes out — but a swallowed
       // error is invisible in the log, so it is reported here.
-      note(`[card] ${site.id} failed for ${raw}: ${error.message}`);
+      note(`[card] ${site.id} failed for ${raw}: ${(error as Error).message}`);
       mark('card', `${site.id}:error`);
     } });
   }
@@ -226,7 +247,7 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch } = {})
  * What a card carries besides text, for the review: a video file, a video
  * link sent separately, a link Discord previews itself, images, or nothing.
  */
-function mediaOf(card) {
+function mediaOf(card: BuiltCard): string {
   if (card.files?.some((file) => /\.mp4$/.test(file.name))) return 'video';
   if (card.followUp) return 'follow_up';
   if (card.unfurl) return 'unfurl';

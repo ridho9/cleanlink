@@ -1,26 +1,30 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { fitLines, hasContent, sendReply, withoutAttachmentImages } from '../src/reply.js';
+import { fitLines, hasContent, sendReply, withoutAttachmentImages } from '../src/reply.ts';
+import type { ReplyTarget } from '../src/reply.ts';
+import type { CardEmbed, CardFile } from '../src/cards/shared.ts';
+
+type RecordedPayload = { content?: string; embeds?: CardEmbed[]; files?: CardFile[] };
 
 /** A message stand-in that records payloads and can reject the first N of them. */
 function fakeMessage({ reject = 0, failFollowUp = false } = {}) {
-  const sent = [];
-  const followUps = [];
+  const sent: RecordedPayload[] = [];
+  const followUps: RecordedPayload[] = [];
   return {
     sent,
     followUps,
-    reply: async (payload) => {
+    reply: async (payload: Parameters<ReplyTarget<unknown>['reply']>[0]) => {
       if (sent.length < reject) {
-        sent.push(payload);
+        sent.push(payload as RecordedPayload);
         throw new Error('Missing Permissions');
       }
-      sent.push(payload);
+      sent.push(payload as RecordedPayload);
       return {};
     },
     channel: {
-      send: async (payload) => {
-        followUps.push(payload);
+      send: async (payload: Parameters<ReplyTarget<unknown>['channel']['send']>[0]) => {
+        followUps.push(payload as RecordedPayload);
         if (failFollowUp) throw new Error('Missing Access');
         return {};
       },
@@ -46,7 +50,7 @@ test('a carded link is bracketed and the plain link is not repeated', async () =
 
   assert.equal(message.sent.length, 1);
   assert.equal(message.sent[0].content, '<https://x.com/a/status/1>\nhttps://youtu.be/abc');
-  assert.equal(message.sent[0].embeds.length, 1);
+  assert.equal(message.sent[0].embeds!.length, 1);
 });
 
 test('media that could not be attached goes out as its own message', async () => {
@@ -123,11 +127,11 @@ test('a rejected attachment falls back to the embed without its image', async ()
   await sendReply(message, { lines: [], cards: [withFile] });
 
   assert.equal(message.sent.length, 2);
-  assert.equal(message.sent[0].files.length, 1);
+  assert.equal(message.sent[0].files!.length, 1);
   // The first embed keeps its title; the page-only embed had nothing left.
-  assert.equal(message.sent[1].embeds.length, 1);
-  assert.equal(message.sent[1].embeds[0].title, 'work');
-  assert.equal(message.sent[1].embeds[0].image, undefined);
+  assert.equal(message.sent[1].embeds!.length, 1);
+  assert.equal(message.sent[1].embeds![0].title, 'work');
+  assert.equal(message.sent[1].embeds![0].image, undefined);
 });
 
 test('a rejected embed falls back to the plain links', async () => {
@@ -159,19 +163,19 @@ test('hasContent tells a real embed from an image holder', () => {
 });
 
 test('withoutAttachmentImages only touches attachment images', () => {
-  assert.equal(withoutAttachmentImages({ image: { url: 'https://x/y.jpg' } }).image.url, 'https://x/y.jpg');
+  assert.equal(withoutAttachmentImages({ image: { url: 'https://x/y.jpg' } }).image!.url, 'https://x/y.jpg');
   const stripped = withoutAttachmentImages({ image: { url: 'attachment://p0.jpg' } });
   assert.equal(stripped.image, undefined);
 });
 
 test('a card that hands the link over sends it bare, so it unfurls', async () => {
-  const sent = [];
+  const sent: RecordedPayload[] = [];
   const message = {
-    reply: async (payload) => {
-      sent.push(payload);
+    reply: async (payload: Parameters<ReplyTarget<unknown>['reply']>[0]) => {
+      sent.push(payload as RecordedPayload);
       return {};
     },
-    channel: { send: async (payload) => (sent.push(payload), payload) },
+    channel: { send: async (payload: Parameters<ReplyTarget<unknown>['channel']['send']>[0]) => (sent.push(payload as RecordedPayload), payload) },
     react: async () => ({}),
   };
 

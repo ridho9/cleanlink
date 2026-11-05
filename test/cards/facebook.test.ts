@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildCards } from '../../src/cards/index.js';
-import { fakeFetch, fixtureText } from '../../test-support/harness.js';
+import { buildCards } from '../../src/cards/index.ts';
+import { fakeFetch, fixtureText } from '../../test-support/harness.ts';
 
 const FACEBOOK_HTML = fixtureText('facebook-post.html');
 const FACEBOOK_REEL = fixtureText('facebook-reel.html');
@@ -19,14 +19,14 @@ test('Facebook card reads the public embed iframe, not the login-walled page', a
   assert.ok(card);
   assert.ok(calls[0].url.startsWith('https://www.facebook.com/plugins/post.php?href='));
   assert.equal(card.embeds.length, 1);
-  assert.equal(card.embeds[0].author.name, 'Learn With NASA');
-  assert.equal(card.embeds[0].author.url, 'https://www.facebook.com/LearnWithNASA');
-  assert.ok(card.embeds[0].description.startsWith('Ready for a special National STEM Day Q&A?'));
-  assert.ok(!card.embeds[0].description.includes('&amp;'));
-  assert.ok(!/[ \t]\n/.test(card.embeds[0].description), 'no line keeps a trailing space');
-  assert.ok(card.embeds[0].image.url.startsWith('https://scontent'));
-  assert.ok(!card.embeds[0].image.url.includes('s40x40'), 'the avatar is not the post image');
-  assert.equal(card.embeds[0].footer.text, 'Facebook');
+  assert.equal(card.embeds[0].author!.name, 'Learn With NASA');
+  assert.equal(card.embeds[0].author!.url, 'https://www.facebook.com/LearnWithNASA');
+  assert.ok(card.embeds[0].description!.startsWith('Ready for a special National STEM Day Q&A?'));
+  assert.ok(!card.embeds[0].description!.includes('&amp;'));
+  assert.ok(!/[ \t]\n/.test(card.embeds[0].description!), 'no line keeps a trailing space');
+  assert.ok(card.embeds[0].image!.url.startsWith('https://scontent'));
+  assert.ok(!card.embeds[0].image!.url.includes('s40x40'), 'the avatar is not the post image');
+  assert.equal(card.embeds[0].footer!.text, 'Facebook');
 });
 
 test('Facebook card reads a reel and a watch link, and ignores UI labels', async () => {
@@ -45,8 +45,8 @@ test('Facebook card reads a reel and a watch link, and ignores UI labels', async
   ]) {
     const [card] = await buildCards(url, { fetchImpl: impl });
     assert.ok(card, url);
-    assert.equal(card.embeds[0].author.name, 'Lingua Forge', url);
-    assert.ok(card.embeds[0].description.startsWith('Siapa bilang persiapan'), url);
+    assert.equal(card.embeds[0].author!.name, 'Lingua Forge', url);
+    assert.ok(card.embeds[0].description!.startsWith('Siapa bilang persiapan'), url);
     assert.ok(card.embeds[0].image, url);
   }
 });
@@ -77,19 +77,19 @@ test('a story.php or permalink.php post gets a card, one per story_fbid', async 
 });
 
 test('Facebook card retries once on an unexpected response', async () => {
-  const calls = [];
+  const calls: string[] = [];
   const { impl } = fakeFetch([
     ['https://www.facebook.com/plugins/post.php', FACEBOOK_REEL],
   ]);
   // First answer is an interstitial, second is the real page.
-  const flaky = async (url, init) => {
+  const flaky = async (url: string, init?: RequestInit) => {
     calls.push(url);
     if (calls.length === 1) return new Response('<html>checkpoint</html>', { status: 200 });
     return impl(url, init);
   };
 
   const [card] = await buildCards('https://www.facebook.com/reel/1543457311150597/', {
-    fetchImpl: flaky,
+    fetchImpl: flaky as typeof fetch,
   });
 
   assert.ok(card, 'the retry must recover');
@@ -135,9 +135,9 @@ test('a post the plugin refuses is carded from facebed instead', async () => {
 
   assert.ok(card);
   assert.equal(card.embeds.length, 1);
-  assert.equal(card.embeds[0].author.name, 'Videogame screenshots out of context');
+  assert.equal(card.embeds[0].author!.name, 'Videogame screenshots out of context');
   assert.equal(
-    card.embeds[0].image.url,
+    card.embeds[0].image!.url,
     'https://scontent.fhan5-10.fna.fbcdn.net/v/t39.99422-6/886082637_1679750246913158_n.jpg',
   );
   assert.equal(card.embeds[0].url, 'https://www.facebook.com/100064442061829/posts/1603794385111948/');
@@ -159,7 +159,7 @@ const VIDEO_MP4 = () =>
   new Response(Buffer.alloc(2048), { status: 200, headers: { 'content-type': 'video/mp4' } });
 
 /** The plugin page is refused, so the mirror is the only source. */
-const reelRoutes = (video) => [
+const reelRoutes = (video: Response): [string, unknown][] => [
   ['https://www.facebook.com/plugins/post.php', '<html>tidak tersedia lagi</html>'],
   ['https://www.facebed.com/', FACEBED_REEL],
   ['https://video.fhan5-11.fna.fbcdn.net/', video],
@@ -174,7 +174,7 @@ test('a facebed reel is attached when the file fits', async () => {
 
   assert.equal(card.files.length, 1);
   assert.equal(card.followUp, undefined);
-  assert.equal(card.embeds[0].author.name, 'Diarycoffee Jktt');
+  assert.equal(card.embeds[0].author!.name, 'Diarycoffee Jktt');
   assert.equal(card.embeds[0].description, 'Baru tau di dekat Jakarta ada tempat seseru ini');
   assert.equal(card.embeds[0].image, undefined, 'the player brings its own frame');
 });
@@ -226,11 +226,11 @@ test('a post that comes back as a page feed is still carded', async () => {
   assert.ok(card);
   assert.equal(card.embeds.length, 1);
   // The feed layout has no post_message; the name is only in the avatar aria-label.
-  assert.equal(card.embeds[0].author.name, 'Videogame screenshots out of context');
-  assert.equal(card.embeds[0].author.url, 'https://www.facebook.com/Videogamesoutofcontext');
-  assert.ok(card.embeds[0].image.url.includes('/t39.30808-6/'), 'the post picture');
-  assert.ok(!card.embeds[0].image.url.includes('/t39.30808-1/'), 'not the avatar');
-  assert.equal(card.embeds[0].footer.text, 'Facebook');
+  assert.equal(card.embeds[0].author!.name, 'Videogame screenshots out of context');
+  assert.equal(card.embeds[0].author!.url, 'https://www.facebook.com/Videogamesoutofcontext');
+  assert.ok(card.embeds[0].image!.url.includes('/t39.30808-6/'), 'the post picture');
+  assert.ok(!card.embeds[0].image!.url.includes('/t39.30808-1/'), 'not the avatar');
+  assert.equal(card.embeds[0].footer!.text, 'Facebook');
 });
 
 test('a feed showing a different post is not carded', async () => {
@@ -251,10 +251,10 @@ test('a video Facebook will not play still gets a card naming its owner', async 
 
   assert.ok(card, 'Discord shows only "Log in or sign up to view" for this link');
   const embed = card.embeds[0];
-  assert.equal(embed.author.name, 'Know Your Meme Indonesia - Unofficial');
+  assert.equal(embed.author!.name, 'Know Your Meme Indonesia - Unofficial');
   assert.equal(embed.image, undefined, 'there is no media to show');
-  assert.match(embed.description, /not logged in/);
-  assert.equal(embed.footer.text, 'Facebook');
+  assert.match(embed.description!, /not logged in/);
+  assert.equal(embed.footer!.text, 'Facebook');
 });
 
 test('Facebook card is skipped for a post that forbids embedding', async () => {

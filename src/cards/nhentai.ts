@@ -16,10 +16,20 @@ import {
   MAX_ATTACH_BYTES,
   NHENTAI_RED,
   toField,
-} from './shared.js';
+} from './shared.ts';
+import type { BuiltCard, CardEmbed, CardInput, CardOptions } from './shared.ts';
 
-export async function buildNhentaiCard({ match, href }, options) {
-  const data = await getJson(`https://nhentai.net/api/v2/galleries/${match[1]}`, options);
+type NhentaiTag = { type?: string; name?: string | null };
+type NhentaiResponse = {
+  error?: string;
+  title?: { pretty?: string | null; english?: string | null } | null;
+  cover?: { path?: string | null } | null;
+  tags?: (NhentaiTag | null)[] | null;
+  upload_date?: number;
+};
+
+export async function buildNhentaiCard({ match, href }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
+  const data = await getJson<NhentaiResponse>(`https://nhentai.net/api/v2/galleries/${match[1]}`, options);
   // A missing gallery answers `{"error":"Gallery not found"}` with a 404.
   if (!data || data.error || !data.title) return null;
 
@@ -27,7 +37,7 @@ export async function buildNhentaiCard({ match, href }, options) {
   const cover = data.cover?.path ? `https://t.nhentai.net/${data.cover.path}` : null;
   const tags = data.tags ?? [];
 
-  const embed = {
+  const embed: CardEmbed = {
     url: href,
     color: NHENTAI_RED,
     title: toField(title, 256),
@@ -37,12 +47,12 @@ export async function buildNhentaiCard({ match, href }, options) {
   if (data.upload_date) embed.timestamp = new Date(data.upload_date * 1000).toISOString();
 
   const artists = tags
-    .filter((tag) => tag?.type === 'artist' && tag.name)
+    .filter((tag): tag is NhentaiTag & { name: string } => Boolean(tag?.type === 'artist' && tag.name))
     .map((tag) => escapeMarkdown(tag.name))
     .slice(0, 5)
     .join(', ');
   const groups = tags
-    .filter((tag) => tag?.type === 'group' && tag.name)
+    .filter((tag): tag is NhentaiTag & { name: string } => Boolean(tag?.type === 'group' && tag.name))
     .map((tag) => escapeMarkdown(tag.name))
     .slice(0, 5)
     .join(', ');

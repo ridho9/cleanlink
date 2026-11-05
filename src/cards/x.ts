@@ -7,15 +7,43 @@ import {
   attachMedia,
   escapeMarkdown,
   getJson,
-  imageEmbeds,
   statFields,
-  toField,
   X_BLUE,
-} from './shared.js';
+} from './shared.ts';
+import type { BuiltCard, CardEmbed, CardInput, CardOptions } from './shared.ts';
 
-async function buildXCard({ match, href }, options) {
+type XAuthor = {
+  name?: string;
+  screen_name?: string;
+  url?: string;
+  avatar_url?: string;
+};
+
+type XMedia = {
+  type?: string;
+  url?: string;
+  thumbnail_url?: string;
+  formats?: { url?: string; bitrate?: number }[];
+};
+
+type XTweet = {
+  id?: string;
+  text?: string;
+  author?: XAuthor | null;
+  media?: { all?: XMedia[] } | null;
+  quote?: XTweet | null;
+  created_timestamp?: number;
+  replies?: unknown;
+  retweets?: unknown;
+  likes?: unknown;
+  views?: unknown;
+};
+
+type XResponse = { code?: number; tweet?: XTweet | null };
+
+async function buildXCard({ match, href }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
   const [, handle, id] = match;
-  const data = await getJson(`https://api.fxtwitter.com/${handle}/status/${id}`, options);
+  const data = await getJson<XResponse>(`https://api.fxtwitter.com/${handle}/status/${id}`, options);
   if (data?.code !== 200 || !data.tweet) return null;
 
   const tweet = data.tweet;
@@ -50,7 +78,7 @@ async function buildXCard({ match, href }, options) {
     parts.push(`> **Quoting ${escapeMarkdown(who)}**\n${body}`);
   }
 
-  const embed = {
+  const embed: CardEmbed = {
     url: `https://x.com/${author.screen_name ?? handle}/status/${tweet.id ?? id}`,
     color: X_BLUE,
     author: authorBlock(
@@ -107,7 +135,7 @@ async function buildXCard({ match, href }, options) {
  * candidate and `downloadMedia` takes the first that fits. HLS playlists
  * (`.m3u8`) are skipped: Discord cannot play them.
  */
-function videoUrls(media = []) {
+function videoUrls(media: XMedia[] = []): string[] | null {
   for (const item of media) {
     if (item.type !== 'video' && item.type !== 'gif') continue;
 
@@ -116,7 +144,7 @@ function videoUrls(media = []) {
       .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))
       .map((format) => format.url);
 
-    const urls = [...new Set([item.url, ...mp4s])].filter((url) => url && /\.mp4(\?|$)/.test(url));
+    const urls = [...new Set([item.url, ...mp4s])].filter((url): url is string => Boolean(url) && /\.mp4(\?|$)/.test(url ?? ''));
     if (urls.length > 0) return urls;
   }
   return null;
@@ -129,13 +157,13 @@ function videoUrls(media = []) {
  * only while the video itself is not attached — the frame is the fallback for
  * when Discord cannot be handed the file, not a second copy of it.
  */
-function stills(media = [], playing = false) {
+function stills(media: XMedia[] = [], playing = false): string[] {
   return media
     .map((item) => {
       if (item.type === 'photo') return item.url;
       return playing ? null : item.thumbnail_url;
     })
-    .filter(Boolean);
+    .filter((url): url is string => Boolean(url));
 }
 
 export { buildXCard };

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { decodeEntities, escapeMarkdown, toField } from '../../src/cards/shared.js';
+import { decodeEntities, escapeMarkdown, toField } from '../../src/cards/shared.ts';
 
 test('escapeMarkdown neutralises Discord markdown', () => {
   assert.equal(escapeMarkdown('*bold* _it_ ~strike~ `code` | table'), '\\*bold\\* \\_it\\_ \\~strike\\~ \\`code\\` \\| table');

@@ -13,19 +13,36 @@ import {
   MAX_IMAGES,
   PIXIV_BLUE,
   toField,
-} from './shared.js';
+} from './shared.ts';
+import type { BuiltCard, CardEmbed, CardInput, CardOptions } from './shared.ts';
 
-async function buildPixivCard({ match, href }, options) {
+type PixivIllustResponse = {
+  error?: boolean;
+  body?: {
+    xRestrict?: number;
+    userName?: string;
+    userId?: string;
+    illustTitle?: string;
+    pageCount?: number;
+    tags?: { tags?: ({ tag?: string } | null)[] } | null;
+  } | null;
+};
+
+type PixivPagesResponse = {
+  body?: ({ urls?: { regular?: string } | null } | null)[] | null;
+};
+
+async function buildPixivCard({ match, href }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
   const [, id] = match;
   const headers = { referer: 'https://www.pixiv.net/' };
 
-  const meta = await getJson(`https://www.pixiv.net/ajax/illust/${id}`, {
+  const meta = await getJson<PixivIllustResponse>(`https://www.pixiv.net/ajax/illust/${id}`, {
     ...options,
     headers,
   });
   if (!meta || meta.error || !meta.body) return null;
 
-  const pages = await getJson(`https://www.pixiv.net/ajax/illust/${id}/pages`, {
+  const pages = await getJson<PixivPagesResponse>(`https://www.pixiv.net/ajax/illust/${id}/pages`, {
     ...options,
     headers,
   });
@@ -37,7 +54,7 @@ async function buildPixivCard({ match, href }, options) {
 
   const urls = (pages?.body ?? [])
     .map((page) => page?.urls?.regular)
-    .filter(Boolean)
+    .filter((url): url is string => Boolean(url))
     .slice(0, filesLeft);
 
   // The whole point of this card is the image, and it only exists if we host
@@ -60,7 +77,7 @@ async function buildPixivCard({ match, href }, options) {
   }
   if (files.length === 0) return null;
 
-  const embed = {
+  const embed: CardEmbed = {
     url: href,
     color: PIXIV_BLUE,
     author: authorBlock(meta.body.userName, 'Pixiv', {
@@ -90,7 +107,7 @@ async function buildPixivCard({ match, href }, options) {
 
   const tags = (meta.body.tags?.tags ?? [])
     .map((tag) => tag?.tag)
-    .filter(Boolean)
+    .filter((tag): tag is string => Boolean(tag))
     .slice(0, 10);
   if (tags.length > 0) {
     embed.description = clip(tags.map((tag) => escapeMarkdown(tag)).join(' · '), 4096);

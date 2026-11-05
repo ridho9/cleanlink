@@ -1,5 +1,22 @@
-import { RULES } from './rules.js';
-import { mark, note, withUrl } from './trace.js';
+import { RULES } from './rules.ts';
+import type { Rule } from './rules.ts';
+import { mark, note, withUrl } from './trace.ts';
+
+export interface UrlMatch {
+  raw: string;
+  start: number;
+  end: number;
+}
+
+export interface CleanedLink {
+  from: string;
+  to: string;
+}
+
+export interface CleanOptions {
+  fetchImpl?: typeof fetch;
+  maxHops?: number;
+}
 
 const URL_RE = /https?:\/\/[^\s<>"'`]+/gi;
 const TRAILING_PUNCTUATION = /[.,;:!?)\]}>]+$/;
@@ -39,9 +56,9 @@ const GLOBAL_TRACKING = [
  * Pull candidate URLs out of free text, with the offsets they occupy.
  * The offsets let a caller tell "this text is inside a URL" from "this text
  * stands on its own", which the `nh/123` shorthand depends on.
- * @returns {Array<{raw: string, start: number, end: number}>}
+ * @returns Candidate URLs with their offsets.
  */
-export function findUrls(text) {
+export function findUrls(text: unknown): UrlMatch[] {
   if (typeof text !== 'string') return [];
 
   return [...text.matchAll(URL_RE)]
@@ -49,16 +66,16 @@ export function findUrls(text) {
       const raw = match[0].replace(TRAILING_PUNCTUATION, '');
       return raw ? { raw, start: match.index, end: match.index + raw.length } : null;
     })
-    .filter(Boolean);
+    .filter((match): match is UrlMatch => Boolean(match));
 }
 
 /** Pull candidate URLs out of free text. */
-export function extractUrls(text) {
+export function extractUrls(text: unknown) {
   return findUrls(text).map(({ raw }) => raw);
 }
 
 /** True when this text contains a link the cleaner would handle. */
-export function handlesAny(text) {
+export function handlesAny(text: unknown) {
   return extractUrls(text).some((raw) => {
     try {
       return ruleFor(new URL(raw)) !== null;
@@ -69,14 +86,14 @@ export function handlesAny(text) {
 }
 
 /** Find the rule that owns this URL, if any. */
-export function ruleFor(url) {
+export function ruleFor(url: URL): Rule | null {
   const host = url.hostname.toLowerCase();
 
   return RULES.find((rule) => hostMatches(host, rule.hosts)) ?? null;
 }
 
 /** True when a hostname is one of these domains or a subdomain of one. */
-export function hostMatches(host, list = []) {
+export function hostMatches(host: unknown, list: string[] = []) {
   // DNS names are case-insensitive, and `URL` already lowercases `hostname`;
   // normalising here too means a caller cannot break the match by handing in
   // an untouched `Host` header.
@@ -85,12 +102,12 @@ export function hostMatches(host, list = []) {
 }
 
 /** True when the URL is opaque and only the server knows the real target. */
-function needsResolve(url, rule) {
+function needsResolve(url: URL, rule: Rule) {
   if (hostMatches(url.hostname.toLowerCase(), rule.shorten)) return true;
   return rule.share ? rule.share.test(url.pathname) : false;
 }
 
-function stripTracking(url, rule) {
+function stripTracking(url: URL, rule: Rule) {
   const out = new URL(url.href);
 
   // On a permalink, every query parameter is decoration: X's `a`/`s`/`t`,
@@ -105,7 +122,7 @@ function stripTracking(url, rule) {
   const keepOnly =
     rule.keepOnly && rule.keepOnly.path.test(url.pathname) ? rule.keepOnly.keep : null;
 
-  const shouldDrop = (name) =>
+  const shouldDrop = (name: string) =>
     keepOnly
       ? !keepOnly.some((re) => re.test(name))
       : dropAll ||
@@ -125,7 +142,7 @@ function stripTracking(url, rule) {
  * share/shortener URL owned by a rule. Redirect targets outside the rules
  * are returned but never requested, which is what keeps this SSRF-safe.
  */
-async function resolveShare(url, { fetchImpl = fetch, maxHops = MAX_HOPS } = {}) {
+async function resolveShare(url: URL, { fetchImpl = fetch, maxHops = MAX_HOPS }: CleanOptions = {}) {
   let current = new URL(url.href);
 
   for (let hop = 0; hop < maxHops; hop += 1) {
@@ -152,7 +169,7 @@ async function resolveShare(url, { fetchImpl = fetch, maxHops = MAX_HOPS } = {})
       } catch (error) {
         // Timeout, DNS failure, or a blocked request.
         if (attempt === 1) {
-          note(`[resolve] ${current.href} failed twice: ${error.message}`);
+          note(`[resolve] ${current.href} failed twice: ${(error as Error).message}`);
           mark('resolve', 'failed');
         }
       }
@@ -189,7 +206,7 @@ async function resolveShare(url, { fetchImpl = fetch, maxHops = MAX_HOPS } = {})
  *
  * Returning those would be worse than staying silent, so they are rejected.
  */
-function looksLikeFallback(original, resolved, rule) {
+function looksLikeFallback(original: URL, resolved: URL, rule: Rule) {
   if (resolved.href === original.href) return false;
 
   if (rule.failure?.some((re) => re.test(resolved.href))) return true;
@@ -209,10 +226,10 @@ function looksLikeFallback(original, resolved, rule) {
 
 /**
  * Clean a single URL.
- * @returns {Promise<string|null>} the cleaned URL, or null when the link is
+ * @returns The cleaned URL, or null when the link is
  *   not ours to handle or nothing would change.
  */
-export async function cleanUrl(input, options = {}) {
+export async function cleanUrl(input: string, options: CleanOptions = {}) {
   let url;
   try {
     url = new URL(input);
@@ -249,7 +266,7 @@ export async function cleanUrl(input, options = {}) {
  * the path and query are not: `youtu.be/AbCdEf` and `youtu.be/abcdef` are two
  * different videos, so folding the whole URL case would silently drop one.
  */
-function dedupeKey(raw) {
+function dedupeKey(raw: string) {
   try {
     const url = new URL(raw);
     return `${url.protocol}//${url.host}${url.pathname}${url.search}`;
@@ -260,10 +277,10 @@ function dedupeKey(raw) {
 
 /**
  * Clean every handled link in a message.
- * @returns {Promise<Array<{from: string, to: string}>>} only the links that
+ * @returns Only the links that
  *   actually changed, deduplicated and capped.
  */
-export async function cleanMessage(text, options = {}) {
+export async function cleanMessage(text: unknown, options: CleanOptions = {}): Promise<CleanedLink[]> {
   const seen = new Set();
   const candidates = [];
 
@@ -284,12 +301,12 @@ export async function cleanMessage(text, options = {}) {
       } catch (error) {
         // Never fatal, but never silent either: an exception here used to leave
         // the message unanswered with nothing in the log.
-        note(`[clean] ${raw} failed: ${error.message}`);
+        note(`[clean] ${raw} failed: ${(error as Error).message}`);
         mark('clean', 'error');
         return null;
       }
     })),
   );
 
-  return results.filter(Boolean);
+  return results.filter((result): result is CleanedLink => Boolean(result));
 }

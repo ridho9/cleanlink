@@ -3,14 +3,14 @@
 
 import {
   authorBlock,
-  decodeEntities,
   getHtml,
   metaContent,
   THREADS_BLACK,
   toField,
-} from './shared.js';
+} from './shared.ts';
+import type { BuiltCard, CardEmbed, CardInput, CardOptions } from './shared.ts';
 
-async function buildThreadsCard({ href }, options) {
+async function buildThreadsCard({ href }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
   const page = await getHtml(href, options);
   if (!page) return null;
 
@@ -21,7 +21,7 @@ async function buildThreadsCard({ href }, options) {
 
   const title = metaContent(page.html, 'og:title') ?? 'Threads';
   const author = title.replace(/\s+on Threads$/i, '').trim();
-  const embed = {
+  const embed: CardEmbed = {
     url: metaContent(page.html, 'og:url') ?? href,
     color: THREADS_BLACK,
     author: authorBlock(author, 'Threads', { url: href }),

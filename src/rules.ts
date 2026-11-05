@@ -17,7 +17,19 @@
 // links. Reddit, Spotify and Google were dropped until someone checks them
 // with a live link each.
 
-export const RULES = [
+export interface Rule {
+  id: string;
+  hosts: string[];
+  drop: RegExp[];
+  share?: RegExp;
+  shorten?: string[];
+  dropAllOn?: RegExp;
+  keepOnly?: { path: RegExp; keep: RegExp[] };
+  ua?: string;
+  failure?: RegExp[];
+}
+
+export const RULES: Rule[] = [
   {
     id: 'threads',
     hosts: ['threads.com', 'threads.net'],

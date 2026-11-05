@@ -9,15 +9,31 @@ import {
   statFields,
   TIKTOK_BLACK,
   toField,
-} from './shared.js';
+} from './shared.ts';
+import type { BuiltCard, CardEmbed, CardInput, CardOptions } from './shared.ts';
 
-async function buildTikTokCard({ match, href }, options) {
+type TikTokResponse = {
+  code?: number;
+  data?: {
+    author?: { nickname?: string; unique_id?: string; avatar?: string } | null;
+    cover?: string | null;
+    origin_cover?: string | null;
+    play?: unknown;
+    title?: string;
+    create_time?: number;
+    play_count?: unknown;
+    digg_count?: unknown;
+    comment_count?: unknown;
+  } | null;
+};
+
+async function buildTikTokCard({ match, href }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
   const [, handle, id] = match;
   const canonical = `https://www.tiktok.com/@${handle}/video/${id}`;
 
   // tikwm.com is a public API with no key, and the only source of a real
   // caption: TikTok's own oEmbed returns an iframe and nothing else.
-  const data = await getJson(
+  const data = await getJson<TikTokResponse>(
     `https://www.tikwm.com/api/?url=${encodeURIComponent(canonical)}`,
     options,
   );
@@ -33,7 +49,7 @@ async function buildTikTokCard({ match, href }, options) {
   const { files, followUp } = await attachMedia(play, options);
   const playing = files.length > 0 || Boolean(followUp);
 
-  const embed = {
+  const embed: CardEmbed = {
     url: href,
     color: TIKTOK_BLACK,
     author: authorBlock(

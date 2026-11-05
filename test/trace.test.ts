@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { finishTrace, mark, markReply, note, runTraced, startTrace, withUrl } from '../src/trace.js';
+import { finishTrace, mark, markReply, note, runTraced, startTrace, withUrl } from '../src/trace.ts';
+import type { Trace } from '../src/trace.ts';
 
 /** Run `fn` and return the `[msg]` record it wrote. */
-async function record(fn) {
-  const lines = [];
+async function record(fn: (trace: Trace) => unknown) {
+  const lines: string[] = [];
   const original = console.log;
   console.log = (line) => lines.push(String(line));
   try {
@@ -16,7 +17,7 @@ async function record(fn) {
     console.log = original;
   }
   const line = lines.find((l) => l.startsWith('[msg] '));
-  return { record: JSON.parse(line.slice(6)), lines };
+  return { record: JSON.parse(line!.slice(6)), lines };
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
@@ -60,7 +61,7 @@ test('the record names how the message ended, and defaults to nothing', async ()
 });
 
 test('outside a traced message, note only logs and mark does nothing', async () => {
-  const lines = [];
+  const lines: string[] = [];
   const original = console.log;
   console.log = (line) => lines.push(line);
   try {

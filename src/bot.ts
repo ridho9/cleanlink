@@ -8,11 +8,13 @@ import {
   Partials,
   PermissionFlagsBits,
 } from 'discord.js';
-import { cleanMessage, handlesAny } from './clean.js';
-import { buildCards, hasCardFor } from './cards/index.js';
-import { sendReply } from './reply.js';
-import { originalDeleted, track } from './replies.js';
-import { finishTrace, logError, markReply, note, runTraced, startTrace } from './trace.js';
+import type { GuildTextBasedChannel, Message, OmitPartialGroupDMChannel } from 'discord.js';
+import type { Trace } from './trace.ts';
+import { cleanMessage, handlesAny } from './clean.ts';
+import { buildCards, hasCardFor } from './cards/index.ts';
+import { sendReply } from './reply.ts';
+import { originalDeleted, track } from './replies.ts';
+import { finishTrace, logError, markReply, note, runTraced, startTrace } from './trace.ts';
 
 // Shown on the incoming message while the bot works on it, removed afterwards.
 const ACK_EMOJI = '👀';
@@ -82,20 +84,20 @@ client.on(Events.Warn, (msg) => console.log(`[warn] ${msg}`));
 
 /**
  * Strip the preview card from someone else's message, when allowed.
- * @returns {Promise<boolean>} true when the embed was actually suppressed
+ * @returns True when the embed was actually suppressed.
  */
-async function suppressOriginalEmbed(message) {
+async function suppressOriginalEmbed(message: Message) {
   // Needs Manage Messages, which only exists in guilds. A DM channel has no
   // permission model at all and answers 50003, so this is guild-only by nature.
   let allowed = false;
   try {
     allowed = Boolean(
-      message.channel
+      (message.channel as GuildTextBasedChannel)
         .permissionsFor(message.client.user)
         ?.has(PermissionFlagsBits.ManageMessages),
     );
   } catch (error) {
-    note(`[guild] could not read permissions: ${error.message}`);
+    note(`[guild] could not read permissions: ${(error as Error).message}`);
     return;
   }
 
@@ -109,23 +111,23 @@ async function suppressOriginalEmbed(message) {
     note('[guild] suppressed the original embed');
     return true;
   } catch (error) {
-    note(`[guild] suppress failed: ${error.message}`);
+    note(`[guild] suppress failed: ${(error as Error).message}`);
     return false;
   }
 }
 
 /** Put the original preview back after a reply that never went out. */
-async function restoreOriginalEmbed(message) {
+async function restoreOriginalEmbed(message: Message) {
   try {
     await message.suppressEmbeds(false);
     note('[guild] restored the original embed');
   } catch (error) {
-    note(`[guild] could not restore the embed: ${error.message}`);
+    note(`[guild] could not restore the embed: ${(error as Error).message}`);
   }
 }
 
 /** The whole message path, exported so it can be driven without a gateway. */
-export async function handleMessage(message) {
+export async function handleMessage(message: OmitPartialGroupDMChannel<Message>) {
   // Logged before any filter, so a missing line means the event never arrived
   // (intent, mutual-server, or a second client stealing the session) rather
   // than "it arrived and was filtered out".
@@ -150,7 +152,7 @@ export async function handleMessage(message) {
   // whatever happens, and an error is logged with its id instead of escaping.
   const trace = startTrace({
     id: message.id,
-    where: isDM ? 'dm' : `${message.guild.name} #${message.channel.name ?? message.channel.id}`,
+    where: isDM ? 'dm' : `${message.guild!.name} #${(message.channel as GuildTextBasedChannel).name ?? message.channel.id}`,
   });
   await runTraced(trace, async () => {
     try {
@@ -165,7 +167,7 @@ export async function handleMessage(message) {
 }
 
 /** Hide, react, clean, card, reply - the part of the path that is traced. */
-async function work(message, isDM, trace) {
+async function work(message: OmitPartialGroupDMChannel<Message>, isDM: boolean, trace: Trace) {
   // Tracked from receipt, so a delete during the work below is not missed.
   const replies = track(message.id);
 
@@ -182,7 +184,7 @@ async function work(message, isDM, trace) {
   try {
     ack = await message.react(ACK_EMOJI);
   } catch (error) {
-    note(`[ack] could not react: ${error.message}`);
+    note(`[ack] could not react: ${(error as Error).message}`);
   }
 
   try {
@@ -217,8 +219,9 @@ async function work(message, isDM, trace) {
       // A permission the bot lacks — most often Send Messages in Threads — is
       // not a gateway fault and not something a retry fixes. Say so once; the
       // preview comes back in finally.
-      if (error?.status === 403 || error?.status === 404) {
-        note(`[reply] cannot post in this channel: ${error.message} (${error.code})`);
+      const detail = error as { status?: number; message?: string; code?: string } | null | undefined;
+      if (detail?.status === 403 || detail?.status === 404) {
+        note(`[reply] cannot post in this channel: ${detail.message} (${detail.code})`);
         markReply(trace, 'refused');
         return;
       }
@@ -228,9 +231,9 @@ async function work(message, isDM, trace) {
     if (suppressed && !replied && !replies.deleted()) await restoreOriginalEmbed(message);
     if (ack) {
       try {
-        await ack.users.remove(client.user);
+        await ack.users.remove(client.user!);
       } catch (error) {
-        note(`[ack] could not remove reaction: ${error.message}`);
+        note(`[ack] could not remove reaction: ${(error as Error).message}`);
       }
     }
   }

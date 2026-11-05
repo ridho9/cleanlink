@@ -1,18 +1,18 @@
 import { readFileSync } from 'node:fs';
 
 /** Parsed JSON fixture from test/fixtures. */
-export const fixture = (name) =>
+export const fixture = (name: string) =>
   JSON.parse(readFileSync(new URL(`../test/fixtures/${name}`, import.meta.url), 'utf8'));
 
 /** Raw text fixture, for the scraped HTML pages. */
-export const fixtureText = (name) =>
+export const fixtureText = (name: string) =>
   readFileSync(new URL(`../test/fixtures/${name}`, import.meta.url), 'utf8');
 
 /** A fetch stub that answers by URL prefix and records what it was asked. */
-export function fakeFetch(routes) {
-  const calls = [];
-  const impl = async (url, init = {}) => {
-    calls.push({ url: String(url), headers: init.headers ?? {} });
+export function fakeFetch(routes: [string, unknown][]) {
+  const calls: { url: string; headers: Record<string, string> }[] = [];
+  const impl: typeof fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), headers: (init.headers ?? {}) as Record<string, string> });
     const route = routes.find(([prefix]) => String(url).startsWith(prefix));
     if (!route) return new Response('not found', { status: 404 });
     const [, value] = route;

@@ -14,11 +14,12 @@ import {
   toField,
   FACEBOOK_BLUE,
   UNFURL_UA,
-} from './shared.js';
-import { note } from '../trace.js';
+} from './shared.ts';
+import type { BuiltCard, CardEmbed, CardInput, CardOptions } from './shared.ts';
+import { note } from '../trace.ts';
 
 /** Inner HTML of the div that starts at `from`, honouring nesting. */
-function innerDiv(html, from) {
+function innerDiv(html: string, from: number): string | null {
   const open = html.indexOf('>', from);
   if (open === -1) return null;
   const start = open + 1;
@@ -37,7 +38,7 @@ function innerDiv(html, from) {
 }
 
 /** Turn the post body's paragraphs and links into plain text. */
-function htmlToText(fragment) {
+function htmlToText(fragment: string): string {
   return decodeEntities(
     fragment
       .replace(/<br\s*\/?>/gi, '\n')
@@ -59,7 +60,7 @@ function htmlToText(fragment) {
  * the link the widget carries back to itself. Only accepted when that link
  * names the post we asked for, so a feed showing something else is not carded.
  */
-function feedCard(html, match, href) {
+function feedCard(html: string, match: CardInput['match'], href: string): BuiltCard | null {
   if (!html.includes('role="feed"')) return null;
 
   const id = match[1];
@@ -73,7 +74,7 @@ function feedCard(html, match, href) {
     .join('\n\n');
 
   const footer = { text: 'Facebook' };
-  const embed = { url: href, color: FACEBOOK_BLUE, footer };
+  const embed: CardEmbed = { url: href, color: FACEBOOK_BLUE, footer };
   if (name) {
     embed.author = authorBlock(decodeEntities(name), link[1], {
       url: `https://www.facebook.com/${link[1]}`,
@@ -96,7 +97,7 @@ function feedCard(html, match, href) {
  * There is no media to show, only the page name, so the card says what it knows
  * and no more: who posted it, and that the video needs a logged-in viewer.
  */
-function blockedVideoCard(html, href) {
+function blockedVideoCard(html: string, href: string): BuiltCard | null {
   if (!/Video (?:tidak tersedia|isn't available)/i.test(html)) return null;
 
   const avatar = [...html.matchAll(/<img\b[^>]*>/gi)].find((tag) => tag[0].includes('role="img"'));
@@ -128,12 +129,12 @@ function blockedVideoCard(html, href) {
  * the message budget all mean no attachment, and the caller falls back to the
  * author-only card. Nothing here is on the path for any other site.
  */
-function isVideoPath(href) {
+function isVideoPath(href: string): boolean {
   return /\/(?:reel|videos|watch)\b/.test(new URL(href).pathname);
 }
 
 /** Post images: everything on scontent that is not an avatar. */
-function mediaImages(html) {
+function mediaImages(html: string): string[] {
   return [
     ...new Set(
       [...html.matchAll(/https:\/\/scontent[^"\\ ]+/g)]
@@ -145,7 +146,7 @@ function mediaImages(html) {
   ];
 }
 
-async function fromEmbedPage({ match, href }, options) {
+async function fromEmbedPage({ match, href }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
   // The post itself is behind a login wall. The embed iframe is not.
   const embedUrl = `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(href)}&show_text=true`;
 
@@ -222,7 +223,7 @@ async function fromEmbedPage({ match, href }, options) {
     const images = mediaImages(page.html);
 
     const footer = { text: 'Facebook' };
-    const embed = {
+    const embed: CardEmbed = {
       url: href,
       color: FACEBOOK_BLUE,
       footer,
@@ -269,7 +270,7 @@ async function fromEmbedPage({ match, href }, options) {
  * A card is worth the round trip only when it shows something. An empty embed
  * (a login-walled post the iframe answered with no text) is not.
  */
-function hasContent(card) {
+function hasContent(card: BuiltCard | null): boolean {
   if (!card) return false;
   if (card.files.length > 0) return true;
   return card.embeds.some(
@@ -286,7 +287,7 @@ function hasContent(card) {
  * It is read for its tags, not trusted as the link: the message keeps the clean
  * Facebook URL, so a reader never clicks through a third party.
  */
-async function fromFacebed(href, options) {
+async function fromFacebed(href: string, options: CardOptions): Promise<BuiltCard | null> {
   const mirrored = await facebedPage(href, options);
   if (!mirrored) return null;
   const { page, mirror, embed } = mirrored;
@@ -306,7 +307,7 @@ async function fromFacebed(href, options) {
 }
 
 /** Fetch the facebed page and build the text part of a card from its tags. */
-async function facebedPage(href, options) {
+async function facebedPage(href: string, options: CardOptions) {
   const url = new URL(href);
   if (!/(^|\.)facebook\.com$/.test(url.hostname)) return null;
 
@@ -333,7 +334,7 @@ async function facebedPage(href, options) {
 
   const handle = /facebook\.com\/([^/?#]+)/.exec(metaContent(page.html, 'og:url') ?? '')?.[1];
   const footer = { text: 'Facebook' };
-  const embed = {
+  const embed: CardEmbed = {
     url: href,
     color: FACEBOOK_BLUE,
     footer,
@@ -343,7 +344,7 @@ async function facebedPage(href, options) {
   return { page, mirror, embed };
 }
 
-async function buildFacebookCard(input, options) {
+async function buildFacebookCard(input: CardInput, options: CardOptions): Promise<BuiltCard | null> {
   const card = await fromEmbedPage(input, options);
 
   // A player in the message beats any mirror: one message, no unfurl needed.
@@ -373,7 +374,7 @@ async function buildFacebookCard(input, options) {
 }
 
 /** The text fields of a card embed. */
-function pick({ author, description }) {
+function pick({ author, description }: CardEmbed) {
   return { ...(author && { author }), ...(description && { description }) };
 }
 
