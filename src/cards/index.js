@@ -1,4 +1,4 @@
-import { extractUrls, findUrls, hostMatches } from '../clean.js';
+import { findUrls, hostMatches } from '../clean.js';
 import { buildFacebookCard } from './facebook.js';
 import { buildInstagramCard } from './instagram.js';
 import { buildNhentaiCard } from './nhentai.js';
@@ -14,7 +14,7 @@ import {
 } from './shared.js';
 
 // Preview cards for the links where Discord's own unfurl is broken or thin.
-// Most sites need nothing here: Instagram and Misskey already answer Discord's
+// Sites with a good native preview need nothing here: Misskey answers Discord's
 // crawler with complete OpenGraph tags, and YouTube has a native player.
 //
 // Adding a site is a table entry plus a builder module. Keep it that way.
@@ -155,7 +155,8 @@ function findCard(raw, cleanedFor, explicit) {
  * @param {object} [options]
  * @param {Array<{from: string, to: string}>} [options.cleaned] results from
  *   cleanMessage, so a card can show the cleaned URL rather than the tracked one
- * @returns {Promise<Array<{from: string, url: string, embeds: Array, files: Array}>>}
+ * @returns {Promise<Array<{from: string, url: string, embeds: Array, files: Array,
+ *   followUp?: string, unfurl?: boolean}>>}
  */
 export async function buildCards(text, { cleaned = [], fetchImpl = fetch } = {}) {
   const cleanedFor = new Map(cleaned.map(({ from, to }) => [from, to]));

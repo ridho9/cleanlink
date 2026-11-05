@@ -12,6 +12,8 @@ const run = promisify(execFile);
 const BROWSER_UA = 'Mozilla/5.0';
 const TIMEOUT_MS = 6000;
 const MEDIA_TIMEOUT_MS = 20_000;
+// A yt-dlp download fetches and merges two streams, so it gets longer.
+const DOWNLOAD_TIMEOUT_MS = 30_000;
 
 // A message can carry several cards, but each one spends the same per-message
 // budget that Discord enforces, so the limits below are shared, not per card.
@@ -275,7 +277,14 @@ export async function videoLink(href, options = {}) {
   }
 }
 
-export async function downloadVideo(href, options = {}, format = {}) {
+/**
+ * Download a video with yt-dlp as an attachment, or null.
+ *
+ * Optional by design: no yt-dlp, an unparseable page, or a file over the
+ * message budget all return null. yt-dlp gets an argv array (never a shell),
+ * a timeout, and a temporary directory that is always removed.
+ */
+export async function downloadVideo(href, options = {}) {
   const budget = options.budget ?? {};
   if ((budget.files ?? 1) <= 0) return null;
 
@@ -287,11 +296,11 @@ export async function downloadVideo(href, options = {}, format = {}) {
       '--no-warnings',
       '--no-playlist',
       '--max-filesize', String(cap),
-      ...(format.args ?? ['-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best']),
+      '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
       '--merge-output-format', 'mp4',
       '-o', file,
       href,
-    ], { timeout: 30_000 });
+    ], { timeout: DOWNLOAD_TIMEOUT_MS });
 
     let buffer;
     try {
