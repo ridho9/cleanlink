@@ -38,6 +38,48 @@ test('Threads card shows post media large, not the avatar', async () => {
   assert.equal(card!.embeds[0]!.thumbnail, undefined);
 });
 
+/**
+ * The page as Threads serves it: one JSON script holding the post and its
+ * replies, each with its own carousel (or none).
+ */
+function withPosts(posts: { code: string; urls?: string[] }[]) {
+  const items = posts.map(({ code, urls }) => ({
+    post: {
+      code,
+      ...(urls ? { carousel_media: urls.map((url) => ({ image_versions2: { candidates: [{ url }, { url: `${url}?small` }] } })) } : {}),
+    },
+  }));
+  const script = `<script type="application/json" data-sjs>${JSON.stringify({ require: [[{ thread_items: items }]] })}</script>`;
+  return THREADS_HTML.replace('</body>', `${script}</body>`);
+}
+
+test('Threads carousel shows every image as one gallery, largest rendition', async () => {
+  const urls = ['https://cdn.example/1.webp', 'https://cdn.example/2.webp', 'https://cdn.example/3.webp'];
+  const { impl } = fakeFetch([['https://www.threads.com/', withPosts([{ code: 'DfPOscPD6UR', urls }])]]);
+  const [card] = await buildCards('https://www.threads.com/@phodhipo/post/DfPOscPD6UR', {
+    fetchImpl: impl,
+  });
+
+  assert.deepEqual(card!.embeds.map((embed) => embed.image?.url), urls);
+  assert.ok(card!.embeds.every((embed) => embed.url === card!.embeds[0]!.url), 'one URL makes one gallery');
+  assert.deepEqual(card!.embeds.map((embed) => embed.footer?.text), ['Threads · 1/3', 'Threads · 2/3', 'Threads · 3/3']);
+  assert.equal(card!.embeds[0]!.thumbnail, undefined, 'the avatar is not shown next to the gallery');
+});
+
+test('a reply\'s carousel on the same page is not used for the post', async () => {
+  const html = withPosts([
+    { code: 'ReplyPost01', urls: ['https://cdn.example/a.webp', 'https://cdn.example/b.webp'] },
+    { code: 'DfPOscPD6UR' },
+  ]);
+  const { impl } = fakeFetch([['https://www.threads.com/', html]]);
+  const [card] = await buildCards('https://www.threads.com/@phodhipo/post/DfPOscPD6UR', {
+    fetchImpl: impl,
+  });
+
+  assert.equal(card!.embeds.length, 1);
+  assert.equal(card!.embeds[0]!.image, undefined);
+});
+
 test('Threads card is skipped when the page has no description', async () => {
   const { impl } = fakeFetch([['https://www.threads.com/', '<html><head></head></html>']]);
   const cards = await buildCards('https://www.threads.com/@phodhipo/post/DfPOscPD6UR', {
