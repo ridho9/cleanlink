@@ -91,7 +91,7 @@ const CARD_SITES = [
  * is dropped, so `example.com/docs/nh/123` never turns into a gallery.
  */
 const SHORTHAND = [
-  [/\bnh\/(\d{1,9})\b/gi, (match) => `https://nhentai.net/g/${Number(match[1])}/`],
+  [/\bnh\/#?(\d{1,9})\b/gi, (match) => `https://nhentai.net/g/${Number(match[1])}/`],
 ];
 
 /** Every (from, href) pair worth looking at in a message. */

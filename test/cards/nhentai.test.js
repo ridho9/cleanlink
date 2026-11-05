@@ -105,6 +105,17 @@ test('the shorthand is case-insensitive and drops leading zeros', async () => {
   assert.equal(card.url, 'https://nhentai.net/g/693549/');
 });
 
+test('the shorthand takes an optional # before the id', async () => {
+  const { impl } = fetchGallery();
+  const [card] = await buildCards('read nh/#693549 later', { fetchImpl: impl });
+
+  assert.ok(card);
+  assert.equal(card.from, 'nh/#693549');
+  assert.equal(card.url, 'https://nhentai.net/g/693549/');
+  assert.equal(hasCardFor('nh/##693549'), false, 'one # at most');
+  assert.equal(hasCardFor('https://example.com/nh/#123'), false, 'a URL fragment is not a shorthand');
+});
+
 test('the shorthand never fires inside a URL', () => {
   assert.equal(hasCardFor('https://example.com/docs/nh/123'), false);
   assert.equal(hasCardFor('see https://foo.tld/path/nh/693549 here'), false);
