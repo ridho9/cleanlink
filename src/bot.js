@@ -12,6 +12,7 @@ import { cleanMessage, handlesAny } from './clean.js';
 import { buildCards, hasCardFor } from './cards/index.js';
 import { sendReply } from './reply.js';
 import { originalDeleted, track } from './replies.js';
+import { finishTrace, logError, markReply, note, runTraced, startTrace } from './trace.js';
 
 // Shown on the incoming message while the bot works on it, removed afterwards.
 const ACK_EMOJI = '👀';
@@ -94,21 +95,21 @@ async function suppressOriginalEmbed(message) {
         ?.has(PermissionFlagsBits.ManageMessages),
     );
   } catch (error) {
-    console.log(`[guild] could not read permissions: ${error.message}`);
+    note(`[guild] could not read permissions: ${error.message}`);
     return;
   }
 
   if (!allowed) {
-    console.log('[guild] no Manage Messages — original embed left in place');
+    note('[guild] no Manage Messages — original embed left in place');
     return;
   }
 
   try {
     await message.suppressEmbeds(true);
-    console.log('[guild] suppressed the original embed');
+    note('[guild] suppressed the original embed');
     return true;
   } catch (error) {
-    console.log(`[guild] suppress failed: ${error.message}`);
+    note(`[guild] suppress failed: ${error.message}`);
     return false;
   }
 }
@@ -117,9 +118,9 @@ async function suppressOriginalEmbed(message) {
 async function restoreOriginalEmbed(message) {
   try {
     await message.suppressEmbeds(false);
-    console.log('[guild] restored the original embed');
+    note('[guild] restored the original embed');
   } catch (error) {
-    console.log(`[guild] could not restore the embed: ${error.message}`);
+    note(`[guild] could not restore the embed: ${error.message}`);
   }
 }
 
@@ -145,6 +146,26 @@ export async function handleMessage(message) {
   // regex passes, so it is cheaper than the ack reaction it avoids.
   if (!handlesAny(message.content) && !hasCardFor(message.content)) return;
 
+  // From here on the message is ours: one `[msg]` record is written for it
+  // whatever happens, and an error is logged with its id instead of escaping.
+  const trace = startTrace({
+    id: message.id,
+    where: isDM ? 'dm' : `${message.guild.name} #${message.channel.name ?? message.channel.id}`,
+  });
+  await runTraced(trace, async () => {
+    try {
+      await work(message, isDM, trace);
+    } catch (error) {
+      markReply(trace, 'error');
+      logError('handler', error, { id: message.id });
+    } finally {
+      finishTrace(trace);
+    }
+  });
+}
+
+/** Hide, react, clean, card, reply - the part of the path that is traced. */
+async function work(message, isDM, trace) {
   // Tracked from receipt, so a delete during the work below is not missed.
   const replies = track(message.id);
 
@@ -161,7 +182,7 @@ export async function handleMessage(message) {
   try {
     ack = await message.react(ACK_EMOJI);
   } catch (error) {
-    console.log(`[ack] could not react: ${error.message}`);
+    note(`[ack] could not react: ${error.message}`);
   }
 
   try {
@@ -170,7 +191,10 @@ export async function handleMessage(message) {
     // form even though it is the one being replaced by an embed.
     const cards = await buildCards(message.content, { cleaned });
 
-    if (cleaned.length === 0 && cards.length === 0) return;
+    if (cleaned.length === 0 && cards.length === 0) {
+      markReply(trace, 'nothing');
+      return;
+    }
 
     for (const { from, to } of cleaned) {
       console.log(`cleaned ${from} -> ${to}`);
@@ -181,16 +205,21 @@ export async function handleMessage(message) {
 
     // The user may delete the message while the cards are built; then there
     // is no one left to answer.
-    if (replies.deleted()) return;
+    if (replies.deleted()) {
+      markReply(trace, 'deleted');
+      return;
+    }
     try {
       await sendReply(message, { lines: cleaned, cards }, { onSent: replies.add });
       replied = true;
+      markReply(trace, replies.deleted() ? 'deleted' : 'sent');
     } catch (error) {
       // A permission the bot lacks — most often Send Messages in Threads — is
       // not a gateway fault and not something a retry fixes. Say so once; the
       // preview comes back in finally.
       if (error?.status === 403 || error?.status === 404) {
-        console.log(`[reply] cannot post in this channel: ${error.message} (${error.code})`);
+        note(`[reply] cannot post in this channel: ${error.message} (${error.code})`);
+        markReply(trace, 'refused');
         return;
       }
       throw error;
@@ -201,7 +230,7 @@ export async function handleMessage(message) {
       try {
         await ack.users.remove(client.user);
       } catch (error) {
-        console.log(`[ack] could not remove reaction: ${error.message}`);
+        note(`[ack] could not remove reaction: ${error.message}`);
       }
     }
   }
@@ -210,12 +239,8 @@ export async function handleMessage(message) {
 client.on(Events.MessageCreate, (message) => handleMessage(message));
 client.on(Events.MessageDelete, (message) => originalDeleted(message.id));
 
-client.on(Events.Error, (error) => {
-  console.error('gateway error:', error);
-});
+client.on(Events.Error, (error) => logError('gateway', error));
 
-process.on('unhandledRejection', (error) => {
-  console.error('unhandled rejection:', error);
-});
+process.on('unhandledRejection', (error) => logError('unhandled_rejection', error));
 
 await client.login(token);

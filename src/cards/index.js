@@ -12,6 +12,7 @@ import {
   MAX_EMBEDS,
   MAX_FILES,
 } from './shared.js';
+import { mark, note, withUrl } from '../trace.js';
 
 // Preview cards for the links where Discord's own unfurl is broken or thin.
 // Sites with a good native preview need nothing here: Misskey answers Discord's
@@ -182,35 +183,55 @@ export async function buildCards(text, { cleaned = [], fetchImpl = fetch } = {})
     if (seen.has(key)) continue;
     seen.add(key);
 
-    try {
+    // Notes and marks made while this card is built are filed under its URL.
+    await withUrl(raw, async () => { try {
       const card = await site.build(
         { match, href: url.href },
         { fetchImpl, budget: { files: filesLeft, bytes: bytesLeft } },
       );
       if (!card) {
+        mark('card', `${site.id}:none`);
         // Keep this: a card that silently does not appear is indistinguishable
         // from a link the bot did not recognise.
-        console.log(`[card] ${site.id} produced nothing for ${url.href}`);
-        continue;
+        note(`[card] ${site.id} produced nothing for ${url.href}`);
+        return;
       }
 
       // A card is taken whole or not at all: a card with half its pages looks
       // broken, and Discord rejects the whole message past ten embeds.
       if (card.embeds.length > embedsLeft || card.files.length > filesLeft) {
-        console.log(`[card] ${site.id} skipped: message budget spent`);
-        continue;
+        note(`[card] ${site.id} skipped: message budget spent`);
+        mark('card', `${site.id}:budget`);
+        return;
       }
 
       cards.push({ from: raw, url: url.href, ...card });
+      mark('card', site.id);
+      mark('media', mediaOf(card));
       embedsLeft -= card.embeds.length;
       filesLeft -= card.files.length;
       bytesLeft -= card.files.reduce((total, file) => total + file.attachment.length, 0);
     } catch (error) {
       // A card is decoration, so the reply still goes out — but a swallowed
       // error is invisible in the log, so it is reported here.
-      console.log(`[card] ${site.id} failed for ${raw}: ${error.message}`);
-    }
+      note(`[card] ${site.id} failed for ${raw}: ${error.message}`);
+      mark('card', `${site.id}:error`);
+    } });
   }
 
   return cards;
+}
+
+/**
+ * What a card carries besides text, for the review: a video file, a video
+ * link sent separately, a link Discord previews itself, images, or nothing.
+ */
+function mediaOf(card) {
+  if (card.files?.some((file) => /\.mp4$/.test(file.name))) return 'video';
+  if (card.followUp) return 'follow_up';
+  if (card.unfurl) return 'unfurl';
+  // An attached image (Pixiv pages, nhentai's spoilered cover) or an image the
+  // embed points at: either way the card shows a picture.
+  const images = Math.max(card.files?.length ?? 0, card.embeds.filter((embed) => embed.image).length);
+  return images > 0 ? `images:${images}` : 'text';
 }

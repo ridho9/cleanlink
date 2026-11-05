@@ -13,3 +13,7 @@ run = "pnpm start"
 [tasks.dev]
 description = "Run the bot against the development application (.env.dev)"
 run = "pnpm start:dev"
+
+[tasks.review]
+description = "Report what the bot handled and what failed (SINCE='24 hours ago', HOST=bot-host)"
+run = "ssh ${HOST:-bot-host} journalctl --user -u cleanlink --since \"'${SINCE:-24 hours ago}'\" -o json --no-pager | node scripts/review.js"

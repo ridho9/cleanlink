@@ -4,6 +4,8 @@
 // In memory only: after a restart, older replies stay. The map is bounded, so
 // a long-running bot does not grow without limit; the oldest entries go first.
 
+import { note } from './trace.js';
+
 const MAX_TRACKED = 1000;
 
 const tracked = new Map();
@@ -43,9 +45,9 @@ export async function originalDeleted(id) {
 async function remove(sent) {
   try {
     await sent.delete();
-    console.log('[reply] deleted: its original was deleted');
+    note('[reply] deleted: its original was deleted');
   } catch (error) {
     // Already gone (deleted by a moderator, say): nothing left to do.
-    console.log(`[reply] could not delete: ${error.message}`);
+    note(`[reply] could not delete: ${error.message}`);
   }
 }

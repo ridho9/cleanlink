@@ -1,4 +1,5 @@
 import { RULES } from './rules.js';
+import { mark, note, withUrl } from './trace.js';
 
 const URL_RE = /https?:\/\/[^\s<>"'`]+/gi;
 const TRAILING_PUNCTUATION = /[.,;:!?)\]}>]+$/;
@@ -151,7 +152,8 @@ async function resolveShare(url, { fetchImpl = fetch, maxHops = MAX_HOPS } = {})
       } catch (error) {
         // Timeout, DNS failure, or a blocked request.
         if (attempt === 1) {
-          console.log(`[resolve] ${current.href} failed twice: ${error.message}`);
+          note(`[resolve] ${current.href} failed twice: ${error.message}`);
+          mark('resolve', 'failed');
         }
       }
     }
@@ -224,7 +226,17 @@ export async function cleanUrl(input, options = {}) {
   if (!rule) return null;
 
   const resolved = await resolveShare(url, options);
-  if (looksLikeFallback(url, resolved, ruleFor(resolved) ?? rule)) return null;
+  // A share link that is still a share link was not resolved: the code is
+  // fake or expired, or the site stopped redirecting. Worth a line in review.
+  if (needsResolve(url, rule) && resolved.href === url.href) {
+    note(`[resolve] ${url.href} did not redirect`);
+    mark('redirect', 'none');
+  }
+  if (looksLikeFallback(url, resolved, ruleFor(resolved) ?? rule)) {
+    note(`[resolve] ${url.href} fell back to ${resolved.href}`);
+    mark('resolve', 'fallback');
+    return null;
+  }
 
   const finalRule = ruleFor(resolved) ?? rule;
   const cleaned = stripTracking(resolved, finalRule);
@@ -264,17 +276,19 @@ export async function cleanMessage(text, options = {}) {
   }
 
   const results = await Promise.all(
-    candidates.map(async (raw) => {
+    candidates.map((raw) => withUrl(raw, async () => {
       try {
         const to = await cleanUrl(raw, options);
+        mark('clean', to ?? 'unchanged');
         return to ? { from: raw, to } : null;
       } catch (error) {
         // Never fatal, but never silent either: an exception here used to leave
         // the message unanswered with nothing in the log.
-        console.log(`[clean] ${raw} failed: ${error.message}`);
+        note(`[clean] ${raw} failed: ${error.message}`);
+        mark('clean', 'error');
         return null;
       }
-    }),
+    })),
   );
 
   return results.filter(Boolean);

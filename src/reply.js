@@ -2,6 +2,8 @@
 // rejects the payload. Split out of bot.js so the ladder can be tested without
 // a gateway.
 
+import { note } from './trace.js';
+
 const MESSAGE_LIMIT = 2000;
 
 /** Keep whole lines only, so a URL is never cut in half. */
@@ -83,7 +85,7 @@ export async function sendReply(message, { lines, cards }, { onSent = async () =
     } catch (error) {
       const last = index === attempts.length - 1;
       if (last) throw error;
-      console.log(`[reply] attempt ${index + 1} rejected: ${error.message}`);
+      note(`[reply] attempt ${index + 1} rejected: ${error.message}`);
     }
   }
 
@@ -112,11 +114,11 @@ async function sendFollowUps(message, cards, onSent) {
   for (const url of urls) {
     try {
       await onSent(await message.channel.send({ content: `[${FOLLOW_UP_LABEL}](${url})`, allowedMentions: { parse: [] } }));
-      console.log(`[reply] follow-up with ${new URL(url).host}`);
+      note(`[reply] follow-up with ${new URL(url).host}`);
     } catch (error) {
       // The clean link and the card are already out; a lost player is not worth
       // a stack trace, but it is worth a line in the log.
-      console.log(`[reply] follow-up failed: ${error.message}`);
+      note(`[reply] follow-up failed: ${error.message}`);
     }
   }
 }

@@ -136,6 +136,34 @@ Query-parameter stripping is deterministic and covered by tests for every site. 
 
 Four of the six tracker sites have resolved a real share link, and every cleaned URL was re-fetched to confirm it still serves the post. Both cards were posted to a real channel and read back, attachment and embed intact. If a site silently does nothing, this table is the first place to look.
 
+## Logs and the daily review
+
+Every message the bot acts on ends with one `[msg]` line in the journal: where it came from, how long it took, how it ended, and for every URL what happened to it. Full URLs are logged on purpose, because a failure cannot be investigated without the link. Errors nothing else caught get an `[error]` line with the message id.
+
+```
+[msg] {"id":"…","where":"myserver #general","ms":3034,"reply":"sent","urls":[
+  {"in":"https://www.facebook.com/share/v/…","clean":"https://…/videos/…","card":"facebook","media":"video","notes":["…"]}]}
+```
+
+| Field | Values |
+|---|---|
+| `reply` | `sent`, `nothing` (no change, no card), `refused` (403/404 from Discord), `deleted` (original deleted first), `error` |
+| `clean` | the cleaned URL, `unchanged`, `error` |
+| `resolve` | `failed` (request failed twice), `fallback` (share link landed on a front page) |
+| `redirect` | `none`: a share link that did not redirect (fake or expired code) |
+| `card` | the site id; `<site>:none` (builder produced nothing), `<site>:budget`, `<site>:error` |
+| `media` | `video`, `follow_up` (too large, sent separately), `unfurl` (handed to a mirror), `images:<n>`, `text` |
+| `notes` | the log lines written while that URL was handled |
+
+The review reads them back:
+
+```sh
+mise run review                       # last 24 hours from bot-host
+SINCE='3 days ago' mise run review    # any journalctl --since value
+```
+
+It prints how messages ended, a per-site table, problems grouped by kind with up to three example URLs and their notes, errors with a stack excerpt, and the slowest messages.
+
 ## Adding a site
 
 Everything site-specific is data in [src/rules.js](src/rules.js):

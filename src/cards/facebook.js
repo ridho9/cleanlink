@@ -15,6 +15,7 @@ import {
   FACEBOOK_BLUE,
   UNFURL_UA,
 } from './shared.js';
+import { note } from '../trace.js';
 
 /** Inner HTML of the div that starts at `from`, honouring nesting. */
 function innerDiv(html, from) {
@@ -193,7 +194,7 @@ async function fromEmbedPage({ match, href }, options) {
       // a deleted post from a private one or an age-restricted one — Facebook
       // returns the same "no longer available" page for all three, and the
       // words "age" and "login" appear in every response's scripts.
-      console.log(
+      note(
         `[card] facebook ${page.status} ${page.html.length}B attempt ${attempt + 1}: ` +
           (refused ? 'post unavailable (deleted, private, or age-restricted)' : 'unexpected response'),
       );

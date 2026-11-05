@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { note } from '../trace.js';
 
 const run = promisify(execFile);
 
@@ -95,7 +96,7 @@ async function request(url, { fetchImpl = fetch, accept, headers = {}, timeout =
       return await fetchImpl(url, init);
     } catch (error) {
       if (attempt === 1) {
-        console.log(`[card] ${new URL(url).host} failed twice: ${error.message}`);
+        note(`[card] ${new URL(url).host} failed twice: ${error.message}`);
         throw error;
       }
     }
@@ -109,7 +110,7 @@ export async function getJson(url, options) {
     return await res.json();
   } catch {
     // A JSON endpoint answering HTML is an error page, not a card.
-    console.log(`[card] ${new URL(url).host} answered non-JSON`);
+    note(`[card] ${new URL(url).host} answered non-JSON`);
     return null;
   }
 }
@@ -177,17 +178,17 @@ export async function downloadMedia(urls, options = {}, name = 'video.mp4') {
     try {
       res = await request(url, { ...options, timeout: MEDIA_TIMEOUT_MS });
     } catch (error) {
-      console.log(`[card] ${new URL(url).host} media failed: ${error.message}`);
+      note(`[card] ${new URL(url).host} media failed: ${error.message}`);
       continue;
     }
     if (!res.ok) {
-      console.log(`[card] ${new URL(url).host} media answered ${res.status}`);
+      note(`[card] ${new URL(url).host} media answered ${res.status}`);
       continue;
     }
 
     const declared = Number(res.headers.get('content-length') ?? 0);
     if (declared > cap) {
-      console.log(`[card] ${new URL(url).host} media is ${Math.round(declared / 1024)}KB, over the budget`);
+      note(`[card] ${new URL(url).host} media is ${Math.round(declared / 1024)}KB, over the budget`);
       refused.push({ url, size: declared });
       continue;
     }
@@ -319,10 +320,10 @@ export async function videoLinks(href, options = {}) {
       href,
     ], { timeout: MEDIA_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024 });
     const urls = progressiveUrls(JSON.parse(stdout));
-    console.log(`[card] ${new URL(href).host} ${urls.length} video link(s) via yt-dlp`);
+    note(`[card] ${new URL(href).host} ${urls.length} video link(s) via yt-dlp`);
     return urls;
   } catch (error) {
-    console.log(`[card] ${new URL(href).host} video link failed: ${(error.shortMessage ?? error.message).split('\n')[0]}`);
+    note(`[card] ${new URL(href).host} video link failed: ${(error.shortMessage ?? error.message).split('\n')[0]}`);
     return [];
   }
 }
@@ -370,13 +371,13 @@ export async function downloadVideo(href, options = {}) {
     } catch {
       // yt-dlp exits successfully when it skips a file bigger than
       // --max-filesize, leaving nothing behind.
-      console.log(`[card] video skipped for ${new URL(href).host}: over the attachment budget`);
+      note(`[card] video skipped for ${new URL(href).host}: over the attachment budget`);
       return null;
     }
     if (buffer.length === 0 || buffer.length > cap) return null;
     return [{ attachment: buffer, name: 'video.mp4' }];
   } catch (error) {
-    console.log(`[card] video via yt-dlp failed for ${new URL(href).host}: ${(error.shortMessage ?? error.message).split('\n')[0]}`);
+    note(`[card] video via yt-dlp failed for ${new URL(href).host}: ${(error.shortMessage ?? error.message).split('\n')[0]}`);
     return null;
   } finally {
     await rm(dir, { recursive: true, force: true });
