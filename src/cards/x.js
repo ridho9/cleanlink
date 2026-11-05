@@ -4,7 +4,7 @@
 import {
   authorBlock,
   clip,
-  downloadMedia,
+  attachMedia,
   escapeMarkdown,
   getJson,
   imageEmbeds,
@@ -25,11 +25,7 @@ async function buildXCard({ match, href }, options) {
   // download changes what a poster frame is worth: once the player is in the
   // message, the frame repeats the video's own first second.
   const video = videoUrls(tweet.media?.all) ?? videoUrls(tweet.quote?.media?.all);
-  const media = video ? await downloadMedia(video, options) : { files: null, refusedForSize: false };
-  const files = media.files ?? [];
-  // Nothing fitted the upload budget: the best rendition still plays when
-  // Discord unfurls it, and that needs a message of its own.
-  const followUp = !media.files && media.refusedForSize ? video[0] : null;
+  const { files, followUp } = await attachMedia(video, options);
   const playing = files.length > 0 || Boolean(followUp);
 
   // The main tweet's picture first, then the quoted tweet's. A quote can carry

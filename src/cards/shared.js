@@ -111,6 +111,26 @@ export async function getHtml(url, options) {
 }
 
 /**
+ * Attach the media, or queue it for a follow-up message.
+ *
+ * A file that fits the message budget is attached. One refused only because of
+ * its size becomes a `followUp` URL, which Discord unfurls into a player on its
+ * own message. A URL that did not answer at all is neither - sending it would
+ * add a dead link to the channel.
+ *
+ * @param {string|string[]|null} candidates best rendition first
+ * @returns {Promise<{files: Array, followUp: string|null}>}
+ */
+export async function attachMedia(candidates, options = {}, name = 'video.mp4') {
+  const urls = [candidates].flat().filter(Boolean);
+  if (urls.length === 0) return { files: [], followUp: null };
+
+  const media = await downloadMedia(urls, options, name);
+  if (media.files) return { files: media.files, followUp: null };
+  return { files: [], followUp: media.refusedForSize ? urls[0] : null };
+}
+
+/**
  * Download one media file as an attachment.
  *
  * The declared length is checked before the body is read, so an oversized

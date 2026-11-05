@@ -10,8 +10,9 @@
 //
 // Discord renders nothing for the link on its own — a raw post produced zero
 // embeds — which is why this exists at all. A video post is carded like any
-// other: Discord plays only a video it unfurls itself, and an embed in the
-// message suppresses that unfurl, so the still is what a card can offer.
+// other, and unlike X or TikTok there is no follow-up either: a bare signed
+// CDN video URL produced no embed at all when tested, so the still is all a
+// card can offer.
 
 import {
   authorBlock,
@@ -125,7 +126,8 @@ function imagesFor(embedHtml, source, oembed) {
  * which is fine: Discord proxies them as it renders the message.
  *
  * For a video post the blob's `display_url` is the clean frame. `video_url` is
- * deliberately not returned: a video is not offered, so nothing uses it.
+ * deliberately not returned: the signed CDN URL produced no embed when sent on
+ * its own, so no player is possible and nothing consumes it.
  */
 function embedMedia(html) {
   const plain = html.replace(/\\/g, '');
