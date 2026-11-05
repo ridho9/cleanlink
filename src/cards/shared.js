@@ -25,6 +25,9 @@ export const MAX_IMAGES = 5; // pages per Pixiv work, matching SaucyBot's cap
 // The margin covers the rest of the request: the JSON payload and the
 // multipart framing.
 export const MAX_ATTACH_BYTES = 9_500_000;
+// The largest video file Discord was seen to unfurl into a player from a bare
+// link: a 14,937,148-byte reel played, 23.9 MB and 39.5 MB files got no embed.
+export const MAX_UNFURL_BYTES = 15_000_000;
 
 export const X_BLUE = 0x1d9bf0;
 export const PIXIV_BLUE = 0x0096fa;
@@ -134,7 +137,23 @@ export async function attachMedia(candidates, options = {}, name = 'video.mp4') 
 
   const media = await downloadMedia(urls, options, name);
   if (media.files) return { files: media.files, followUp: null };
-  return { files: [], followUp: media.refusedForSize ? urls[0] : null };
+  return { files: [], followUp: followUpOf(media.refused) };
+}
+
+/**
+ * The rendition to send as a follow-up: the largest that Discord still
+ * unfurls, otherwise the smallest one offered. A URL that never answered is
+ * not a candidate, because it would put a dead link in the channel.
+ * @param {Array<{url: string, size: number}>} refused files too large to
+ *   attach, best first; size is 0 when the server did not declare it
+ */
+function followUpOf(refused) {
+  if (refused.length === 0) return null;
+  const known = refused.filter((item) => item.size > 0);
+  const playable = known.filter((item) => item.size <= MAX_UNFURL_BYTES);
+  if (playable.length > 0) return playable.reduce((a, b) => (b.size > a.size ? b : a)).url;
+  if (known.length > 0) return known.reduce((a, b) => (b.size < a.size ? b : a)).url;
+  return refused[0].url;
 }
 
 /**
@@ -149,7 +168,7 @@ export async function downloadMedia(urls, options = {}, name = 'video.mp4') {
   const cap = Math.min(MAX_ATTACH_BYTES, options.budget?.bytes ?? MAX_ATTACH_BYTES);
   // A file refused for its size is still a live URL, which is what makes it a
   // candidate for the follow-up message. A URL that answered 404 is not.
-  let refusedForSize = false;
+  const refused = [];
 
   // Candidates arrive best first. A rendition that does not fit is skipped
   // before its body is read, so a smaller one can still be attached.
@@ -169,20 +188,20 @@ export async function downloadMedia(urls, options = {}, name = 'video.mp4') {
     const declared = Number(res.headers.get('content-length') ?? 0);
     if (declared > cap) {
       console.log(`[card] ${new URL(url).host} media is ${Math.round(declared / 1024)}KB, over the budget`);
-      refusedForSize = true;
+      refused.push({ url, size: declared });
       continue;
     }
 
     const buffer = await readCapped(res, cap);
     if (buffer === null) {
-      refusedForSize = true;
+      refused.push({ url, size: declared });
       continue;
     }
     if (buffer.length === 0) continue;
-    return { files: [{ attachment: buffer, name }], refusedForSize: false };
+    return { files: [{ attachment: buffer, name }], refused };
   }
 
-  return { files: null, refusedForSize };
+  return { files: null, refused };
 }
 
 /** Download one image, or null when it fails, is empty, or exceeds `cap`. */
@@ -277,34 +296,47 @@ export function extensionOf(url) {
 }
 
 /**
- * The direct media URL for a page, via yt-dlp, or null.
+ * The single-file video renditions of a page, best first, via yt-dlp.
  *
- * Optional by design: no yt-dlp, or a page it cannot parse, returns null and
- * the caller keeps its still. Spawned with an argv array (never a shell) under
- * a timeout.
+ * Only files that carry both picture and sound: Discord can attach or unfurl
+ * those, never a DASH stream. Every one is returned, not just the best,
+ * because the best is often too large for both an upload and an unfurl while a
+ * lower one fits.
+ *
+ * Optional by design: no yt-dlp, or a page it cannot parse, returns [] and the
+ * caller keeps its still. Spawned with an argv array (never a shell) under a
+ * timeout.
  *
  * @param {string} href page URL, already validated by the caller's matcher
+ * @returns {Promise<string[]>}
  */
-export async function videoLink(href, options = {}) {
+export async function videoLinks(href, options = {}) {
   try {
     const { stdout } = await run('yt-dlp', [
-      '-g',
+      '-J',
       '--no-warnings',
       '--no-playlist',
-      '-f', 'best[ext=mp4]/best',
       href,
-    ], { timeout: MEDIA_TIMEOUT_MS });
-
-    // A merged format prints two lines; a progressive one prints a single URL,
-    // which is what Discord can unfurl and play.
-    const [url] = stdout.trim().split('\n').filter(Boolean);
-    if (!url) return null;
-    console.log(`[card] ${new URL(href).host} video link via yt-dlp`);
-    return url;
+    ], { timeout: MEDIA_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024 });
+    const urls = progressiveUrls(JSON.parse(stdout));
+    console.log(`[card] ${new URL(href).host} ${urls.length} video link(s) via yt-dlp`);
+    return urls;
   } catch (error) {
     console.log(`[card] ${new URL(href).host} video link failed: ${(error.shortMessage ?? error.message).split('\n')[0]}`);
-    return null;
+    return [];
   }
+}
+
+/**
+ * Picture-and-sound https formats from a yt-dlp info document, best first.
+ * yt-dlp lists formats worst first. A codec reported as 'none' marks a DASH
+ * half; Facebook's `hd`/`sd` report no codec at all and are complete files.
+ */
+export function progressiveUrls(info) {
+  return (info?.formats ?? [])
+    .filter((f) => f.url && f.protocol === 'https' && f.vcodec !== 'none' && f.acodec !== 'none')
+    .map((f) => f.url)
+    .reverse();
 }
 
 /**

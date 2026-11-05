@@ -8,7 +8,7 @@ import {
   decodeEntities,
   getHtml,
   downloadVideo,
-  videoLink,
+  videoLinks,
   imageEmbeds,
   metaContent,
   toField,
@@ -246,13 +246,13 @@ async function fromEmbedPage({ match, href }, options) {
         return { embeds: [embed], files };
       }
 
-      // No file: the same yt-dlp call can still hand back a URL, and Discord
-      // plays it when it arrives on its own. The URL is signed and expires, so
-      // it is only worth sending straight away - which is exactly when it is.
-      const followUp = await videoLink(href, options);
-      if (followUp) {
+      // No merged file fits. A single-file rendition may still fit, or play
+      // as a follow-up: Discord unfurls it when it arrives on its own. The URLs
+      // are signed and expire, so they are only worth sending straight away.
+      const media = await attachMedia(await videoLinks(href, options), options);
+      if (media.files.length > 0 || media.followUp) {
         delete embed.image;
-        return { embeds: [embed], files: [], followUp };
+        return { embeds: [embed], ...media };
       }
 
       return { embeds, files: [], degraded: true };

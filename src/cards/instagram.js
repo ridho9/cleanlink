@@ -23,7 +23,7 @@ import {
   INSTAGRAM_PINK,
   metaContent,
   toField,
-  videoLink,
+  videoLinks,
 } from './shared.js';
 
 /** OpenGraph caption: `Name on Instagram: "caption"`. */
@@ -91,7 +91,7 @@ export async function buildInstagramCard({ href }, options) {
   const media = embedMedia(embedPage?.html ?? '');
   // Some reels - seen with licensed music - are marked as video in the payload
   // but carry no `video_url`. yt-dlp still resolves the same CDN file.
-  const video = media.video ?? (media.isVideo ? await videoLink(href, options) : null);
+  const video = media.video ?? (media.isVideo ? await videoLinks(href, options) : null);
   const { files, followUp } = await attachMedia(video, options);
   const playing = files.length > 0 || Boolean(followUp);
 

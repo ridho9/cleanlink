@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { buildCards } from '../../src/cards/index.js';
+import { progressiveUrls } from '../../src/cards/shared.js';
 import { fakeFetch, fixture, imageResponse } from '../../test-support/harness.js';
 
 const X_VIDEO = fixture('x-video.json');
@@ -270,4 +271,41 @@ test('a body with no content-length is counted while it streams, and refused pas
   assert.deepEqual(card.files, [], 'nothing attached');
   assert.equal(card.followUp, X_VIDEO.tweet.media.all[0].url, 'a live URL refused for size still plays');
   assert.ok(pulled <= 12, `stopped near the limit, not at the end (read ${pulled} MiB)`);
+});
+
+test('a follow-up uses the largest rendition Discord still unfurls, not the largest file', async () => {
+  // Measured on a real Facebook video: the 39.5 MB `hd` file got no player
+  // from a bare link, the 8.5 MB `sd` one did. 12 MB and 20 MB stand either side
+  // of the unfurl limit, both over the upload budget.
+  const tweet = structuredClone(X_VIDEO);
+  const sized = (bytes) => () => new Response(MP4_BYTES, {
+    status: 200, headers: { 'content-type': 'video/mp4', 'content-length': String(bytes) },
+  });
+  const urls = ['huge', 'mid', 'small'].map((n) => `https://video.twimg.com/amplify_video/1/vid/${n}.mp4`);
+  tweet.tweet.media.all[0].url = urls[0];
+  tweet.tweet.media.all[0].formats = urls.map((url, i) => ({ url, bitrate: 3e6 - i * 1e6, container: 'mp4' }));
+  const { impl } = fakeFetch([
+    ['https://api.fxtwitter.com/', tweet],
+    [urls[0], sized(39_458_600)],
+    [urls[1], sized(20_000_000)],
+    [urls[2], sized(12_000_000)],
+  ]);
+
+  const [card] = await buildCards('https://x.com/someone/status/2117280148445962692', { fetchImpl: impl });
+
+  assert.deepEqual(card.files, []);
+  assert.equal(card.followUp, urls[2]);
+});
+
+test('yt-dlp renditions keep only complete files, best first', () => {
+  // Shape of `yt-dlp -J` on facebook.com/kizaragieril/videos/29857166957218154.
+  const info = { formats: [
+    { format_id: 'audio', url: 'https://a/audio.m4a', protocol: 'https', vcodec: 'none', acodec: 'mp4a.40.5' },
+    { format_id: 'sd', url: 'https://a/sd.mp4', protocol: 'https' },
+    { format_id: 'hd', url: 'https://a/hd.mp4', protocol: 'https' },
+    { format_id: 'dash', url: 'https://a/v.mp4', protocol: 'https', vcodec: 'vp09', acodec: 'none' },
+    { format_id: 'hls', url: 'https://a/x.m3u8', protocol: 'm3u8_native', vcodec: 'avc1', acodec: 'mp4a' },
+  ] };
+  assert.deepEqual(progressiveUrls(info), ['https://a/hd.mp4', 'https://a/sd.mp4']);
+  assert.deepEqual(progressiveUrls({}), []);
 });
