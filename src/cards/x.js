@@ -4,6 +4,7 @@
 import {
   authorBlock,
   clip,
+  downloadMedia,
   escapeMarkdown,
   getJson,
   imageEmbeds,
@@ -85,7 +86,32 @@ async function buildXCard({ match, href }, options) {
     })),
   ];
 
-  return { embeds, files: [] };
+  // X serves video and GIFs as MP4 on `video.twimg.com`, the platform's own
+  // CDN, so it is downloaded and attached the same way a Facebook reel is.
+  // Discord drops an embed's `video` field outright, and a bare second message
+  // would cost a whole extra post - an attachment plays in the card message.
+  // The poster frame stays as the embed image: it is what is visible before
+  // anyone presses play.
+  const video = videoUrl(tweet.media?.all) ?? videoUrl(tweet.quote?.media?.all);
+  const files = video ? await downloadMedia(video, options) : [];
+  return { embeds, files: files ?? [] };
+}
+
+/**
+ * The MP4 of the first video or GIF in a media list.
+ *
+ * `url` is the API's own default rendition; `formats` is the fallback for the
+ * entries where that default is an HLS playlist (`.m3u8`), which Discord
+ * cannot play.
+ */
+function videoUrl(media = []) {
+  for (const item of media) {
+    if (item.type !== 'video' && item.type !== 'gif') continue;
+    if (item.url && /\.mp4(\?|$)/.test(item.url)) return item.url;
+    const mp4 = (item.formats ?? []).find((format) => /\.mp4(\?|$)/.test(format.url ?? ''));
+    if (mp4) return mp4.url;
+  }
+  return null;
 }
 
 /**

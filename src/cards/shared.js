@@ -11,6 +11,7 @@ const run = promisify(execFile);
 
 const BROWSER_UA = 'Mozilla/5.0';
 const TIMEOUT_MS = 6000;
+const MEDIA_TIMEOUT_MS = 20_000;
 
 // A message can carry several cards, but each one spends the same per-message
 // budget that Discord enforces, so the limits below are shared, not per card.
@@ -69,14 +70,14 @@ export function toField(text, max) {
  * because a dropped connection there costs the whole card. An HTTP error status
  * is not retried: that is an answer, not a hiccup.
  */
-async function request(url, { fetchImpl = fetch, accept, headers = {} } = {}) {
+async function request(url, { fetchImpl = fetch, accept, headers = {}, timeout = TIMEOUT_MS } = {}) {
   const init = {
     headers: {
       'user-agent': BROWSER_UA,
       ...(accept ? { accept } : {}),
       ...headers,
     },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeout),
   };
 
   for (let attempt = 0; ; attempt += 1) {
@@ -107,6 +108,39 @@ export async function getHtml(url, options) {
   const res = await request(url, { ...options, accept: 'text/html' });
   if (!res.ok) return null;
   return { status: res.status, html: await res.text() };
+}
+
+/**
+ * Download one media file as an attachment.
+ *
+ * The declared length is checked before the body is read, so an oversized
+ * video is refused rather than pulled into memory and then discarded. The
+ * deadline is longer than a page fetch because an 8 MB file over a slow link
+ * is not a hung request.
+ */
+export async function downloadMedia(url, options = {}, name = 'video.mp4') {
+  const cap = Math.min(MAX_ATTACH_BYTES, options.budget?.bytes ?? MAX_ATTACH_BYTES);
+  let res;
+  try {
+    res = await request(url, { ...options, timeout: MEDIA_TIMEOUT_MS });
+  } catch (error) {
+    console.log(`[card] ${new URL(url).host} media failed: ${error.message}`);
+    return null;
+  }
+  if (!res.ok) {
+    console.log(`[card] ${new URL(url).host} media answered ${res.status}`);
+    return null;
+  }
+
+  const declared = Number(res.headers.get('content-length') ?? 0);
+  if (declared > cap) {
+    console.log(`[card] ${new URL(url).host} media is ${Math.round(declared / 1024)}KB, over the budget`);
+    return null;
+  }
+
+  const buffer = Buffer.from(await res.arrayBuffer());
+  if (buffer.length === 0 || buffer.length > cap) return null;
+  return [{ attachment: buffer, name }];
 }
 
 export async function getBytes(url, options) {

@@ -9,8 +9,15 @@ const X_TEXT = fixture('x-text.json');
 const X_TWO_PHOTOS = fixture('x-two-photos.json');
 const X_QUOTE_PHOTOS = fixture('x-quote-photos.json');
 
+const MP4_BYTES = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]);
+const mp4Response = () =>
+  new Response(MP4_BYTES, { status: 200, headers: { 'content-type': 'video/mp4' } });
+
 test('X card carries text, author, still, stats and timestamp', async () => {
-  const { impl } = fakeFetch([['https://api.fxtwitter.com/', X_VIDEO]]);
+  const { impl } = fakeFetch([
+    ['https://api.fxtwitter.com/', X_VIDEO],
+    ['https://video.twimg.com/', mp4Response()],
+  ]);
   const [card] = await buildCards('https://x.com/someone/status/2117280148445962692?s=20', {
     fetchImpl: impl,
     cleaned: [
@@ -39,8 +46,46 @@ test('X card carries text, author, still, stats and timestamp', async () => {
     X_VIDEO.tweet.views.toLocaleString('en-US'),
   );
   assert.equal(card.embeds[0].timestamp, new Date(X_VIDEO.tweet.created_timestamp * 1000).toISOString());
-  assert.deepEqual(card.files, []);
+  // The video itself comes with the card, as an attachment: an embed cannot
+  // hold one, and Discord plays an attached MP4.
+  assert.equal(card.files.length, 1);
+  assert.equal(card.files[0].name, 'video.mp4');
+  assert.deepEqual(card.files[0].attachment, MP4_BYTES);
   assert.equal(card.embeds.length, 1);
+});
+
+test('X video over the message budget is dropped, the card stays', async () => {
+  const huge = new Response(MP4_BYTES, {
+    status: 200,
+    headers: { 'content-type': 'video/mp4', 'content-length': String(9 * 1024 * 1024) },
+  });
+  const { impl } = fakeFetch([
+    ['https://api.fxtwitter.com/', X_VIDEO],
+    ['https://video.twimg.com/', huge],
+  ]);
+
+  const [card] = await buildCards('https://x.com/someone/status/2117280148445962692', {
+    fetchImpl: impl,
+  });
+
+  assert.ok(card);
+  assert.deepEqual(card.files, []);
+  assert.equal(card.embeds[0].image.url, X_VIDEO.tweet.media.all[0].thumbnail_url);
+});
+
+test('X video picks the MP4 when the default rendition is an HLS playlist', async () => {
+  const hls = structuredClone(X_VIDEO);
+  hls.tweet.media.all[0].url = 'https://video.twimg.com/amplify_video/1/pl/abc.m3u8';
+  const { impl } = fakeFetch([
+    ['https://api.fxtwitter.com/', hls],
+    ['https://video.twimg.com/', mp4Response()],
+  ]);
+
+  const [card] = await buildCards('https://x.com/someone/status/2117280148445962692', {
+    fetchImpl: impl,
+  });
+
+  assert.equal(card.files.length, 1);
 });
 
 test('X card for a text-only tweet has no image', async () => {
