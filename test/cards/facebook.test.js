@@ -80,7 +80,10 @@ test('Facebook card retries once on an unexpected response', async () => {
   });
 
   assert.ok(card, 'the retry must recover');
-  assert.equal(calls.length, 2);
+  assert.equal(
+    calls.filter((url) => url.startsWith('https://www.facebook.com/plugins/')).length,
+    2,
+  );
 });
 
 test('Facebook card does not retry a post that refuses embedding', async () => {
@@ -92,7 +95,112 @@ test('Facebook card does not retry a post that refuses embedding', async () => {
   });
 
   assert.deepEqual(cards, []);
-  assert.equal(calls.length, 1, 'a refusal is final, not a hiccup');
+  const pluginCalls = calls.filter(({ url }) => url.startsWith('https://www.facebook.com/plugins/'));
+  assert.equal(pluginCalls.length, 1, 'a refusal is final, not a hiccup');
+});
+
+// Facebed serves a post's OpenGraph tags to a crawler where Facebook serves a
+// login wall. It is read for its tags only; the message keeps the Facebook URL.
+const FACEBED_POST = `<html><head>
+<meta property="og:title" content="Videogame screenshots out of context"/>
+<meta property="og:description" content=""/>
+<meta property="og:url" content="https://www.facebook.com/Videogamesoutofcontext/posts/1603794385111948"/>
+<meta property="og:image" content="https://scontent.fhan5-10.fna.fbcdn.net/v/t39.99422-6/886082637_1679750246913158_n.jpg"/>
+</head><body></body></html>`;
+
+test('a post the plugin refuses is carded from facebed instead', async () => {
+  const refused = '<html><body>Postingan Facebook ini tidak tersedia lagi.</body></html>';
+  const { impl, calls } = fakeFetch([
+    ['https://www.facebook.com/plugins/post.php', refused],
+    ['https://www.facebed.com/', FACEBED_POST],
+  ]);
+
+  const [card] = await buildCards(
+    'https://www.facebook.com/100064442061829/posts/1603794385111948/',
+    { fetchImpl: impl },
+  );
+
+  assert.ok(card);
+  assert.equal(card.embeds.length, 1);
+  assert.equal(card.embeds[0].author.name, 'Videogame screenshots out of context');
+  assert.equal(
+    card.embeds[0].image.url,
+    'https://scontent.fhan5-10.fna.fbcdn.net/v/t39.99422-6/886082637_1679750246913158_n.jpg',
+  );
+  assert.equal(card.embeds[0].url, 'https://www.facebook.com/100064442061829/posts/1603794385111948/');
+  assert.ok(
+    calls.some(({ url }) => url.startsWith('https://www.facebed.com/')),
+    'the mirror was asked',
+  );
+});
+
+const FACEBED_REEL = `<html><head>
+<meta property="og:title" content="Diarycoffee Jktt"/>
+<meta property="og:description" content="Baru tau di dekat Jakarta ada tempat seseru ini"/>
+<meta property="og:url" content="https://www.facebook.com/diarycoffeejkt/reel/2241600476763618"/>
+<meta property="og:image" content="https://scontent.fhan5-11.fna.fbcdn.net/v/t15.5256-10/thumb.jpg"/>
+<meta property="og:video" content="https://video.fhan5-11.fna.fbcdn.net/o1/v/t2/f2/m412/reel.mp4"/>
+</head></html>`;
+
+const VIDEO_MP4 = () =>
+  new Response(Buffer.alloc(2048), { status: 200, headers: { 'content-type': 'video/mp4' } });
+
+/** The plugin page is refused, so the mirror is the only source. */
+const reelRoutes = (video) => [
+  ['https://www.facebook.com/plugins/post.php', '<html>tidak tersedia lagi</html>'],
+  ['https://www.facebed.com/', FACEBED_REEL],
+  ['https://video.fhan5-11.fna.fbcdn.net/', video],
+];
+
+test('a facebed reel is attached when the file fits', async () => {
+  const { impl } = fakeFetch(reelRoutes(VIDEO_MP4()));
+
+  const [card] = await buildCards('https://www.facebook.com/reel/2241600476763618/', {
+    fetchImpl: impl,
+  });
+
+  assert.equal(card.files.length, 1);
+  assert.equal(card.followUp, undefined);
+  assert.equal(card.embeds[0].author.name, 'Diarycoffee Jktt');
+  assert.equal(card.embeds[0].description, 'Baru tau di dekat Jakarta ada tempat seseru ini');
+  assert.equal(card.embeds[0].image, undefined, 'the player brings its own frame');
+});
+
+test('a facebed reel past the budget hands the link to the mirror page', async () => {
+  const tooBig = () =>
+    new Response('x', {
+      status: 200,
+      headers: { 'content-type': 'video/mp4', 'content-length': '24531746' },
+    });
+  const { impl } = fakeFetch(reelRoutes(tooBig()));
+
+  const [card] = await buildCards('https://www.facebook.com/reel/2241600476763618/', {
+    fetchImpl: impl,
+  });
+
+  assert.equal(card.files.length, 0);
+  assert.deepEqual(card.embeds, []);
+  // The CDN URL produced no embed when posted alone; the page does, so it
+  // becomes the link that Discord unfurls.
+  assert.equal(card.url, 'https://www.facebed.com/reel/2241600476763618/');
+  assert.equal(card.unfurl, true);
+});
+
+test('a facebed login wall is still no card', async () => {
+  const refused = '<html><body>tidak tersedia lagi</body></html>';
+  const wall = `<html><head>
+<meta property="og:title" content="Log in or sign up to view"/>
+<meta property="og:description" content="See posts, photos and more on Facebook."/>
+</head></html>`;
+  const { impl } = fakeFetch([
+    ['https://www.facebook.com/plugins/post.php', refused],
+    ['https://www.facebed.com/', wall],
+  ]);
+
+  const cards = await buildCards('https://www.facebook.com/reel/1543457311150597/', {
+    fetchImpl: impl,
+  });
+  assert.deepEqual(cards, []);
 });
 
 test('a post that comes back as a page feed is still carded', async () => {

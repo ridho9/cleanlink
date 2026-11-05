@@ -76,7 +76,7 @@ Note that server mode means the bot reads message content in every channel it ca
 | TikTok | `vm.` / `vt.` short links, strips `is_from_webapp`, `sender_device`, `web_id`, `_t`, … | **yes** — caption, author, cover, counts from `tikwm.com` |
 | Twitter / X | strips `s`, `t`, `ref_src`, `ref_url` | **yes** — text, avatar, stats, quote, still |
 | YouTube | on `watch` links keeps only `v`, so playlist and radio parameters go; short links lose `si`, `feature` | no, the native player is better |
-| Facebook | `fb.watch`, `/share/…`, strips `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url` | **yes** — author, text and media from the public embed iframe |
+| Facebook | `fb.watch`, `/share/…`, strips `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url` | **yes** — author, text and media from the public embed iframe, or from a mirror when the post refuses it |
 | Pixiv | nothing to strip | **yes** — the artwork pages, re-uploaded |
 | nhentai | nothing to strip; `nh/<id>` shorthand works as input, in any case | **yes** — title, author, and the cover attached behind Discord's spoiler flag |
 | Misskey | nothing to strip | no, Discord's own preview is complete |
@@ -95,7 +95,7 @@ Seven sites get a card the bot builds itself, because Discord's own preview fail
 | **Pixiv** | `ajax/illust` + `ajax/illust/<id>/pages` | title, author, tags, up to 5 pages downloaded with a pixiv `Referer` and re-uploaded, because `i.pximg.net` answers `403` without it and Discord never sends one |
 | **Threads** | the page's OpenGraph tags, fetched as `Mozilla/5.0` | author, post text, image or avatar. Crawled as `Discordbot` the page returns a 107 KB shell with no description, which is why Discord's own Threads card has no words |
 | **Instagram** | page + `api/v1/oembed` + `/p/<shortcode>/embed/captioned/` | display name, the **full** caption, Likes/Comments, one embed per carousel image. Reels are carded like photos: the clean frame, not the video |
-| **Facebook** | `plugins/post.php`, plus `yt-dlp` for video | author, post text, media; a reel or video is downloaded and attached when yt-dlp can fetch it |
+| **Facebook** | `plugins/post.php`, `yt-dlp` for video, and `facebed.com` for what both refuse | author, post text, media, and the video attached when it can be had; a reel too large to attach is sent as the `facebed.com` page link instead, which Discord unfurls into a player with the caption |
 | **TikTok** | `tikwm.com/api` | caption, author, avatar, Plays/Likes/Comments, and the video attached from TikTok's own CDN. Its own oEmbed returns an iframe only, and the page's `og:title` is the literal `TikTok · TikTok` |
 | **nhentai** | `api/v2/galleries/<id>` | title, author, and the cover attached as `SPOILER_cover.webp`. The gallery page is a Cloudflare challenge, but the API is not. `NH/693549` and `nh/693549` both work as shorthand |
 

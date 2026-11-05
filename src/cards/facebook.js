@@ -4,13 +4,16 @@
 
 import {
   authorBlock,
+  attachMedia,
   decodeEntities,
   getHtml,
   downloadVideo,
   videoLink,
   imageEmbeds,
+  metaContent,
   toField,
   FACEBOOK_BLUE,
+  UNFURL_UA,
 } from './shared.js';
 
 /** Inner HTML of the div that starts at `from`, honouring nesting. */
@@ -141,7 +144,7 @@ function mediaImages(html) {
   ];
 }
 
-async function buildFacebookCard({ match, href }, options) {
+async function fromEmbedPage({ match, href }, options) {
   // The post itself is behind a login wall. The embed iframe is not.
   const embedUrl = `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(href)}&show_text=true`;
 
@@ -182,7 +185,9 @@ async function buildFacebookCard({ match, href }, options) {
           return { embeds: [embed], files };
         }
       }
-      if (blocked) return blocked;
+      // The layout named the video but no player could be had. Handed back as
+      // degraded so the caller can try the mirror before settling for it.
+      if (blocked) return { ...blocked, degraded: true };
 
       // Say why, as far as the answer allows: an anonymous request cannot tell
       // a deleted post from a private one or an age-restricted one — Facebook
@@ -249,12 +254,103 @@ async function buildFacebookCard({ match, href }, options) {
         delete embed.image;
         return { embeds: [embed], files: [], followUp };
       }
+
+      return { embeds, files: [], degraded: true };
     }
 
     return { embeds, files: [] };
   }
 
   return null;
+}
+
+/**
+ * A card is worth the round trip only when it shows something. An empty embed
+ * (a login-walled post the iframe answered with no text) is not.
+ */
+function hasContent(card) {
+  if (!card) return false;
+  if (card.files.length > 0) return true;
+  return card.embeds.some(
+    (embed) => embed.image || embed.description || embed.author || embed.title,
+  );
+}
+
+/**
+ * Facebed mirrors a Facebook page for link unfurlers - https://www.facebed.com
+ * says the rewrite is `facebook.com` -> `facebed.com`. For a crawler user agent
+ * it serves the post's OpenGraph tags, video included, where Facebook itself
+ * serves a login wall; for a browser it bounces straight back to Facebook.
+ *
+ * It is read for its tags, not trusted as the link: the message keeps the clean
+ * Facebook URL, so a reader never clicks through a third party.
+ */
+async function fromFacebed(href, options) {
+  const url = new URL(href);
+  if (!/(^|\.)facebook\.com$/.test(url.hostname)) return null;
+
+  const mirror = new URL(url.href);
+  mirror.hostname = 'www.facebed.com';
+
+  // Facebed only serves its tags to a link crawler; to a browser it bounces
+  // straight back to Facebook, and the wall's tags are the generic ones. This
+  // is the agent of the consumer the tags are for.
+  // The mirror fetches the post on our behalf, which measured 1-7 s: a budget
+  // of its own, so the fallback is not cut off mid-fetch.
+  const page = await getHtml(mirror.href, {
+    ...options,
+    headers: { 'user-agent': UNFURL_UA },
+    timeout: 15_000,
+  });
+  if (!page) return null;
+
+  // Facebed passes the wall through when it cannot fetch the post either, and
+  // the wall's tags are the generic ones.
+  const title = metaContent(page.html, 'og:title');
+  const description = metaContent(page.html, 'og:description') ?? '';
+  if (!title || /^Log in or sign up/i.test(title)) return null;
+
+  const handle = /facebook\.com\/([^/?#]+)/.exec(metaContent(page.html, 'og:url') ?? '')?.[1];
+  const footer = { text: 'Facebook' };
+  const embed = {
+    url: href,
+    color: FACEBOOK_BLUE,
+    footer,
+    author: authorBlock(title, handle, { url: handle && `https://www.facebook.com/${handle}` }),
+  };
+  if (description) embed.description = toField(description, 4096);
+
+  // A reel's `og:video` is the full file on Facebook's own CDN, usually past
+  // the upload budget (a 17 s reel measured 24 MB).
+  const { files, followUp } = await attachMedia(metaContent(page.html, 'og:video'), options);
+  const image = metaContent(page.html, 'og:image');
+  if (files.length === 0 && !followUp && image) embed.image = { url: image };
+
+  // The file would not fit, and the CDN URL does not unfurl when posted alone
+  // (measured: no embed). The page does, so the page is the link that gets
+  // shown - one message, one player, and no caption twice.
+  if (followUp) return { url: mirror.href, embeds: [], files: [], unfurl: true };
+
+  return { embeds: [embed], files };
+}
+
+async function buildFacebookCard(input, options) {
+  const card = await fromEmbedPage(input, options);
+
+  // A player in the message beats any mirror: one message, no unfurl needed.
+  const plays = card && (card.files.length > 0 || card.followUp);
+  if (plays) return card;
+
+  // A card that only describes a video it could not play is the weaker answer;
+  // ask the mirror before settling for it.
+  if (!card || card.degraded || !hasContent(card)) {
+    const mirrored = await fromFacebed(input.href, options);
+    if (mirrored) return mirrored;
+  }
+
+  // A mirror that cannot fetch the post either leaves an empty embed, which is
+  // a blank box in the channel - no card is better.
+  return hasContent(card) ? card : null;
 }
 
 export { buildFacebookCard };

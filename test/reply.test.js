@@ -148,3 +148,31 @@ test('withoutAttachmentImages only touches attachment images', () => {
   const stripped = withoutAttachmentImages({ image: { url: 'attachment://p0.jpg' } });
   assert.equal(stripped.image, undefined);
 });
+
+test('a card that hands the link over sends it bare, so it unfurls', async () => {
+  const sent = [];
+  const message = {
+    reply: async (payload) => {
+      sent.push(payload);
+      return {};
+    },
+    channel: { send: async (payload) => (sent.push(payload), payload) },
+    react: async () => ({}),
+  };
+
+  await sendReply(message, {
+    lines: [{ from: 'https://www.facebook.com/reel/1', to: 'https://www.facebook.com/reel/1' }],
+    cards: [
+      {
+        from: 'https://www.facebook.com/reel/1',
+        url: 'https://www.facebed.com/reel/1/',
+        embeds: [],
+        files: [],
+        unfurl: true,
+      },
+    ],
+  });
+
+  assert.equal(sent[0].content, 'https://www.facebed.com/reel/1/');
+  assert.equal(sent[0].embeds, undefined, 'the link itself is the preview');
+});

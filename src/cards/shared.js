@@ -26,6 +26,8 @@ export const PIXIV_BLUE = 0x0096fa;
 export const TIKTOK_BLACK = 0x010101;
 export const THREADS_BLACK = 0x000000;
 export const FACEBOOK_BLUE = 0x1877f2;
+/** Sent to unfurl providers that only serve their tags to link crawlers. */
+export const UNFURL_UA = 'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)';
 export const NHENTAI_RED = 0xed2553;
 export const INSTAGRAM_PINK = 0xe1306c;
 
