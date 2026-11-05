@@ -63,7 +63,11 @@ export function ruleFor(url) {
 
 /** True when a hostname is one of these domains or a subdomain of one. */
 export function hostMatches(host, list = []) {
-  return list.some((base) => host === base || host.endsWith(`.${base}`));
+  // DNS names are case-insensitive, and `URL` already lowercases `hostname`;
+  // normalising here too means a caller cannot break the match by handing in
+  // an untouched `Host` header.
+  const name = String(host).toLowerCase();
+  return list.some((base) => name === base || name.endsWith(`.${base}`));
 }
 
 /** True when the URL is opaque and only the server knows the real target. */
@@ -216,6 +220,20 @@ export async function cleanUrl(input, options = {}) {
 }
 
 /**
+ * Identity of a link for de-duplication. Host and scheme are case-insensitive,
+ * the path and query are not: `youtu.be/AbCdEf` and `youtu.be/abcdef` are two
+ * different videos, so folding the whole URL case would silently drop one.
+ */
+function dedupeKey(raw) {
+  try {
+    const url = new URL(raw);
+    return `${url.protocol}//${url.host}${url.pathname}${url.search}`;
+  } catch {
+    return raw;
+  }
+}
+
+/**
  * Clean every handled link in a message.
  * @returns {Promise<Array<{from: string, to: string}>>} only the links that
  *   actually changed, deduplicated and capped.
@@ -225,7 +243,7 @@ export async function cleanMessage(text, options = {}) {
   const candidates = [];
 
   for (const raw of extractUrls(text)) {
-    const key = raw.toLowerCase();
+    const key = dedupeKey(raw);
     if (seen.has(key)) continue;
     seen.add(key);
     candidates.push(raw);

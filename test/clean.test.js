@@ -242,6 +242,36 @@ test('cleanMessage deduplicates and reports only changed links', async () => {
   ]);
 });
 
+test('scheme, host and path segments match regardless of case', async () => {
+  const threads = 'https://www.threads.com/SHARE/BAbCdEfGhI';
+  const fetchImpl = stubFetch({ [threads]: 'https://www.threads.com/@u/post/ABC123' });
+
+  assert.equal(
+    await cleanUrl('HTTPS://WWW.Threads.COM/SHARE/BAbCdEfGhI', { fetchImpl }),
+    'https://www.threads.com/@u/post/ABC123',
+  );
+
+  // The parameter name is matched case-insensitively too: `?SI=` is the same
+  // tracker as `?si=`.
+  assert.equal(
+    await cleanUrl('https://youtu.be/O_tWg-56evA?SI=tracker', { fetchImpl: stubFetch() }),
+    'https://youtu.be/O_tWg-56evA',
+  );
+});
+
+test('de-duplication keeps links whose path differs only by case', async () => {
+  const fetchImpl = stubFetch();
+  const cleaned = await cleanMessage(
+    'https://youtu.be/AbCdEfGhIjK?si=1 https://youtu.be/abcdefghijk?si=1',
+    { fetchImpl },
+  );
+
+  assert.deepEqual(cleaned, [
+    { from: 'https://youtu.be/AbCdEfGhIjK?si=1', to: 'https://youtu.be/AbCdEfGhIjK' },
+    { from: 'https://youtu.be/abcdefghijk?si=1', to: 'https://youtu.be/abcdefghijk' },
+  ]);
+});
+
 test('cleanMessage caps the number of links it works on', async () => {
   const fetchImpl = stubFetch();
   const text = Array.from({ length: 8 }, (_, i) => `https://youtu.be/v${i}?si=x`).join(' ');

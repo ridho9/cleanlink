@@ -22,14 +22,14 @@ export const RULES = [
     id: 'threads',
     hosts: ['threads.com', 'threads.net'],
     share: /^\/(?:share|t)\/[A-Za-z0-9_-]+\/?$/i,
-    dropAllOn: /\/post\/[A-Za-z0-9_-]+/,
+    dropAllOn: /\/post\/[A-Za-z0-9_-]+/i,
     drop: [/^xmt$/i, /^slof$/i],
   },
   {
     id: 'instagram',
     hosts: ['instagram.com', 'instagr.am'],
     share: /^\/share\//i,
-    dropAllOn: /^\/(?:p|reel|reels|tv)\//,
+    dropAllOn: /^\/(?:p|reel|reels|tv)\//i,
     // mdxt/psln are the newer share tokens; igsh/igshid are the older ones.
     drop: [/^igsh$/i, /^igshid$/i, /^mdxt$/i, /^psln$/i],
   },
@@ -37,7 +37,7 @@ export const RULES = [
     id: 'tiktok',
     hosts: ['tiktok.com'],
     shorten: ['vm.tiktok.com', 'vt.tiktok.com'],
-    dropAllOn: /\/video\/\d+/,
+    dropAllOn: /\/video\/\d+/i,
     // `_t` is the share token the shortener appends to its target.
     drop: [
       /^is_from_webapp$/i,
@@ -54,7 +54,7 @@ export const RULES = [
     hosts: ['twitter.com', 'x.com'],
     // `s`, `t` and `a` are per-share tokens; the list only matters for
     // non-permalink URLs, since status links drop the whole query.
-    dropAllOn: /\/status\/\d+/,
+    dropAllOn: /\/status\/\d+/i,
     drop: [/^s$/i, /^t$/i, /^a$/i, /^ref_src$/i, /^ref_url$/i],
   },
   {
@@ -72,7 +72,7 @@ export const RULES = [
     hosts: ['facebook.com', 'fb.com', 'fb.watch'],
     shorten: ['fb.watch'],
     share: /^\/share\//i,
-    dropAllOn: /\/(?:posts|permalink|videos|reel)\b/,
+    dropAllOn: /\/(?:posts|permalink|videos|reel)\b/i,
     // share_url is the back-reference to the share link we just unwrapped.
     drop: [/^rdid$/i, /^refid$/i, /^sfnsn$/i, /^__tn__$/i, /^share_url$/i],
     // An invalid fb.watch code lands on the watch page with no video id.
