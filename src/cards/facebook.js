@@ -286,6 +286,26 @@ function hasContent(card) {
  * Facebook URL, so a reader never clicks through a third party.
  */
 async function fromFacebed(href, options) {
+  const mirrored = await facebedPage(href, options);
+  if (!mirrored) return null;
+  const { page, mirror, embed } = mirrored;
+
+  // A reel's `og:video` is the full file on Facebook's own CDN, usually past
+  // the upload budget (a 17 s reel measured 24 MB).
+  const { files, followUp } = await attachMedia(metaContent(page.html, 'og:video'), options);
+  const image = metaContent(page.html, 'og:image');
+  if (files.length === 0 && !followUp && image) embed.image = { url: image };
+
+  // The file would not fit, and the CDN URL does not unfurl when posted alone
+  // (measured: no embed). The page does, so the page is the link that gets
+  // shown - one message, one player, and no caption twice.
+  if (followUp) return { url: mirror.href, embeds: [], files: [], unfurl: true };
+
+  return { embeds: [embed], files };
+}
+
+/** Fetch the facebed page and build the text part of a card from its tags. */
+async function facebedPage(href, options) {
   const url = new URL(href);
   if (!/(^|\.)facebook\.com$/.test(url.hostname)) return null;
 
@@ -319,19 +339,7 @@ async function fromFacebed(href, options) {
     author: authorBlock(title, handle, { url: handle && `https://www.facebook.com/${handle}` }),
   };
   if (description) embed.description = toField(description, 4096);
-
-  // A reel's `og:video` is the full file on Facebook's own CDN, usually past
-  // the upload budget (a 17 s reel measured 24 MB).
-  const { files, followUp } = await attachMedia(metaContent(page.html, 'og:video'), options);
-  const image = metaContent(page.html, 'og:image');
-  if (files.length === 0 && !followUp && image) embed.image = { url: image };
-
-  // The file would not fit, and the CDN URL does not unfurl when posted alone
-  // (measured: no embed). The page does, so the page is the link that gets
-  // shown - one message, one player, and no caption twice.
-  if (followUp) return { url: mirror.href, embeds: [], files: [], unfurl: true };
-
-  return { embeds: [embed], files };
+  return { page, mirror, embed };
 }
 
 async function buildFacebookCard(input, options) {
@@ -339,7 +347,17 @@ async function buildFacebookCard(input, options) {
 
   // A player in the message beats any mirror: one message, no unfurl needed.
   const plays = card && (card.files.length > 0 || card.followUp);
-  if (plays) return card;
+  if (plays) {
+    // A refused reel that yt-dlp still fetched carries the video and nothing
+    // else: the plugin page has no author or caption. Facebed's tags have
+    // both, so they fill in the text; our file stays the player.
+    const [embed] = card.embeds;
+    if (embed && !embed.author && !embed.description) {
+      const mirrored = await facebedPage(input.href, options);
+      if (mirrored) card.embeds[0] = { ...mirrored.embed, ...embed, ...pick(mirrored.embed) };
+    }
+    return card;
+  }
 
   // A card that only describes a video it could not play is the weaker answer;
   // ask the mirror before settling for it.
@@ -351,6 +369,11 @@ async function buildFacebookCard(input, options) {
   // A mirror that cannot fetch the post either leaves an empty embed, which is
   // a blank box in the channel - no card is better.
   return hasContent(card) ? card : null;
+}
+
+/** The text fields of a card embed. */
+function pick({ author, description }) {
+  return { ...(author && { author }), ...(description && { description }) };
 }
 
 export { buildFacebookCard };
