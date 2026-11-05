@@ -120,6 +120,9 @@ export async function getHtml(url, options) {
  */
 export async function downloadMedia(urls, options = {}, name = 'video.mp4') {
   const cap = Math.min(MAX_ATTACH_BYTES, options.budget?.bytes ?? MAX_ATTACH_BYTES);
+  // A file refused for its size is still a live URL, which is what makes it a
+  // candidate for the follow-up message. A URL that answered 404 is not.
+  let refusedForSize = false;
 
   // Candidates arrive best first. A rendition that does not fit is skipped
   // before its body is read, so a smaller one can still be attached.
@@ -139,15 +142,20 @@ export async function downloadMedia(urls, options = {}, name = 'video.mp4') {
     const declared = Number(res.headers.get('content-length') ?? 0);
     if (declared > cap) {
       console.log(`[card] ${new URL(url).host} media is ${Math.round(declared / 1024)}KB, over the budget`);
+      refusedForSize = true;
       continue;
     }
 
     const buffer = Buffer.from(await res.arrayBuffer());
-    if (buffer.length === 0 || buffer.length > cap) continue;
-    return [{ attachment: buffer, name }];
+    if (buffer.length > cap) {
+      refusedForSize = true;
+      continue;
+    }
+    if (buffer.length === 0) continue;
+    return { files: [{ attachment: buffer, name }], refusedForSize: false };
   }
 
-  return null;
+  return { files: null, refusedForSize };
 }
 
 export async function getBytes(url, options) {
@@ -226,6 +234,28 @@ export function extensionOf(url) {
  * @param {object} options card options, for the shared attachment budget
  * @param {object} [format] extra yt-dlp arguments, e.g. a height cap
  */
+export async function videoLink(href, options = {}) {
+  try {
+    const { stdout } = await run('yt-dlp', [
+      '-g',
+      '--no-warnings',
+      '--no-playlist',
+      '-f', 'best[ext=mp4]/best',
+      href,
+    ], { timeout: MEDIA_TIMEOUT_MS });
+
+    // A merged format prints two lines; a progressive one prints a single URL,
+    // which is what Discord can unfurl and play.
+    const [url] = stdout.trim().split('\n').filter(Boolean);
+    if (!url) return null;
+    console.log(`[card] ${new URL(href).host} video link via yt-dlp`);
+    return url;
+  } catch (error) {
+    console.log(`[card] ${new URL(href).host} video link failed: ${(error.shortMessage ?? error.message).split('\n')[0]}`);
+    return null;
+  }
+}
+
 export async function downloadVideo(href, options = {}, format = {}) {
   const budget = options.budget ?? {};
   if ((budget.files ?? 1) <= 0) return null;

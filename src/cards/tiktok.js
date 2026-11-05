@@ -4,6 +4,7 @@
 
 import {
   authorBlock,
+  downloadMedia,
   getJson,
   statFields,
   TIKTOK_BLACK,
@@ -26,6 +27,14 @@ async function buildTikTokCard({ match, href }, options) {
   const author = video.author ?? {};
   const cover = video.cover ?? video.origin_cover;
 
+  // tikwm's `play` is a TikTok CDN file, not a tikwm one, so it is the same
+  // first-party media the platform serves - attach it like an X video.
+  const play = typeof video.play === 'string' ? video.play : null;
+  const media = play ? await downloadMedia(play, options) : { files: null, refusedForSize: false };
+  const files = media.files ?? [];
+  const followUp = !media.files && media.refusedForSize ? play : null;
+  const playing = files.length > 0 || Boolean(followUp);
+
   const embed = {
     url: href,
     color: TIKTOK_BLACK,
@@ -42,8 +51,9 @@ async function buildTikTokCard({ match, href }, options) {
     footer: { text: 'TikTok' },
   };
   if (video.title) embed.description = toField(video.title, 4096);
-  // A video cannot play in a Discord embed, so the cover stands in for it.
-  if (cover) embed.image = { url: cover };
+  // The cover is the fallback: when the video is attached (or queued as a
+  // follow-up) the player shows its own frame.
+  if (cover && !playing) embed.image = { url: cover };
   if (video.create_time) embed.timestamp = new Date(video.create_time * 1000).toISOString();
 
   const fields = statFields([
@@ -53,7 +63,7 @@ async function buildTikTokCard({ match, href }, options) {
   ]);
   if (fields) embed.fields = fields;
 
-  return { embeds: [embed], files: [] };
+  return { embeds: [embed], files, ...(followUp ? { followUp } : {}) };
 }
 
 export { buildTikTokCard };

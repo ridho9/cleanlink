@@ -164,7 +164,7 @@ export async function handleMessage(message) {
       console.log(`cleaned ${from} -> ${to}`);
     }
     for (const card of cards) {
-      console.log(`card ${card.from} -> ${card.embeds[0]?.url ?? card.extraLines?.[0]}`);
+      console.log(`card ${card.from} -> ${card.embeds[0]?.url ?? card.followUp}`);
     }
 
     const suppressed = isDM ? false : await suppressOriginalEmbed(message);

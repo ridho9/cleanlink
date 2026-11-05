@@ -55,7 +55,7 @@ test('X card carries text, author, still, stats and timestamp', async () => {
   assert.equal(card.embeds.length, 1);
 });
 
-test('X video over the message budget is dropped, the card stays', async () => {
+test('a video over the budget becomes a follow-up, not a dead poster', async () => {
   const huge = new Response(MP4_BYTES, {
     status: 200,
     headers: { 'content-type': 'video/mp4', 'content-length': String(9 * 1024 * 1024) },
@@ -71,7 +71,9 @@ test('X video over the message budget is dropped, the card stays', async () => {
 
   assert.ok(card);
   assert.deepEqual(card.files, []);
-  assert.equal(card.embeds[0].image.url, X_VIDEO.tweet.media.all[0].thumbnail_url);
+  // The follow-up message will play, so the poster frame would be a duplicate.
+  assert.equal(card.embeds[0].image, undefined);
+  assert.equal(card.followUp, X_VIDEO.tweet.media.all[0].url);
 });
 
 test('a rendition over the budget is skipped so a smaller one can play', async () => {

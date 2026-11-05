@@ -25,8 +25,12 @@ async function buildXCard({ match, href }, options) {
   // download changes what a poster frame is worth: once the player is in the
   // message, the frame repeats the video's own first second.
   const video = videoUrls(tweet.media?.all) ?? videoUrls(tweet.quote?.media?.all);
-  const files = (video ? await downloadMedia(video, options) : null) ?? [];
-  const playing = files.length > 0;
+  const media = video ? await downloadMedia(video, options) : { files: null, refusedForSize: false };
+  const files = media.files ?? [];
+  // Nothing fitted the upload budget: the best rendition still plays when
+  // Discord unfurls it, and that needs a message of its own.
+  const followUp = !media.files && media.refusedForSize ? video[0] : null;
+  const playing = files.length > 0 || Boolean(followUp);
 
   // The main tweet's picture first, then the quoted tweet's. A quote can carry
   // photos of its own and they were being dropped; the API exposes them as
@@ -96,7 +100,7 @@ async function buildXCard({ match, href }, options) {
     })),
   ];
 
-  return { embeds, files };
+  return { embeds, files, ...(followUp ? { followUp } : {}) };
 }
 
 /**

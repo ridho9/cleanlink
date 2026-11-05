@@ -33,7 +33,7 @@ test('an Instagram photo post is carded from its OpenGraph tags', async () => {
 
   const fields = Object.fromEntries(embed.fields.map((field) => [field.name, field.value]));
   assert.deepEqual(fields, { Likes: '1M', Comments: '11K' });
-  assert.deepEqual(card.extraLines ?? [], []);
+  assert.equal(card.followUp, undefined);
 });
 
 test('a carousel yields one embed per image, from Instagram\'s own payload', async () => {
@@ -111,7 +111,7 @@ test('a reel is carded like a photo post, with a clean frame and no link', async
   // play button into the OpenGraph thumbnail.
   assert.equal(card.embeds[0].image.url, EMBED_FRAME);
   assert.notEqual(card.embeds[0].image.url, OG_IMAGE);
-  assert.equal(card.extraLines, undefined, 'no video link is offered');
+  assert.equal(card.followUp, undefined, 'no video link is offered');
   assert.deepEqual(card.files, []);
 });
 

@@ -7,6 +7,7 @@ import {
   decodeEntities,
   getHtml,
   downloadVideo,
+  videoLink,
   imageEmbeds,
   toField,
   FACEBOOK_BLUE,
@@ -238,6 +239,15 @@ async function buildFacebookCard({ match, href }, options) {
       if (files) {
         delete embed.image;
         return { embeds: [embed], files };
+      }
+
+      // No file: the same yt-dlp call can still hand back a URL, and Discord
+      // plays it when it arrives on its own. The URL is signed and expires, so
+      // it is only worth sending straight away - which is exactly when it is.
+      const followUp = await videoLink(href, options);
+      if (followUp) {
+        delete embed.image;
+        return { embeds: [embed], files: [], followUp };
       }
     }
 

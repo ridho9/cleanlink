@@ -46,11 +46,9 @@ function hasContent(embed) {
 export async function sendReply(message, { lines, cards }) {
   const carded = new Set(cards.map((card) => card.from));
   const content = fitLines([
-    // One line per card: the bracketed link, then anything the builder asked to
-    // have beside it. Angle brackets stop Discord from unfurling the carded
-    // link a second time; the extra links are meant to unfurl (that is how a
-    // playable video gets in, since an embed's video field is dropped).
-    ...cards.map((card) => [`<${card.url}>`, ...(card.extraLines ?? [])].join(' ')),
+    // One line per card, the link in angle brackets so Discord does not unfurl
+    // it a second time next to the card.
+    ...cards.map((card) => `<${card.url}>`),
     ...lines.filter(({ from }) => !carded.has(from)).map(({ to }) => to),
   ]).join('\n');
 
@@ -77,11 +75,39 @@ export async function sendReply(message, { lines, cards }) {
   for (const [index, payload] of attempts.entries()) {
     try {
       await message.reply(payload);
-      return;
+      break;
     } catch (error) {
       const last = index === attempts.length - 1;
       if (last) throw error;
       console.log(`[reply] attempt ${index + 1} rejected: ${error.message}`);
+    }
+  }
+
+  await sendFollowUps(message, cards);
+}
+
+/** At most this many follow-up messages, so a five-link message stays a reply. */
+const MAX_FOLLOW_UPS = 2;
+
+/**
+ * Post the media that could not ride along with the card.
+ *
+ * A video only plays in Discord when it is a file attachment or when Discord
+ * unfurls a bare URL - and any embed in the message suppresses the unfurl. So
+ * when the file is too large to upload, the media URL goes out on its own, as
+ * a second message: no upload, no size limit.
+ */
+async function sendFollowUps(message, cards) {
+  const urls = cards.map((card) => card.followUp).filter(Boolean).slice(0, MAX_FOLLOW_UPS);
+
+  for (const url of urls) {
+    try {
+      await message.channel.send({ content: url, allowedMentions: { parse: [] } });
+      console.log(`[reply] follow-up with ${new URL(url).host}`);
+    } catch (error) {
+      // The clean link and the card are already out; a lost player is not worth
+      // a stack trace, but it is worth a line in the log.
+      console.log(`[reply] follow-up failed: ${error.message}`);
     }
   }
 }

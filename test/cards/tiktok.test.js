@@ -5,8 +5,10 @@ import { buildCards } from '../../src/cards/index.js';
 import { fakeFetch, fixture } from '../../test-support/harness.js';
 
 const TIKWM = fixture('tikwm-video.json');
+const MP4_BYTES = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]);
 
 test('TikTok card uses tikwm for a real caption, author and cover', async () => {
+  // No `play` route: the media fetch fails, so the cover stays.
   const { impl } = fakeFetch([['https://www.tikwm.com/api/', TIKWM]]);
   const [card] = await buildCards(
     'https://www.tiktok.com/@tiktok/video/7666123874932722974?_t=abc&is_from_webapp=1',
@@ -57,4 +59,36 @@ test('TikTok card is skipped when tikwm reports a failure', async () => {
     fetchImpl: impl,
   });
   assert.deepEqual(cards, []);
+});
+
+test('the TikTok video is attached, and the cover is not repeated', async () => {
+  const { impl } = fakeFetch([
+    ['https://www.tikwm.com/api/', TIKWM],
+    [TIKWM.data.play, new Response(MP4_BYTES, { status: 200 })],
+  ]);
+  const [card] = await buildCards('https://www.tiktok.com/@tiktok/video/7666123874932722974', {
+    fetchImpl: impl,
+  });
+
+  assert.equal(card.files.length, 1);
+  assert.deepEqual(card.files[0].attachment, MP4_BYTES);
+  assert.equal(card.embeds[0].image, undefined, 'the player brings its own frame');
+  assert.equal(card.followUp, undefined);
+});
+
+test('a TikTok video over the budget becomes a follow-up, not a dead cover', async () => {
+  const { impl } = fakeFetch([
+    ['https://www.tikwm.com/api/', TIKWM],
+    [TIKWM.data.play, new Response(MP4_BYTES, {
+      status: 200,
+      headers: { 'content-length': String(9 * 1024 * 1024) },
+    })],
+  ]);
+  const [card] = await buildCards('https://www.tiktok.com/@tiktok/video/7666123874932722974', {
+    fetchImpl: impl,
+  });
+
+  assert.deepEqual(card.files, []);
+  assert.equal(card.followUp, TIKWM.data.play);
+  assert.equal(card.embeds[0].image, undefined);
 });

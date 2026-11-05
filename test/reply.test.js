@@ -4,10 +4,12 @@ import test from 'node:test';
 import { fitLines, hasContent, sendReply, withoutAttachmentImages } from '../src/reply.js';
 
 /** A message stand-in that records payloads and can reject the first N of them. */
-function fakeMessage({ reject = 0 } = {}) {
+function fakeMessage({ reject = 0, failFollowUp = false } = {}) {
   const sent = [];
+  const followUps = [];
   return {
     sent,
+    followUps,
     reply: async (payload) => {
       if (sent.length < reject) {
         sent.push(payload);
@@ -15,6 +17,13 @@ function fakeMessage({ reject = 0 } = {}) {
       }
       sent.push(payload);
       return {};
+    },
+    channel: {
+      send: async (payload) => {
+        followUps.push(payload);
+        if (failFollowUp) throw new Error('Missing Access');
+        return {};
+      },
     },
   };
 }
@@ -40,24 +49,39 @@ test('a carded link is bracketed and the plain link is not repeated', async () =
   assert.equal(message.sent[0].embeds.length, 1);
 });
 
-test('extra lines a card asks for land after the bracketed link', async () => {
+test('media that could not be attached goes out as its own message', async () => {
   const message = fakeMessage();
   await sendReply(message, {
     lines: [],
     cards: [{
-      from: 'https://www.instagram.com/reel/X/',
-      url: 'https://www.instagram.com/reel/X/',
+      from: 'https://x.com/a/status/1',
+      url: 'https://x.com/a/status/1',
       embeds: [{ title: 'x' }],
       files: [],
-      extraLines: ['https://cdn.example/video.mp4'],
+      followUp: 'https://video.twimg.com/big.mp4',
     }],
   });
 
-  assert.equal(
-    message.sent[0].content,
-    '<https://www.instagram.com/reel/X/> https://cdn.example/video.mp4',
-    'the extra link shares the card line',
-  );
+  assert.equal(message.sent[0].content, '<https://x.com/a/status/1>', 'the card line stays clean');
+  assert.deepEqual(message.followUps, [
+    { content: 'https://video.twimg.com/big.mp4', allowedMentions: { parse: [] } },
+  ]);
+});
+
+test('at most two follow-ups, and a failed one never breaks the reply', async () => {
+  const message = fakeMessage({ failFollowUp: true });
+  const many = Array.from({ length: 4 }, (_, i) => ({
+    from: `https://x.com/a/status/${i}`,
+    url: `https://x.com/a/status/${i}`,
+    embeds: [{ title: `x${i}` }],
+    files: [],
+    followUp: `https://video.twimg.com/${i}.mp4`,
+  }));
+
+  await sendReply(message, { lines: [], cards: many });
+
+  assert.equal(message.followUps.length, 2, 'capped');
+  assert.equal(message.sent.length, 1, 'the reply itself still went out');
 });
 
 test('a plain clean reply carries no embeds', async () => {

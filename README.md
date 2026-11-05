@@ -96,7 +96,7 @@ Seven sites get a card the bot builds itself, because Discord's own preview fail
 | **Threads** | the page's OpenGraph tags, fetched as `Mozilla/5.0` | author, post text, image or avatar. Crawled as `Discordbot` the page returns a 107 KB shell with no description, which is why Discord's own Threads card has no words |
 | **Instagram** | page + `api/v1/oembed` + `/p/<shortcode>/embed/captioned/` | display name, the **full** caption, Likes/Comments, one embed per carousel image. Reels are carded like photos: the clean frame, not the video |
 | **Facebook** | `plugins/post.php`, plus `yt-dlp` for video | author, post text, media; a reel or video is downloaded and attached when yt-dlp can fetch it |
-| **TikTok** | `tikwm.com/api` | caption, author, avatar, cover, Plays/Likes/Comments. Its own oEmbed returns an iframe only, and the page's `og:title` is the literal `TikTok · TikTok` |
+| **TikTok** | `tikwm.com/api` | caption, author, avatar, Plays/Likes/Comments, and the video attached from TikTok's own CDN. Its own oEmbed returns an iframe only, and the page's `og:title` is the literal `TikTok · TikTok` |
 | **nhentai** | `api/v2/galleries/<id>` | title, author, and the cover attached as `SPOILER_cover.webp`. The gallery page is a Cloudflare challenge, but the API is not. `NH/693549` and `nh/693549` both work as shorthand |
 
 Why the other two get no card: **Misskey** already answers Discord's crawler with complete OpenGraph tags, and its URL was confirmed to unfurl; **YouTube** has a native player.
@@ -105,6 +105,7 @@ Why the other two get no card: **Misskey** already answers Discord's crawler wit
 
 - **One embed per image.** A Discord embed has one `image` and one `thumbnail` field — no gallery — so two full-size images need two embeds. The second image is never put in `thumbnail`; a shrunk version was rejected.
 - **An embed suppresses link unfurls.** A message holding our card never creates Discord's own preview, and an MP4 in `embed.video` is dropped outright. That is why a video can only arrive as an attachment or as its own message.
+- **When nothing fits the upload budget, the media URL goes out as a second message.** Discord unfurls a bare video URL into a player with no upload and no size limit; it just has to be alone in its message. At most two such follow-ups per reply, one per card, and the card then omits the poster frame so the player is not shown twice.
 - **No spoiler for embed images.** Only an attachment honours the `SPOILER_` filename prefix, which is why the nhentai cover leaves the embed. A spoiler is redaction, not permission.
 - **Budgets per message, shared by every card:** 5 cards, 10 embeds, 10 files, 8 MB of attachments. A card that would break a budget is skipped whole.
 - **A card is decoration and degrades:** a rejected attachment resends the embeds alone, a missing **Embed Links** permission resends the plain links. Never an error, never a lost clean link.
