@@ -24,7 +24,7 @@ async function buildXCard({ match, href }, options) {
   // The video is fetched before the images are chosen, because a successful
   // download changes what a poster frame is worth: once the player is in the
   // message, the frame repeats the video's own first second.
-  const video = videoUrl(tweet.media?.all) ?? videoUrl(tweet.quote?.media?.all);
+  const video = videoUrls(tweet.media?.all) ?? videoUrls(tweet.quote?.media?.all);
   const files = (video ? await downloadMedia(video, options) : null) ?? [];
   const playing = files.length > 0;
 
@@ -100,18 +100,24 @@ async function buildXCard({ match, href }, options) {
 }
 
 /**
- * The MP4 of the first video or GIF in a media list.
+ * The MP4 renditions of the first video or GIF, best first.
  *
- * `url` is the API's own default rendition; `formats` is the fallback for the
- * entries where that default is an HLS playlist (`.m3u8`), which Discord
- * cannot play.
+ * X offers several bitrates and the default one can exceed Discord's upload
+ * limit; a smaller rendition is still worth attaching, so every MP4 is a
+ * candidate and `downloadMedia` takes the first that fits. HLS playlists
+ * (`.m3u8`) are skipped: Discord cannot play them.
  */
-function videoUrl(media = []) {
+function videoUrls(media = []) {
   for (const item of media) {
     if (item.type !== 'video' && item.type !== 'gif') continue;
-    if (item.url && /\.mp4(\?|$)/.test(item.url)) return item.url;
-    const mp4 = (item.formats ?? []).find((format) => /\.mp4(\?|$)/.test(format.url ?? ''));
-    if (mp4) return mp4.url;
+
+    const mp4s = (item.formats ?? [])
+      .filter((format) => /\.mp4(\?|$)/.test(format.url ?? ''))
+      .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))
+      .map((format) => format.url);
+
+    const urls = [...new Set([item.url, ...mp4s])].filter((url) => url && /\.mp4(\?|$)/.test(url));
+    if (urls.length > 0) return urls;
   }
   return null;
 }

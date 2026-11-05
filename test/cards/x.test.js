@@ -74,6 +74,30 @@ test('X video over the message budget is dropped, the card stays', async () => {
   assert.equal(card.embeds[0].image.url, X_VIDEO.tweet.media.all[0].thumbnail_url);
 });
 
+test('a rendition over the budget is skipped so a smaller one can play', async () => {
+  // The real OHIOISONFIRE video: the 2176 kbps rendition is 8.21 MB, just over
+  // the 8 MB limit; the 832 kbps one fits.
+  const tweet = structuredClone(X_VIDEO);
+  const big = 'https://video.twimg.com/amplify_video/1/vid/1280x720/big.mp4?tag=12';
+  const small = 'https://video.twimg.com/amplify_video/1/vid/640x360/small.mp4?tag=12';
+  tweet.tweet.media.all[0].url = big;
+  tweet.tweet.media.all[0].formats = [
+    { url: big, bitrate: 2176000, container: 'mp4' },
+    { url: small, bitrate: 832000, container: 'mp4' },
+  ];
+  const { impl, calls } = fakeFetch([
+    ['https://api.fxtwitter.com/', tweet],
+    [big, new Response(MP4_BYTES, { status: 200, headers: { 'content-length': String(8_611_539) } })],
+    [small, mp4Response()],
+  ]);
+
+  const [card] = await buildCards('https://x.com/someone/status/2117280148445962692', { fetchImpl: impl });
+
+  assert.equal(card.files.length, 1);
+  assert.deepEqual(card.files[0].attachment, MP4_BYTES);
+  assert.ok(calls.some((c) => c.url === small), 'the smaller rendition was tried');
+});
+
 test('X video picks the MP4 when the default rendition is an HLS playlist', async () => {
   const hls = structuredClone(X_VIDEO);
   hls.tweet.media.all[0].url = 'https://video.twimg.com/amplify_video/1/pl/abc.m3u8';

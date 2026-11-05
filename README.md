@@ -91,7 +91,7 @@ Seven sites get a card the bot builds itself, because Discord's own preview fail
 
 | Site | Source | What the card shows |
 |---|---|---|
-| **X** | `api.fxtwitter.com`, `video.twimg.com` | full text, avatar, quote as a blockquote, Replies/Retweets/Likes/Views, one full-size embed per image (the quoted tweet's pictures included), and the video or GIF attached as `video.mp4` — Discord cannot play X video inside an embed, but it plays an attached file. The poster frame appears only if the download failed, so the player is not shown twice |
+| **X** | `api.fxtwitter.com`, `video.twimg.com` | full text, avatar, quote as a blockquote, Replies/Retweets/Likes/Views, one full-size embed per image (the quoted tweet's pictures included), and the video or GIF attached as `video.mp4` — Discord cannot play X video inside an embed, but it plays an attached file. X offers several renditions; the bot takes the **largest that fits the 8 MB budget**, and the poster frame appears only when nothing could be attached, so the player is not shown twice |
 | **Pixiv** | `ajax/illust` + `ajax/illust/<id>/pages` | title, author, tags, up to 5 pages downloaded with a pixiv `Referer` and re-uploaded, because `i.pximg.net` answers `403` without it and Discord never sends one |
 | **Threads** | the page's OpenGraph tags, fetched as `Mozilla/5.0` | author, post text, image or avatar. Crawled as `Discordbot` the page returns a 107 KB shell with no description, which is why Discord's own Threads card has no words |
 | **Instagram** | page + `api/v1/oembed` + `/p/<shortcode>/embed/captioned/` | display name, the **full** caption, Likes/Comments, one embed per carousel image. Reels are carded like photos: the clean frame, not the video |

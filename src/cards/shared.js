@@ -118,29 +118,36 @@ export async function getHtml(url, options) {
  * deadline is longer than a page fetch because an 8 MB file over a slow link
  * is not a hung request.
  */
-export async function downloadMedia(url, options = {}, name = 'video.mp4') {
+export async function downloadMedia(urls, options = {}, name = 'video.mp4') {
   const cap = Math.min(MAX_ATTACH_BYTES, options.budget?.bytes ?? MAX_ATTACH_BYTES);
-  let res;
-  try {
-    res = await request(url, { ...options, timeout: MEDIA_TIMEOUT_MS });
-  } catch (error) {
-    console.log(`[card] ${new URL(url).host} media failed: ${error.message}`);
-    return null;
-  }
-  if (!res.ok) {
-    console.log(`[card] ${new URL(url).host} media answered ${res.status}`);
-    return null;
+
+  // Candidates arrive best first. A rendition that does not fit is skipped
+  // before its body is read, so a smaller one can still be attached.
+  for (const url of [urls].flat().filter(Boolean)) {
+    let res;
+    try {
+      res = await request(url, { ...options, timeout: MEDIA_TIMEOUT_MS });
+    } catch (error) {
+      console.log(`[card] ${new URL(url).host} media failed: ${error.message}`);
+      continue;
+    }
+    if (!res.ok) {
+      console.log(`[card] ${new URL(url).host} media answered ${res.status}`);
+      continue;
+    }
+
+    const declared = Number(res.headers.get('content-length') ?? 0);
+    if (declared > cap) {
+      console.log(`[card] ${new URL(url).host} media is ${Math.round(declared / 1024)}KB, over the budget`);
+      continue;
+    }
+
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.length === 0 || buffer.length > cap) continue;
+    return [{ attachment: buffer, name }];
   }
 
-  const declared = Number(res.headers.get('content-length') ?? 0);
-  if (declared > cap) {
-    console.log(`[card] ${new URL(url).host} media is ${Math.round(declared / 1024)}KB, over the budget`);
-    return null;
-  }
-
-  const buffer = Buffer.from(await res.arrayBuffer());
-  if (buffer.length === 0 || buffer.length > cap) return null;
-  return [{ attachment: buffer, name }];
+  return null;
 }
 
 export async function getBytes(url, options) {
