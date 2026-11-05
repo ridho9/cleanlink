@@ -64,7 +64,8 @@ test('media that could not be attached goes out as its own message', async () =>
 
   assert.equal(message.sent[0].content, '<https://x.com/a/status/1>', 'the card line stays clean');
   assert.deepEqual(message.followUps, [
-    { content: 'https://video.twimg.com/big.mp4', allowedMentions: { parse: [] } },
+    // Masked: the signed URL is long, and the label unfurls the same player.
+    { content: '[▶ Play video](https://video.twimg.com/big.mp4)', allowedMentions: { parse: [] } },
   ]);
 });
 

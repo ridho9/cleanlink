@@ -89,6 +89,7 @@ export async function sendReply(message, { lines, cards }) {
 
 /** At most this many follow-up messages, so a five-link message stays a reply. */
 const MAX_FOLLOW_UPS = 2;
+const FOLLOW_UP_LABEL = '▶ Play video';
 
 /**
  * Post the media that could not ride along with the card.
@@ -97,13 +98,17 @@ const MAX_FOLLOW_UPS = 2;
  * unfurls a bare URL - and any embed in the message suppresses the unfurl. So
  * when the file is too large to upload, the media URL goes out on its own, as
  * a second message: no upload, no size limit.
+ *
+ * The URL is masked behind a label. A signed CDN URL runs past 1000 characters
+ * and Discord prints it in full above the player; a masked link still unfurls
+ * into the same player (measured for Instagram and X).
  */
 async function sendFollowUps(message, cards) {
   const urls = cards.map((card) => card.followUp).filter(Boolean).slice(0, MAX_FOLLOW_UPS);
 
   for (const url of urls) {
     try {
-      await message.channel.send({ content: url, allowedMentions: { parse: [] } });
+      await message.channel.send({ content: `[${FOLLOW_UP_LABEL}](${url})`, allowedMentions: { parse: [] } });
       console.log(`[reply] follow-up with ${new URL(url).host}`);
     } catch (error) {
       // The clean link and the card are already out; a lost player is not worth
