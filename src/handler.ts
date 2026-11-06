@@ -151,6 +151,16 @@ async function work(message: OmitPartialGroupDMChannel<Message>, isDM: boolean):
     if (suppressed && mustRestore(outcome) && !replies.deleted()) {
       await restoreOriginalEmbed(message);
     }
+    // Hide it once more after the reply, as a best effort: Discord's own
+    // preview sometimes lands after the first hide and shows anyway. One more
+    // request per reply; a failure is only noted.
+    if (suppressed && outcome === 'sent' && !replies.deleted()) {
+      try {
+        await message.suppressEmbeds(true);
+      } catch (error) {
+        note(`[guild] second suppress failed: ${(error as Error).message}`);
+      }
+    }
     if (ack) {
       try {
         await ack.users.remove(message.client.user);

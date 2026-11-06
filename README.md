@@ -52,7 +52,7 @@ https://www.threads.com/@phodhipo/post/DfPOscPD6UR
 
 Behaviour:
 
-- **DMs and server channels.** In a DM it just replies. In a server channel it also removes the preview card from your message, if it has been given `Manage Messages`.
+- **DMs and server channels.** In a DM it just replies. In a server channel it also removes the preview card from your message, if it has been given `Manage Messages`. It removes the card when the message arrives and once more after the reply is sent, because Discord's preview sometimes arrives after the first removal.
 - **The 👀 reaction only appears on messages it can act on.** A link no rule owns, or a message with no link, gets no reaction and no reply — the check is a regex pass, so nothing is fetched to find out.
 - **`nh/<id>` stands in for an nhentai link.** Send `nh/693549` (or `nh/#693549`) and the bot replies with the real gallery link plus the card. Any case works (`NH/693549`), a leading zero is dropped, and a `/nh/<digits>` path inside some other URL is **not** treated as a shorthand.
 - **Silent unless it changed something.** Links it does not handle, links with nothing to strip, and failed lookups all get no reply. A link that gets a card is an exception: it is answered even when it had nothing to strip, because the card itself is the reply.

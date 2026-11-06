@@ -70,12 +70,13 @@ async function run(message: OmitPartialGroupDMChannel<Message>) {
   return JSON.parse(line!.slice(6));
 }
 
-test('a reply replaces the hidden preview', async () => {
+test('a reply replaces the hidden preview, and hides it again after', async () => {
   const { message, events } = guildMessage();
   const record = await run(message);
 
   assert.equal(record.reply, 'sent');
-  assert.deepEqual(events, ['hide', 'react', 'reply', 'unreact']);
+  // The second hide catches a preview Discord added after the first one.
+  assert.deepEqual(events, ['hide', 'react', 'reply', 'hide', 'unreact']);
 });
 
 test('deleted before the reply: no reply, and no preview to restore', async () => {
