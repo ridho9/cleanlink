@@ -80,6 +80,7 @@ Note that server mode means the bot reads message content in every channel it ca
 | Facebook | `fb.watch`, `/share/…`, strips `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url`; on `story.php` / `permalink.php` keeps only `story_fbid` and `id` | **yes** — author, text and media from the public embed iframe, or from a mirror when the post refuses it |
 | Pixiv | nothing to strip | **yes** — the artwork pages, re-uploaded |
 | nhentai | nothing to strip; `nh/<id>` shorthand works as input, in any case | **yes** — title, author, and the cover attached behind Discord's spoiler flag |
+| MangaDex | nothing to strip | **yes** — cover, title, author, status, content rating, rating and follows; an erotica or pornographic cover goes behind the spoiler flag |
 | Misskey | nothing to strip | no, Discord's own preview is complete |
 
 Common trackers (`utm_*`, `fbclid`, `gclid`, `twclid`, `yclid`, `mibextid`, `_ga`, `_gl`) are stripped everywhere.
@@ -88,7 +89,7 @@ Reddit, Spotify and Google were removed on purpose: only fake share codes had ev
 
 ## Preview cards
 
-Seven sites get a card the bot builds itself, because Discord's own preview fails on each of them. Every card comes from the site's own data — no third-party renderer is used anywhere.
+Eight sites get a card the bot builds itself, because Discord's own preview fails on each of them. Every card comes from the site's own data — no third-party renderer is used anywhere.
 
 | Site | Source | What the card shows |
 |---|---|---|
@@ -99,6 +100,7 @@ Seven sites get a card the bot builds itself, because Discord's own preview fail
 | **Facebook** | `plugins/post.php`, whose JSON-LD names each picture at its uploaded size; `yt-dlp` for video; and `facebed.com` for what both refuse | author, post text, every picture at the size it was uploaded, and the video attached when it can be had; a reel too large to attach is sent as the `facebed.com` page link instead, which Discord unfurls into a player with the caption |
 | **TikTok** | `tikwm.com/api` | caption, author, avatar, Plays/Likes/Comments, and the video attached from TikTok's own CDN. Its own oEmbed returns an iframe only, and the page's `og:title` is the literal `TikTok · TikTok` |
 | **nhentai** | `api/v2/galleries/<id>` | title, author, and the cover attached as `SPOILER_cover.webp`. The gallery page is a Cloudflare challenge, but the API is not. `NH/693549` and `nh/693549` both work as shorthand |
+| **MangaDex** | `api.mangadex.org/manga/<id>` + `statistics/manga/<id>` | title, author (and artist when different), `Ongoing · Safe`, `⭐ 9.46 · 🔖 133,886` (rating and follows), and the 512 px cover. An `erotica` or `pornographic` cover is attached as `SPOILER_cover.jpg` instead. The title page is a proof-of-work challenge, and the API sends a browser user agent to the same challenge, so the bot names itself (`cleanlink (+…)`) there. Chapter links get no card |
 
 Why the other two get no card: **Misskey** already answers Discord's crawler with complete OpenGraph tags, and its URL was confirmed to unfurl; **YouTube** has a native player.
 
@@ -109,7 +111,7 @@ Why the other two get no card: **Misskey** already answers Discord's crawler wit
 - **An embed suppresses link unfurls.** A message holding our card never creates Discord's own preview, and an MP4 in `embed.video` is dropped outright. That is why a video can only arrive as an attachment or as its own message.
 - **When nothing fits the upload budget, the media URL goes out as a second message.** Discord unfurls the video URL into a player with no upload and no size limit; it just has to be alone in its message. The URL is masked as `[▶ Play video](…)`, because a signed CDN URL runs past 1000 characters and Discord would print it in full. At most two such follow-ups per reply, one per card, and the card then omits the poster frame so the player is not shown twice.
 - **Every single-file rendition is tried, not only the best.** yt-dlp lists them all (`hd`, `sd` on Facebook); the largest that fits 9.5 MB is attached. If none fits, the follow-up uses the largest file up to 15 MB, because Discord does not unfurl larger ones.
-- **No spoiler for embed images.** Only an attachment honours the `SPOILER_` filename prefix, which is why the nhentai cover leaves the embed. A spoiler is redaction, not permission.
+- **No spoiler for embed images.** Only an attachment honours the `SPOILER_` filename prefix, which is why the nhentai cover and an adult MangaDex cover leave the embed. A spoiler is redaction, not permission.
 - **Budgets per message, shared by every card:** 5 cards, 10 embeds, 10 files, 9.5 MB of attachments. A card that would break a budget is skipped whole.
 - **A card is decoration and degrades:** a rejected attachment resends the embeds alone, a missing **Embed Links** permission resends the plain links. Never an error, never a lost clean link.
 - **Card text is third-party text:** everything passes through `escapeMarkdown`, and composition happens before clipping so our own `> **Quoting …**` markup survives.
@@ -133,6 +135,7 @@ Query-parameter stripping is deterministic and covered by tests for every site. 
 | Instagram | live (`mdxt`, `psln`, `srtk`) | `/share/` still fake: `200`, no redirect → silence | **real code** — single post, 4- and 10-image carousels and a reel all read back from Discord |
 | Facebook | live | **real code** — `/share/<code>` → `/posts/<id>`, `/reel/<id>`, `story.php?story_fbid=…` | **real code** — text, author and pictures from `plugins/post.php` for a post, a reel and a watch link; cards sent and read back. A 5-picture post builds with all five at their uploaded `900x1295`, not the grid's `394x394`: the page's JSON-LD block names the file, and that fetch answered `200 image/jpeg` |
 | nhentai | n/a | n/a | **real code** — `api/v2/galleries/<id>` and a `t.nhentai.net` cover that Discord can fetch; card built and inspected, gated on NSFW |
+| MangaDex | n/a | n/a | **real code** — a safe and a pornographic title built from the live API: the safe cover as the embed image (`uploads.mangadex.org` answers `Discordbot` with `200 image/jpeg`), the other as a 131 KB `SPOILER_cover.jpg` |
 | Pixiv | n/a | n/a | **real code** — 2 pages fetched with a pixiv `Referer`, uploaded, embed rendered |
 
 Four of the six tracker sites have resolved a real share link, and every cleaned URL was re-fetched to confirm it still serves the post. Both cards were posted to a real channel and read back, attachment and embed intact. If a site silently does nothing, this table is the first place to look.

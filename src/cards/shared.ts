@@ -88,6 +88,7 @@ export const FACEBOOK_BLUE = 0x1877f2;
 export const UNFURL_UA = 'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)';
 export const NHENTAI_RED = 0xed2553;
 export const INSTAGRAM_PINK = 0xe1306c;
+export const MANGADEX_ORANGE = 0xff6740;
 
 // ---------------------------------------------------------------- utilities
 

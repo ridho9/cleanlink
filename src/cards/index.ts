@@ -1,6 +1,7 @@
 import { findUrls, hostMatches } from '../clean.ts';
 import { buildFacebookCard } from './facebook.ts';
 import { buildInstagramCard } from './instagram.ts';
+import { buildMangadexCard } from './mangadex.ts';
 import { buildNhentaiCard } from './nhentai.ts';
 import { buildPixivCard } from './pixiv.ts';
 import { buildThreadsCard } from './threads.ts';
@@ -27,7 +28,7 @@ export type Card = BuiltCard & {
 };
 
 /** The sites that own a card; the `card` field of the log names one of them. */
-export type SiteId = 'x' | 'pixiv' | 'instagram' | 'threads' | 'facebook' | 'nhentai' | 'tiktok';
+export type SiteId = 'x' | 'pixiv' | 'instagram' | 'threads' | 'facebook' | 'nhentai' | 'tiktok' | 'mangadex';
 
 /** What a card shows besides text, as the `media` field of the log names it. */
 export type MediaKind = 'video' | 'follow_up' | 'unfurl' | `images:${number}` | 'text';
@@ -112,6 +113,13 @@ const CARD_SITES: CardSite[] = [
     // is unverified, and a card built on a guess is worse than a clean link.
     match: (url) => /^\/@([\w.-]{1,64})\/video\/(\d{6,})/.exec(url.pathname),
     build: buildTikTokCard,
+  },
+  {
+    id: 'mangadex',
+    hosts: ['mangadex.org'],
+    // /title/<uuid> and /title/<uuid>/<slug>. Chapter links are not covered.
+    match: (url) => /^\/title\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$)/i.exec(url.pathname),
+    build: buildMangadexCard,
   },
 ];
 
