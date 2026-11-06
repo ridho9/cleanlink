@@ -33,10 +33,13 @@ test('MangaDex card shows cover, title, author, status, rating and follows', asy
   assert.equal(embed.url, `https://mangadex.org/title/${ID}`);
   // The author is also the artist: one name, not two.
   assert.equal(embed.author!.name, 'Kamiyama Sumu');
-  // The synopsis first, as Discord's own preview shows it, then the stats.
+  // The synopsis first, cut at a space before 350 characters, then the stats.
   assert.equal(
     embed.description,
-    `${MANGA.data.attributes.description.en}\n\nOngoing · Safe\n⭐ 9.46 · 🔖 133,886`,
+    'At my high school, Haimiya-senpai is feared by all and considered too scary. This is apparently due to her ' +
+      'intimidating appearance and blunt way of speaking... and those sparkling piercings! The long, gray wolf-cut ' +
+      'hair! Even her Kansai accent is intimidating!!!\nBut for some reason, this scary senpai treats me kindly...?\n' +
+      'As "scary" turns into…\n\nOngoing · Safe\n⭐ 9.46 · 🔖 133,886',
   );
   assert.equal(embed.image!.url, COVER);
   assert.equal(card.files.length, 0);

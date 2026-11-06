@@ -12,7 +12,6 @@
 
 import {
   authorBlock,
-  clip,
   escapeMarkdown,
   getBytes,
   getJson,
@@ -51,6 +50,9 @@ type StatisticsResponse = {
   statistics?: Record<string, { follows?: number | null; rating?: { average?: number | null } | null } | undefined>;
 };
 
+/** A few lines of story keep the card short; the title page has the rest. */
+const SYNOPSIS_MAX = 350;
+
 /**
  * The synopsis, as the site's own preview shows it: English when there is one,
  * cut at the first `---` or `___` rule. What follows that rule is links and
@@ -61,7 +63,11 @@ type StatisticsResponse = {
 function synopsis(description: Record<string, string> | null | undefined): string | null {
   const text = description?.en ?? Object.values(description ?? {})[0] ?? '';
   const story = text.split(/^\s*(?:-{3,}|_{3,})\s*$/m)[0]!.trim();
-  return story ? clip(story, 1000) : null;
+  if (story.length <= SYNOPSIS_MAX) return story || null;
+  // Cut at the last space, so a word is never broken in half.
+  const cut = story.slice(0, SYNOPSIS_MAX);
+  const space = cut.search(/\s\S*$/);
+  return `${(space > 0 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
 /** `ongoing` -> `Ongoing`, `pornographic` -> `Pornographic`. */
