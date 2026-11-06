@@ -33,7 +33,11 @@ test('MangaDex card shows cover, title, author, status, rating and follows', asy
   assert.equal(embed.url, `https://mangadex.org/title/${ID}`);
   // The author is also the artist: one name, not two.
   assert.equal(embed.author!.name, 'Kamiyama Sumu');
-  assert.equal(embed.description, 'Ongoing · Safe\n⭐ 9.46 · 🔖 133,886');
+  // The synopsis first, as Discord's own preview shows it, then the stats.
+  assert.equal(
+    embed.description,
+    `${MANGA.data.attributes.description.en}\n\nOngoing · Safe\n⭐ 9.46 · 🔖 133,886`,
+  );
   assert.equal(embed.image!.url, COVER);
   assert.equal(card.files.length, 0);
   // A browser user agent is sent to the proof-of-work challenge, API included.
@@ -69,7 +73,19 @@ test('MangaDex card keeps the text when the statistics request fails', async () 
   const { impl } = fakeFetch([[`https://api.mangadex.org/manga/${ID}`, MANGA]]);
   const [card] = await buildCards(URL, { fetchImpl: impl });
 
-  assert.equal(card!.embeds[0]!.description, 'Ongoing · Safe');
+  assert.ok(card!.embeds[0]!.description!.endsWith('\n\nOngoing · Safe'));
+});
+
+test('MangaDex synopsis stops at the rule before the links, and keeps its Markdown', async () => {
+  const manga = structuredClone(MANGA);
+  manga.data.attributes.description = {
+    ja: '日本語',
+    en: 'A **scary** senpai.\n\n---\n\n**Links:**\n- [Official](https://example.com)',
+  };
+  const { impl } = fakeFetch(routes(manga));
+  const [card] = await buildCards(URL, { fetchImpl: impl });
+
+  assert.ok(card!.embeds[0]!.description!.startsWith('A **scary** senpai.\n\nOngoing'));
 });
 
 test('MangaDex card is skipped for a title that does not exist', async () => {

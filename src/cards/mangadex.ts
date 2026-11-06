@@ -12,6 +12,7 @@
 
 import {
   authorBlock,
+  clip,
   escapeMarkdown,
   getBytes,
   getJson,
@@ -39,6 +40,7 @@ type MangaResponse = {
     id?: string;
     attributes?: {
       title?: Record<string, string> | null;
+      description?: Record<string, string> | null;
       status?: string | null;
       contentRating?: string | null;
     } | null;
@@ -48,6 +50,19 @@ type MangaResponse = {
 type StatisticsResponse = {
   statistics?: Record<string, { follows?: number | null; rating?: { average?: number | null } | null } | undefined>;
 };
+
+/**
+ * The synopsis, as the site's own preview shows it: English when there is one,
+ * cut at the first `---` or `___` rule. What follows that rule is links and
+ * notes ("**Links:** - Official English…"), not the story. The text is
+ * MangaDex's own Markdown, written for a Markdown renderer, so it is kept, not
+ * escaped: escaping would print its `**` and `[…](…)` literally.
+ */
+function synopsis(description: Record<string, string> | null | undefined): string | null {
+  const text = description?.en ?? Object.values(description ?? {})[0] ?? '';
+  const story = text.split(/^\s*(?:-{3,}|_{3,})\s*$/m)[0]!.trim();
+  return story ? clip(story, 1000) : null;
+}
 
 /** `ongoing` -> `Ongoing`, `pornographic` -> `Pornographic`. */
 function label(value: string | null | undefined): string | null {
@@ -83,6 +98,7 @@ export async function buildMangadexCard({ match }: CardInput, options: CardOptio
       ['🔖', stat?.follows],
     ]),
   ].filter(Boolean);
+  const about = synopsis(attributes.description);
 
   const embed: CardEmbed = {
     url,
@@ -95,7 +111,8 @@ export async function buildMangadexCard({ match }: CardInput, options: CardOptio
       url: firstCreator ? `https://mangadex.org/author/${firstCreator.id}` : null,
     });
   }
-  if (lines.length > 0) embed.description = lines.join('\n');
+  const text = [about, lines.join('\n')].filter(Boolean).join('\n\n');
+  if (text) embed.description = text;
 
   // The 512 px rendition: 159 KB against 980 KB for the original, measured,
   // and wider than an embed shows it.

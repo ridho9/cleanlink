@@ -80,7 +80,7 @@ Note that server mode means the bot reads message content in every channel it ca
 | Facebook | `fb.watch`, `/share/…`, strips `rdid`, `refid`, `sfnsn`, `__tn__`, `share_url`; on `story.php` / `permalink.php` keeps only `story_fbid` and `id` | **yes** — author, text and media from the public embed iframe, or from a mirror when the post refuses it |
 | Pixiv | nothing to strip | **yes** — the artwork pages, re-uploaded |
 | nhentai | nothing to strip; `nh/<id>` shorthand works as input, in any case | **yes** — title, author, and the cover attached behind Discord's spoiler flag |
-| MangaDex | nothing to strip | **yes** — cover, title, author, status, content rating, rating and follows; an erotica or pornographic cover goes behind the spoiler flag |
+| MangaDex | nothing to strip | **yes** — cover, title, author, synopsis, status, content rating, rating and follows; an erotica or pornographic cover goes behind the spoiler flag |
 | Misskey | nothing to strip | no, Discord's own preview is complete |
 
 Common trackers (`utm_*`, `fbclid`, `gclid`, `twclid`, `yclid`, `mibextid`, `_ga`, `_gl`) are stripped everywhere.
@@ -100,7 +100,7 @@ Eight sites get a card the bot builds itself, because Discord's own preview fail
 | **Facebook** | `plugins/post.php`, whose JSON-LD names each picture at its uploaded size; `yt-dlp` for video; and `facebed.com` for what both refuse | author, post text, every picture at the size it was uploaded, and the video attached when it can be had; a reel too large to attach is sent as the `facebed.com` page link instead, which Discord unfurls into a player with the caption |
 | **TikTok** | `tikwm.com/api` | caption, author, avatar, Plays/Likes/Comments, and the video attached from TikTok's own CDN. Its own oEmbed returns an iframe only, and the page's `og:title` is the literal `TikTok · TikTok` |
 | **nhentai** | `api/v2/galleries/<id>` | title, author, and the cover attached as `SPOILER_cover.webp`. The gallery page is a Cloudflare challenge, but the API is not. `NH/693549` and `nh/693549` both work as shorthand |
-| **MangaDex** | `api.mangadex.org/manga/<id>` + `statistics/manga/<id>` | title, author (and artist when different), `Ongoing · Safe`, `⭐ 9.46 · 🔖 133,886` (rating and follows), and the 512 px cover. An `erotica` or `pornographic` cover is attached as `SPOILER_cover.jpg` instead. The title page is a proof-of-work challenge, and the API sends a browser user agent to the same challenge, so the bot names itself (`cleanlink (+…)`) there. Chapter links get no card |
+| **MangaDex** | `api.mangadex.org/manga/<id>` + `statistics/manga/<id>` | title, author (and artist when different), the English synopsis up to the first `---` rule (what follows it is links, not story; kept as MangaDex's own Markdown, up to 1000 characters), `Ongoing · Safe`, `⭐ 9.46 · 🔖 133,886` (rating and follows), and the 512 px cover. An `erotica` or `pornographic` cover is attached as `SPOILER_cover.jpg` instead. The title page is a proof-of-work challenge, and the API sends a browser user agent to the same challenge, so the bot names itself (`cleanlink (+…)`) there. Chapter links get no card |
 
 Why the other two get no card: **Misskey** already answers Discord's crawler with complete OpenGraph tags, and its URL was confirmed to unfurl; **YouTube** has a native player.
 
