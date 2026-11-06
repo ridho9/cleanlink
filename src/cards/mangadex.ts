@@ -135,7 +135,7 @@ export async function buildMangadexCard({ match }: CardInput, options: CardOptio
       url: firstCreator ? `https://mangadex.org/author/${firstCreator.id}` : null,
     });
   }
-  const text = [about, tags, lines.join('\n')].filter(Boolean).join('\n\n');
+  const text = [about, [tags, lines.join('\n')].filter(Boolean).join('\n')].filter(Boolean).join('\n\n');
   if (text) embed.description = text;
 
   // The 512 px rendition: 159 KB against 980 KB for the original, measured,

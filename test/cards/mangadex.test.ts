@@ -39,7 +39,7 @@ test('MangaDex card shows cover, title, author, status, rating and follows', asy
     'At my high school, Haimiya-senpai is feared by all and considered too scary. This is apparently due to her ' +
       'intimidating appearance and blunt way of speaking... and those sparkling piercings! The long, gray wolf-cut ' +
       'hair! Even her Kansai accent is intimidating!!!\nBut for some reason, this scary senpai treats me kindly...?\n' +
-      'As "scary" turns into…\n\nRomance · Comedy · Drama · School Life · Slice of Life\n\nOngoing · Safe\n' +
+      'As "scary" turns into…\n\nRomance · Comedy · Drama · School Life · Slice of Life\nOngoing · Safe\n' +
       '⭐ 9.46 · 🔖 133,886',
   );
   assert.equal(embed.image!.url, COVER);
@@ -77,7 +77,7 @@ test('MangaDex card keeps the text when the statistics request fails', async () 
   const { impl } = fakeFetch([[`https://api.mangadex.org/manga/${ID}`, MANGA]]);
   const [card] = await buildCards(URL, { fetchImpl: impl });
 
-  assert.ok(card!.embeds[0]!.description!.endsWith('\n\nOngoing · Safe'));
+  assert.ok(card!.embeds[0]!.description!.endsWith('\nOngoing · Safe'));
 });
 
 test('MangaDex synopsis stops at the rule before the links, and keeps its Markdown', async () => {
@@ -107,7 +107,7 @@ test('MangaDex tags are genres and themes only, at most eight', async () => {
   const { impl } = fakeFetch(routes(manga));
   const [card] = await buildCards(URL, { fetchImpl: impl });
 
-  const tags = card!.embeds[0]!.description!.split('\n\n')[1]!;
+  const tags = card!.embeds[0]!.description!.split('\n\n')[1]!.split('\n')[0]!;
   assert.equal(tags, 'Action · Comedy · Drama · Horror · Romance · Sports · Thriller · Tragedy');
 });
 
