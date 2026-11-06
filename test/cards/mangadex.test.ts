@@ -39,7 +39,8 @@ test('MangaDex card shows cover, title, author, status, rating and follows', asy
     'At my high school, Haimiya-senpai is feared by all and considered too scary. This is apparently due to her ' +
       'intimidating appearance and blunt way of speaking... and those sparkling piercings! The long, gray wolf-cut ' +
       'hair! Even her Kansai accent is intimidating!!!\nBut for some reason, this scary senpai treats me kindly...?\n' +
-      'As "scary" turns into…\n\nOngoing · Safe\n⭐ 9.46 · 🔖 133,886',
+      'As "scary" turns into…\n\nRomance · Comedy · Drama · School Life · Slice of Life\n\nOngoing · Safe\n' +
+      '⭐ 9.46 · 🔖 133,886',
   );
   assert.equal(embed.image!.url, COVER);
   assert.equal(card.files.length, 0);
@@ -88,7 +89,26 @@ test('MangaDex synopsis stops at the rule before the links, and keeps its Markdo
   const { impl } = fakeFetch(routes(manga));
   const [card] = await buildCards(URL, { fetchImpl: impl });
 
-  assert.ok(card!.embeds[0]!.description!.startsWith('A **scary** senpai.\n\nOngoing'));
+  assert.ok(card!.embeds[0]!.description!.startsWith('A **scary** senpai.\n\nRomance'));
+  assert.ok(!card!.embeds[0]!.description!.includes('Official'), 'the links after the rule are dropped');
+});
+
+test('MangaDex tags are genres and themes only, at most eight', async () => {
+  const manga = structuredClone(MANGA);
+  const tag = (group: string, name: string) => ({ attributes: { group, name: { en: name } } });
+  manga.data.attributes.tags = [
+    tag('format', 'Oneshot'),
+    ...['Action', 'Comedy', 'Drama', 'Horror', 'Romance', 'Sports', 'Thriller', 'Tragedy', 'Mystery', 'Mecha'].map(
+      (name) => tag('genre', name),
+    ),
+    tag('theme', 'School Life'),
+    tag('content', 'Gore'),
+  ];
+  const { impl } = fakeFetch(routes(manga));
+  const [card] = await buildCards(URL, { fetchImpl: impl });
+
+  const tags = card!.embeds[0]!.description!.split('\n\n')[1]!;
+  assert.equal(tags, 'Action · Comedy · Drama · Horror · Romance · Sports · Thriller · Tragedy');
 });
 
 test('MangaDex card is skipped for a title that does not exist', async () => {

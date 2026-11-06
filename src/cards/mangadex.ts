@@ -12,6 +12,7 @@
 
 import {
   authorBlock,
+  clip,
   escapeMarkdown,
   getBytes,
   getJson,
@@ -28,6 +29,7 @@ const USER_AGENT = 'cleanlink (+https://github.com/ridho9/cleanlink)';
 /** Ratings whose cover goes out spoilered. `safe` and `suggestive` do not. */
 const SPOILERED: Record<string, true> = { erotica: true, pornographic: true };
 
+type Tag = { attributes?: { name?: Record<string, string> | null; group?: string | null } | null };
 type Relationship = {
   id?: string;
   type?: string;
@@ -42,6 +44,7 @@ type MangaResponse = {
       description?: Record<string, string> | null;
       status?: string | null;
       contentRating?: string | null;
+      tags?: Tag[] | null;
     } | null;
     relationships?: Relationship[] | null;
   } | null;
@@ -52,6 +55,20 @@ type StatisticsResponse = {
 
 /** A few lines of story keep the card short; the title page has the rest. */
 const SYNOPSIS_MAX = 350;
+/** Genres and themes only: format ("Oneshot") and content ("Gore") say less. */
+const TAG_GROUPS: Record<string, true> = { genre: true, theme: true };
+/** A long tag list would push the stats off a phone screen. */
+const TAG_MAX = 8;
+
+/** Genres and themes, in the API's order, as one line. */
+function tagLine(tags: Tag[] | null | undefined): string | null {
+  const names = (tags ?? [])
+    .filter((tag) => TAG_GROUPS[tag.attributes?.group ?? ''])
+    .map((tag) => tag.attributes?.name?.en)
+    .filter((name): name is string => Boolean(name));
+  const line = [...new Set(names)].slice(0, TAG_MAX).map(escapeMarkdown).join(' · ');
+  return line ? clip(line, 300) : null;
+}
 
 /**
  * The synopsis, as the site's own preview shows it: English when there is one,
@@ -105,6 +122,7 @@ export async function buildMangadexCard({ match }: CardInput, options: CardOptio
     ]),
   ].filter(Boolean);
   const about = synopsis(attributes.description);
+  const tags = tagLine(attributes.tags);
 
   const embed: CardEmbed = {
     url,
@@ -117,7 +135,7 @@ export async function buildMangadexCard({ match }: CardInput, options: CardOptio
       url: firstCreator ? `https://mangadex.org/author/${firstCreator.id}` : null,
     });
   }
-  const text = [about, lines.join('\n')].filter(Boolean).join('\n\n');
+  const text = [about, tags, lines.join('\n')].filter(Boolean).join('\n\n');
   if (text) embed.description = text;
 
   // The 512 px rendition: 159 KB against 980 KB for the original, measured,
