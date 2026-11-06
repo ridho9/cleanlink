@@ -12,7 +12,7 @@ import {
   getHtml,
   metaContent,
   playback,
-  statFields,
+  statLine,
   THREADS_BLACK,
   toField,
 } from './shared.ts';
@@ -85,6 +85,15 @@ async function postCard(post: ThreadsPost, parent: ThreadsPost | null, href: str
   // Without text there is nothing this card adds over Discord's own preview.
   if (parts.length === 0 && images.length === 0 && !playing) return null;
 
+  // Same one-line layout as the X card: inline fields stack on a phone.
+  const stats = statLine([
+    ['💬', info.direct_reply_count],
+    ['🔁', info.repost_count],
+    ['❝', info.quote_count],
+    ['❤️', post.like_count],
+  ]);
+  if (stats) parts.push(stats);
+
   const embed: CardEmbed = {
     url,
     color: THREADS_BLACK,
@@ -97,14 +106,6 @@ async function postCard(post: ThreadsPost, parent: ThreadsPost | null, href: str
   if (parts.length > 0) embed.description = clip(parts.join('\n\n'), 4096);
   if (images[0]) embed.image = { url: images[0] };
   if (post.taken_at) embed.timestamp = new Date(post.taken_at * 1000).toISOString();
-
-  const fields = statFields([
-    ['Replies', info.direct_reply_count],
-    ['Reposts', info.repost_count],
-    ['Quotes', info.quote_count],
-    ['Likes', post.like_count],
-  ]);
-  if (fields) embed.fields = fields;
 
   // Embeds that share a URL show as one gallery in Discord.
   if (images.length > 1) embed.footer = { text: `Threads · 1/${images.length}` };

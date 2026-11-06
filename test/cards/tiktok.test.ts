@@ -28,9 +28,13 @@ test('TikTok card uses tikwm for a real caption, author and cover', async () => 
   assert.equal(card.embeds.length, 1);
   assert.equal(card.embeds[0]!.author!.name, 'TikTok (@tiktok)');
   assert.equal(card.embeds[0]!.author!.icon_url, TIKWM.data.author.avatar);
-  assert.equal(card.embeds[0]!.description, TIKWM.data.title);
-  assert.equal(card.embeds[0]!.image!.url, TIKWM.data.cover);
-  assert.deepEqual(card.embeds[0]!.fields!.map((field) => field.name), ['Plays', 'Likes', 'Comments']);
+  assert.equal(
+    card.embeds[0]!.description,
+    `${TIKWM.data.title}\n\n▶ ${TIKWM.data.play_count.toLocaleString('en-US')} · ` +
+      `❤️ ${TIKWM.data.digg_count.toLocaleString('en-US')} · ` +
+      `💬 ${TIKWM.data.comment_count.toLocaleString('en-US')}`,
+  );
+  assert.equal(card.embeds[0]!.fields, undefined, 'no field per number');
   assert.equal(card.embeds[0]!.footer!.text, 'TikTok');
   assert.equal(card.embeds[0]!.timestamp, new Date(TIKWM.data.create_time * 1000).toISOString());
 });

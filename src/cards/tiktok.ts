@@ -7,7 +7,7 @@ import {
   attachMedia,
   playback,
   getJson,
-  statFields,
+  statLine,
   TIKTOK_BLACK,
   toField,
 } from './shared.ts';
@@ -65,18 +65,18 @@ async function buildTikTokCard({ match, href }: CardInput, options: CardOptions)
     ),
     footer: { text: 'TikTok' },
   };
-  if (video.title) embed.description = toField(video.title, 4096);
+  // Same one-line layout as every other card: inline fields stack on a phone.
+  const stats = statLine([
+    ['▶', video.play_count],
+    ['❤️', video.digg_count],
+    ['💬', video.comment_count],
+  ]);
+  const text = [video.title, stats].filter(Boolean).join('\n\n');
+  if (text) embed.description = toField(text, 4096);
   // The cover is the fallback: when the video is attached (or queued as a
   // follow-up) the player shows its own frame.
   if (cover && !playing) embed.image = { url: cover };
   if (video.create_time) embed.timestamp = new Date(video.create_time * 1000).toISOString();
-
-  const fields = statFields([
-    ['Plays', video.play_count],
-    ['Likes', video.digg_count],
-    ['Comments', video.comment_count],
-  ]);
-  if (fields) embed.fields = fields;
 
   return { embeds: [embed], ...playback(played) };
 }

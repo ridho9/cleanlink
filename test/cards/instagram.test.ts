@@ -38,8 +38,8 @@ test('an Instagram photo post is carded from its OpenGraph tags', async () => {
   assert.ok(embed.image!.url.startsWith('https://scontent.cdninstagram.com/'));
   assert.equal(embed.footer!.text, 'Instagram');
 
-  const fields = Object.fromEntries(embed.fields!.map((field) => [field.name, field.value]));
-  assert.deepEqual(fields, { Likes: '1M', Comments: '11K' });
+  assert.ok(embed.description!.endsWith('❤️ 1M · 💬 11K'));
+  assert.equal(embed.fields, undefined, 'no field per number');
   assert.equal(card.followUp, undefined);
 });
 
@@ -66,10 +66,7 @@ test('a carousel yields one embed per image, from Instagram\'s own payload', asy
 
   assert.equal(card.embeds[0].author!.name, 'Event Organizer Padang (@kaluma.organizer)');
   assert.equal(card.embeds[0].author!.url, 'https://www.instagram.com/kaluma.organizer/');
-  assert.deepEqual(
-    card.embeds[0].fields!.map((field) => `${field.name}=${field.value}`),
-    ['Likes=12', 'Comments=0'],
-  );
+  assert.ok(card.embeds[0].description!.endsWith('❤️ 12 · 💬 0'));
   assert.equal(card.embeds[1].author, undefined, 'the rest are images only');
 });
 
@@ -171,8 +168,7 @@ test('behind a login wall, oginstagram gives the text and vxinstagram the other 
   const [card] = await buildCards('https://www.instagram.com/p/DeKG8FGDKX3/', { fetchImpl: impl });
 
   assert.equal(card!.embeds[0]!.author!.name, 'Nil Mısırlıoğlu (@nilsworks)');
-  assert.equal(card!.embeds[0]!.description, 'Best villainess manhwa ever');
-  assert.deepEqual(card!.embeds[0]!.fields!.map((field) => field.value), ['3,578', '47']);
+  assert.equal(card!.embeds[0]!.description, 'Best villainess manhwa ever\n\n❤️ 3,578 · 💬 47');
   // The count comes from oginstagram: vxinstagram repeats its last image past the end.
   assert.deepEqual(card!.embeds.map((embed) => embed.image?.url), [
     PREVIEW,
@@ -205,7 +201,7 @@ test('a reel behind a login wall shows oginstagram\'s still', async () => {
   const [card] = await buildCards('https://www.instagram.com/reel/DfNefQ7kv-r/', { fetchImpl: impl });
 
   assert.equal(card!.embeds.length, 1);
-  assert.equal(card!.embeds[0]!.description, 'Mie ayam date');
+  assert.equal(card!.embeds[0]!.description, 'Mie ayam date\n\n❤️ 1,670 · 💬 14');
   assert.equal(card!.embeds[0]!.image!.url, PREVIEW);
 });
 
@@ -219,7 +215,7 @@ test('when oginstagram fails too, vxinstagram gives the text and one image', asy
 
   assert.equal(card!.embeds.length, 1);
   assert.equal(card!.embeds[0]!.author!.name, 'Nil (@nilsworks)');
-  assert.equal(card!.embeds[0]!.fields, undefined);
+  assert.equal(card!.embeds[0]!.description, 'Best villainess manhwa ever');
   assert.equal(card!.embeds[0]!.image!.url, 'https://vxinstagram.com/offload/DeKG8FGDKX3/0');
 });
 

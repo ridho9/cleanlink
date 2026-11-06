@@ -340,20 +340,23 @@ export function metaContent(html: string, property: string): string | null {
 }
 
 /**
- * The stats block every card ends with.
- * A name/value pair is dropped when its value is not a number.
+ * The stat line every card ends its text with.
+ *
+ * Discord keeps inline fields in a row on the desktop client, but stacks them
+ * one per row on a phone, where four numbers became four rows. One line of icon
+ * and number reads the same at either width. A value that is missing, or is not
+ * a number or a non-empty string, is dropped.
  */
-export function statFields(entries: Array<[string, unknown]>): NonNullable<CardEmbed['fields']> | null {
-  const rows = entries.filter((entry): entry is [string, number] => {
-    const [, value] = entry;
-    return Number.isFinite(value);
-  });
-  if (rows.length === 0) return null;
-  return rows.map(([name, value]) => ({
-    name,
-    value: value.toLocaleString('en-US'),
-    inline: true,
-  }));
+export function statLine(entries: Array<[string, unknown]>): string | null {
+  const parts: string[] = [];
+  for (const [icon, value] of entries) {
+    if (typeof value === 'number') {
+      if (Number.isFinite(value)) parts.push(`${icon} ${value.toLocaleString('en-US')}`);
+    } else if (typeof value === 'string' && value.trim()) {
+      parts.push(`${icon} ${value.trim()}`);
+    }
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 /** Image-only embeds: every image after the first on a card gets one. */

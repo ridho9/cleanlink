@@ -81,10 +81,10 @@ test('a text reply quotes its parent and shows the parent\'s image', async () =>
   assert.equal(embed.author!.icon_url, 'https://cdn.example/troy.jpg');
   assert.equal(
     embed.description,
-    'went blue before Texas did.\n\n> **Replying to Doc Bradley (@doc)**\n> To be fair,\n> it didn\'t happen.',
+    'went blue before Texas did.\n\n> **Replying to Doc Bradley (@doc)**\n> To be fair,\n> it didn\'t happen.\n\n💬 32 · 🔁 29 · ❝ 2 · ❤️ 3,205',
   );
   assert.equal(embed.image!.url, 'https://cdn.example/parent.jpg');
-  assert.deepEqual(embed.fields!.map((field) => `${field.name} ${field.value}`), ['Replies 32', 'Reposts 29', 'Quotes 2', 'Likes 3,205']);
+  assert.equal(embed.fields, undefined, 'no field per number');
   assert.equal(embed.timestamp, new Date(1793913094 * 1000).toISOString());
 });
 

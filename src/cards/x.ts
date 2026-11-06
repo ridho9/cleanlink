@@ -8,7 +8,7 @@ import {
   playback,
   escapeMarkdown,
   getJson,
-  statFields,
+  statLine,
   X_BLUE,
 } from './shared.ts';
 import type { BuiltCard, CardEmbed, CardInput, CardOptions } from './shared.ts';
@@ -79,6 +79,18 @@ async function buildXCard({ match, href }: CardInput, options: CardOptions): Pro
     parts.push(`> **Quoting ${escapeMarkdown(who)}**\n${body}`);
   }
 
+  // One line of icon and number, not four inline fields: Discord keeps the
+  // fields in a row on the desktop client but stacks them one per row on a
+  // phone, which made the card four lines longer there. This line reads the
+  // same at either width, and the mirrors print their counts the same way.
+  const stats = statLine([
+    ['💬', tweet.replies],
+    ['🔁', tweet.retweets],
+    ['❤️', tweet.likes],
+    ['👁', tweet.views],
+  ]);
+  if (stats) parts.push(stats);
+
   const embed: CardEmbed = {
     url: `https://x.com/${author.screen_name ?? handle}/status/${tweet.id ?? id}`,
     color: X_BLUE,
@@ -102,14 +114,6 @@ async function buildXCard({ match, href }: CardInput, options: CardOptions): Pro
   if (tweet.created_timestamp) {
     embed.timestamp = new Date(tweet.created_timestamp * 1000).toISOString();
   }
-
-  const fields = statFields([
-    ['Replies', tweet.replies],
-    ['Retweets', tweet.retweets],
-    ['Likes', tweet.likes],
-    ['Views', tweet.views],
-  ]);
-  if (fields) embed.fields = fields;
 
   // pbs.twimg.com is fetchable by Discord, so extra images cost nothing here.
   const footer = images.length > 1 ? { text: `Twitter · 1/${images.length}` } : embed.footer;

@@ -30,6 +30,7 @@ import {
   INSTAGRAM_PINK,
   servesImage,
   metaContent,
+  statLine,
   toField,
   videoLinks,
 } from './shared.ts';
@@ -107,13 +108,10 @@ export async function buildInstagramCard(
     );
   }
 
-  if (caption.trim()) embed.description = toField(caption.trim(), 4096);
-  if (counts) {
-    embed.fields = [
-      { name: 'Likes', value: counts[1], inline: true },
-      { name: 'Comments', value: counts[2], inline: true },
-    ];
-  }
+  // One line, like every other card: inline fields stack on a phone.
+  const stats = counts && statLine([['❤️', counts[1]], ['💬', counts[2]]]);
+  const text = [caption.trim(), stats].filter(Boolean).join('\n\n');
+  if (text) embed.description = toField(text, 4096);
 
   // Fetched before the frame is chosen: once the player is in the message, the
   // frame only repeats the video's first second.
@@ -244,13 +242,10 @@ async function fromMirrors(shortcode: string, options: CardOptions): Promise<Bui
       { url: handle ? `https://www.instagram.com/${handle}/` : canonical },
     );
   }
-  if (caption.trim()) embed.description = toField(caption.trim(), 4096);
-  if (counts) {
-    embed.fields = [
-      { name: 'Likes', value: counts[2]!, inline: true },
-      { name: 'Comments', value: counts[3]!, inline: true },
-    ];
-  }
+  // One line, like every other card: inline fields stack on a phone.
+  const stats = counts && statLine([['❤️', counts[2]], ['💬', counts[3]]]);
+  const text = [caption.trim(), stats].filter(Boolean).join('\n\n');
+  if (text) embed.description = toField(text, 4096);
 
   // An index past the end repeats the last image, so the count must come
   // from oginstagram; without it, one image is all that is safe. A video item

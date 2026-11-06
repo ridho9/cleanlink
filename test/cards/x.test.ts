@@ -39,14 +39,17 @@ test('X card carries text, author, still, stats and timestamp', async () => {
   // embed image: the player already shows that frame.
   assert.equal(card.embeds[0]!.image, undefined);
   assert.equal(card.embeds[0]!.footer!.text, 'Twitter');
-  assert.deepEqual(
-    card.embeds[0]!.fields!.map((field) => field.name),
-    ['Replies', 'Retweets', 'Likes', 'Views'],
+  // The numbers sit on one line at the end of the text. Four inline fields
+  // became four stacked rows on the phone client, which is what this replaces.
+  assert.ok(
+    card.embeds[0]!.description!.endsWith(
+      `💬 ${X_VIDEO.tweet.replies.toLocaleString('en-US')} · ` +
+      `🔁 ${X_VIDEO.tweet.retweets.toLocaleString('en-US')} · ` +
+      `❤️ ${X_VIDEO.tweet.likes.toLocaleString('en-US')} · ` +
+      `👁 ${X_VIDEO.tweet.views.toLocaleString('en-US')}`,
+    ),
   );
-  assert.equal(
-    card.embeds[0]!.fields!.find((field) => field.name === 'Views')!.value,
-    X_VIDEO.tweet.views.toLocaleString('en-US'),
-  );
+  assert.equal(card.embeds[0]!.fields, undefined, 'no field per number');
   assert.equal(card.embeds[0]!.timestamp, new Date(X_VIDEO.tweet.created_timestamp * 1000).toISOString());
   // The video itself comes with the card, as an attachment: an embed cannot
   // hold one, and Discord plays an attached MP4.
@@ -122,8 +125,11 @@ test('X card for a text-only tweet has no image', async () => {
 
   assert.ok(card);
   assert.equal(card.embeds[0]!.image, undefined);
-  assert.equal(card.embeds[0]!.description, 'just setting up my twttr');
-  assert.deepEqual(card.embeds[0]!.fields!.map((field) => field.name), ['Replies', 'Retweets', 'Likes']);
+  // `views` is null in the fixture, so it is left out of the line.
+  assert.equal(
+    card.embeds[0]!.description,
+    'just setting up my twttr\n\n💬 18,814 · 🔁 125,742 · ❤️ 321,681',
+  );
 });
 
 test('X card quotes a quoted tweet as a blockquote', async () => {
@@ -153,7 +159,9 @@ test('X card escapes markdown in the tweet text', async () => {
   const { impl } = fakeFetch([['https://api.fxtwitter.com/', hostile]]);
   const [card] = await buildCards('https://x.com/jack/status/20', { fetchImpl: impl });
 
-  assert.equal(card!.embeds[0]!.description, '\\_\\_not italic\\_\\_ and <@123456789012345678>');
+  assert.ok(
+    card!.embeds[0]!.description!.startsWith('\\_\\_not italic\\_\\_ and <@123456789012345678>'),
+  );
 });
 
 test('X card gives each photo its own full-size embed', async () => {
