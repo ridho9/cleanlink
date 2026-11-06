@@ -7,7 +7,7 @@ import { logError } from './trace.ts';
 
 // Prefer IPv4 for outbound requests.
 //
-// Measured on bot-host: `api.fxtwitter.com` over IPv6 took 1.01 s to set up
+// Measured on the bot host: `api.fxtwitter.com` over IPv6 took 1.01 s to set up
 // TLS and 3.05 s end to end, against 0.08 s and 0.42 s over IPv4, with an
 // occasional 20 s stall — long enough to blow the 6 s card timeout and lose the
 // card silently. Every other host is unaffected in practice, and a host with

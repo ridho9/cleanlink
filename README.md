@@ -160,7 +160,7 @@ The code enforces these values. `Outcome` and `Marks` in [src/trace.ts](src/trac
 The review reads them back:
 
 ```sh
-mise run review                       # last 24 hours from bot-host
+mise run review                       # last 24 hours from BOT_HOST
 SINCE='3 days ago' mise run review    # any journalctl --since value
 ```
 

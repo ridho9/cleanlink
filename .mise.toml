@@ -24,28 +24,31 @@ run = "pnpm start"
 description = "Run the bot against the development application (.env.dev)"
 run = "pnpm start:dev"
 
-# Both tasks also run on bot-host itself, where ssh to the same machine
-# has no key: there they run the commands directly instead of over ssh.
+# BOT_HOST is the machine that runs the bot, set in the gitignored
+# `mise.local.toml` (see SETUP.md). Both tasks also run on that machine itself,
+# where ssh to the same machine may have no key: there they run the commands
+# directly instead of over ssh.
 [tasks.review]
-description = "Report what the bot handled and what failed (SINCE='24 hours ago', HOST=bot-host)"
+description = "Report what the bot handled and what failed (SINCE='24 hours ago', BOT_HOST from mise.local.toml)"
 run = '''
-host=${HOST:-bot-host}
+host=${BOT_HOST:?set BOT_HOST in mise.local.toml}
 cmd="journalctl --user -u cleanlink --since '${SINCE:-24 hours ago}' -o json --no-pager"
 if [ "$(hostname)" = "$host" ]; then sh -c "$cmd"; else ssh "$host" "$cmd"; fi | node scripts/review.ts
 '''
 
 [tasks.deploy]
-description = "Type-check and test, then install and restart the bot on bot-host (copied over rsync from elsewhere)"
+description = "Type-check and test, then install and restart the bot on BOT_HOST (copied over rsync from elsewhere)"
 depends = ["test"]
 run = '''
 set -e
+host=${BOT_HOST:?set BOT_HOST in mise.local.toml}
 install='cd ~/Project/cleanlink && mise install && mise exec -- pnpm install --frozen-lockfile && systemctl --user restart cleanlink'
-if [ "$(hostname)" = bot-host ]; then
+if [ "$(hostname)" = "$host" ]; then
   # This checkout is what the service runs: nothing to copy.
-  [ "$PWD" = "$HOME/Project/cleanlink" ] || { echo "deploy on bot-host must run from ~/Project/cleanlink" >&2; exit 1; }
+  [ "$PWD" = "$HOME/Project/cleanlink" ] || { echo "deploy on $host must run from ~/Project/cleanlink" >&2; exit 1; }
   sh -c "$install"
 else
-  rsync -az --delete --exclude node_modules --exclude .env ./ bot-host:Project/cleanlink/
-  ssh bot-host "$install"
+  rsync -az --delete --exclude node_modules --exclude .env --exclude mise.local.toml ./ "$host:Project/cleanlink/"
+  ssh "$host" "$install"
 fi
 '''

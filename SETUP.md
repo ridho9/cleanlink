@@ -172,9 +172,10 @@ The host runs Node and pnpm through mise, from the repo's `.mise.toml`, so the N
 First time, from the machine that holds the repo:
 
 ```sh
-rsync -az --delete --exclude node_modules --exclude .env ./ bot-host:Project/cleanlink/
-scp .env bot-host:Project/cleanlink/.env
-ssh bot-host 'chmod 600 ~/Project/cleanlink/.env && cd ~/Project/cleanlink && mise trust && mise install && mise exec -- pnpm install --frozen-lockfile'
+BOT_HOST=my-server   # the ssh name of the machine that runs the bot
+rsync -az --delete --exclude node_modules --exclude .env ./ "$BOT_HOST:Project/cleanlink/"
+scp .env "$BOT_HOST:Project/cleanlink/.env"
+ssh "$BOT_HOST" 'chmod 600 ~/Project/cleanlink/.env && cd ~/Project/cleanlink && mise trust && mise install && mise exec -- pnpm install --frozen-lockfile'
 ```
 
 `mise trust` is needed once: mise does not read settings from a config file it has not been told to trust. Run `mise exec -- node --test` on the host once — it is offline and catches a Node version mismatch before the bot does.
@@ -246,13 +247,22 @@ Environment="PATH=/etc/profiles/per-user/<user>/bin:/run/current-system/sw/bin:/
 
 ### Update
 
-```sh
-mise run deploy   # from your machine, or in ~/Project/cleanlink on bot-host
+Name the bot host once, in `mise.local.toml` at the repo root, on every machine you deploy from. The file is gitignored, so the host name stays out of the repo:
+
+```toml
+[env]
+BOT_HOST = "my-server"   # its ssh name, and its `hostname` on the host itself
 ```
 
-It runs `mise run test` (type-check and tests) first and stops on any failure. Then it runs `pnpm install --frozen-lockfile` and `systemctl --user restart cleanlink` on `bot-host`. From another machine it first copies the tree with `rsync` and runs the rest over `ssh`; on `bot-host` itself it runs them in place, because that checkout is the one the service runs.
+Run `mise trust mise.local.toml` once after you create it. Then:
 
-On `bot-host` the service runs the working tree as it is. Any restart, including a crash or a reboot, starts uncommitted edits. Commit or stash before you leave work in progress there.
+```sh
+mise run deploy   # from your machine, or in ~/Project/cleanlink on the bot host
+```
+
+It runs `mise run test` (type-check and tests) first and stops on any failure. Then it runs `pnpm install --frozen-lockfile` and `systemctl --user restart cleanlink` on the bot host. From another machine it first copies the tree with `rsync` and runs the rest over `ssh`; on the bot host itself it runs them in place, because that checkout is the one the service runs.
+
+On the bot host the service runs the working tree as it is. Any restart, including a crash or a reboot, starts uncommitted edits. Commit or stash before you leave work in progress there.
 
 `rsync --delete` would remove `.env` too, hence the exclude; if you ever lose it, copy it again and `chmod 600`.
 
