@@ -134,7 +134,7 @@ function isVideoPath(href: string): boolean {
   return /\/(?:reel|videos|watch)\b/.test(new URL(href).pathname);
 }
 
-/** Post images: everything on scontent that is not an avatar. */
+/** Post thumbnails from the grid: everything on scontent that is not an avatar. */
 function mediaImages(html: string): string[] {
   return [
     ...new Set(
@@ -145,6 +145,52 @@ function mediaImages(html: string): string[] {
         .filter((url) => !url.includes('s40x40') && !url.includes('/t39.30808-1/')),
     ),
   ];
+}
+
+/**
+ * The post's pictures at the size they were uploaded.
+ *
+ * The grid is built from `s394x394` thumbnails, but the same page repeats every
+ * picture in a JSON-LD block with its original dimensions and a URL that
+ * carries no size transform. Reading it costs no extra request.
+ */
+function jsonLdImages(html: string): string[] {
+  const images: string[] = [];
+  for (const block of html.matchAll(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)) {
+    let data: { image?: unknown };
+    try {
+      data = JSON.parse(block[1]) as { image?: unknown };
+    } catch {
+      continue;
+    }
+    for (const image of [data.image].flat()) {
+      const url = (image as { contentUrl?: unknown } | null)?.contentUrl;
+      if (typeof url === 'string' && /^https:\/\/scontent[./]/.test(url)) images.push(url);
+    }
+  }
+  return [...new Set(images)];
+}
+
+/**
+ * The post's pictures in post order: the full picture where the page names one,
+ * the thumbnail where it does not.
+ *
+ * Only the single-post iframe is read this way. A page-feed widget can carry a
+ * JSON-LD block for a different post in the feed, so `feedCard` keeps its own
+ * grid thumbnails.
+ */
+function postImages(html: string): string[] {
+  const thumbnails = mediaImages(html);
+  const full = jsonLdImages(html);
+  if (full.length === 0) return thumbnails;
+
+  // The uploader's file name is the one part every rendition shares.
+  const file = /\/v\/[^/]+\/([^/?]+)/;
+  const byKey = new Map(full.map((url) => [file.exec(url)?.[1], url] as [string | undefined, string]));
+  const upgraded = thumbnails.map(
+    (thumbnail) => byKey.get(file.exec(thumbnail)?.[1] ?? '') ?? thumbnail,
+  );
+  return [...new Set([...upgraded, ...full])];
 }
 
 async function fromEmbedPage({ match, href }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
@@ -221,7 +267,7 @@ async function fromEmbedPage({ match, href }: CardInput, options: CardOptions): 
       /href="\/?([\w.-]+)\/posts\//.exec(page.html)?.[1] ||
       new URL(href).pathname.split('/')[1];
 
-    const images = mediaImages(page.html);
+    const images = postImages(page.html);
 
     const footer = { text: 'Facebook' };
     const embed: CardEmbed = {

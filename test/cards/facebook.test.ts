@@ -5,9 +5,14 @@ import { buildCards } from '../../src/cards/index.ts';
 import { fakeFetch, fixtureText } from '../../test-support/harness.ts';
 
 const FACEBOOK_HTML = fixtureText('facebook-post.html');
+const FACEBOOK_ALBUM = fixtureText('facebook-album.html');
 const FACEBOOK_REEL = fixtureText('facebook-reel.html');
 const FACEBOOK_FEED = fixtureText('facebook-feed.html');
 const FACEBOOK_BLOCKED = fixtureText('facebook-video-blocked.html');
+
+// The JSON-LD renditions in facebook-album.html, as the card should embed them.
+const ALBUM_PHOTO_1 = 'https://scontent.fpku7-1.fna.fbcdn.net/v/t39.30808-6/863298455_28850503304591533_3686722848884984021_n.jpg?_nc_cat=101&_nc_sid=833d8c&_nc_ht=scontent.fpku7-1.fna&oh=00_AQQYpXiG5Z9ZzdALD2SXFtDugj3rKo8O-ahc5V7c3lhVeA&oe=6AF36778';
+const ALBUM_PHOTO_2 = 'https://scontent.fpku7-1.fna.fbcdn.net/v/t39.30808-6/873215052_28850490787926118_1536482922424730194_n.jpg?_nc_cat=100&_nc_sid=833d8c&_nc_ht=scontent.fpku7-1.fna&oh=00_AQT4ByCDlIsADPlEYuIBe7ZPuQ2LLwM0CS0LsW7Vu8lbQA&oe=6AF35D4D';
 
 test('Facebook card reads the public embed iframe, not the login-walled page', async () => {
   const { impl, calls } = fakeFetch([['https://www.facebook.com/plugins/post.php', FACEBOOK_HTML]]);
@@ -27,6 +32,25 @@ test('Facebook card reads the public embed iframe, not the login-walled page', a
   assert.ok(card.embeds[0].image!.url.startsWith('https://scontent'));
   assert.ok(!card.embeds[0].image!.url.includes('s40x40'), 'the avatar is not the post image');
   assert.equal(card.embeds[0].footer!.text, 'Facebook');
+});
+
+test('Facebook card embeds the uploaded picture, not the grid thumbnail', async () => {
+  const { impl, calls } = fakeFetch([['https://www.facebook.com/plugins/post.php', FACEBOOK_ALBUM]]);
+  const [card] = await buildCards(
+    'https://www.facebook.com/100001757423714/posts/28850498077925389/',
+    { fetchImpl: impl },
+  );
+
+  assert.ok(card);
+  // One request: the full-size URLs are already in the iframe's JSON-LD blocks,
+  // which the grid thumbnails cannot give (they are 394x394 renditions).
+  assert.equal(calls.length, 1);
+  assert.equal(card.embeds.length, 2);
+  assert.equal(card.embeds[0].image!.url, ALBUM_PHOTO_1);
+  assert.equal(card.embeds[1].image!.url, ALBUM_PHOTO_2);
+  for (const embed of card.embeds) {
+    assert.ok(!embed.image!.url.includes('stp='), 'no size transform on the embedded picture');
+  }
 });
 
 test('Facebook card reads a reel and a watch link, and ignores UI labels', async () => {
