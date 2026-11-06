@@ -255,13 +255,17 @@ export async function downloadMedia(urls: string | string[], options: CardOption
       note(`[card] ${new URL(url).host} media failed: ${(error as Error).message}`);
       continue;
     }
+    // A skipped body is cancelled: left unread, it holds the connection open
+    // until the media timeout. Not awaited, as in readCapped.
     if (!res.ok) {
+      res.body?.cancel().catch(() => {});
       note(`[card] ${new URL(url).host} media answered ${res.status}`);
       continue;
     }
 
     const declared = Number(res.headers.get('content-length') ?? 0);
     if (declared > cap) {
+      res.body?.cancel().catch(() => {});
       note(`[card] ${new URL(url).host} media is ${Math.round(declared / 1024)}KB, over the budget`);
       refused.push({ url, size: declared });
       continue;

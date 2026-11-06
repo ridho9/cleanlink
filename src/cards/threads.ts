@@ -161,7 +161,8 @@ function contextBlock(label: string, user: ThreadsUser | null | undefined, post:
 /** The video renditions of a single-video post, best first. Carousels give poster frames only. */
 function videoUrls(post: ThreadsPost): string[] | null {
   if (post.carousel_media?.length) return null;
-  const urls = (post.video_versions ?? []).map((item) => item.url).filter((url): url is string => Boolean(url));
+  // Threads often lists the same URL under several rendition types.
+  const urls = [...new Set((post.video_versions ?? []).map((item) => item.url).filter((url): url is string => Boolean(url)))];
   return urls.length > 0 ? urls : null;
 }
 
