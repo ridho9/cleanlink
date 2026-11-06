@@ -2,6 +2,8 @@
 
 Discord bot that strips trackers from share links and builds preview cards. `README.md` is the full reference.
 
+The bot runs from this checkout on `bot-host`. Check `hostname` first: on that machine, run commands for `bot-host` directly, not over `ssh` (it has no key for itself). `mise run review` and `mise run deploy` handle both cases.
+
 ## Daily review
 
 When the user asks for the daily review:

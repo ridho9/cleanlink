@@ -247,10 +247,12 @@ Environment="PATH=/etc/profiles/per-user/<user>/bin:/run/current-system/sw/bin:/
 ### Update
 
 ```sh
-mise run deploy   # from your machine
+mise run deploy   # from your machine, or in ~/Project/cleanlink on bot-host
 ```
 
-It runs `mise run test` (type-check and tests) first and stops on any failure. Then it runs `rsync`, `pnpm install --frozen-lockfile` and `systemctl --user restart cleanlink` on `bot-host`.
+It runs `mise run test` (type-check and tests) first and stops on any failure. Then it runs `pnpm install --frozen-lockfile` and `systemctl --user restart cleanlink` on `bot-host`. From another machine it first copies the tree with `rsync` and runs the rest over `ssh`; on `bot-host` itself it runs them in place, because that checkout is the one the service runs.
+
+On `bot-host` the service runs the working tree as it is. Any restart, including a crash or a reboot, starts uncommitted edits. Commit or stash before you leave work in progress there.
 
 `rsync --delete` would remove `.env` too, hence the exclude; if you ever lose it, copy it again and `chmod 600`.
 
