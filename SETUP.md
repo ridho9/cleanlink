@@ -169,29 +169,32 @@ Manual `mise run start` is fine while you are at the keyboard. For a server, run
 
 The host runs Node and pnpm through mise, from the repo's `.mise.toml`, so the NixOS config does not pin the bot's runtime. mise comes from home-manager. `.mise.toml` sets `node.compile = false`: on NixOS mise compiles every tool from source by default, and the prebuilt Node runs because the host has nix-ld.
 
-First time, from the machine that holds the repo:
+The service runs `~/.local/share/cleanlink`: a git worktree that holds one deployed commit and is never edited. Development happens in a normal clone, `~/Project/cleanlink`, so a crash restart or a reboot never starts unfinished work.
+
+First time, on the host:
 
 ```sh
-BOT_HOST=my-server   # the ssh name of the machine that runs the bot
-rsync -az --delete --exclude node_modules --exclude .env ./ "$BOT_HOST:Project/cleanlink/"
-scp .env "$BOT_HOST:Project/cleanlink/.env"
-ssh "$BOT_HOST" 'chmod 600 ~/Project/cleanlink/.env && cd ~/Project/cleanlink && mise trust && mise install && mise exec -- pnpm install --frozen-lockfile'
+git clone git@github.com:ridho9/cleanlink.git ~/Project/cleanlink
+cd ~/Project/cleanlink
+git worktree add --detach ~/.local/share/cleanlink HEAD
+install -m 600 /path/to/.env ~/.local/share/cleanlink/.env
+cd ~/.local/share/cleanlink && mise trust && mise install && mise exec -- pnpm install --frozen-lockfile
 ```
 
-`mise trust` is needed once: mise does not read settings from a config file it has not been told to trust. Run `mise exec -- node --test` on the host once — it is offline and catches a Node version mismatch before the bot does.
+`mise trust` is needed once: mise does not read settings from a config file it has not been told to trust. Run `mise exec -- node --test` in the worktree once — it is offline and catches a Node version mismatch before the bot does.
+
+The worktree belongs to the clone in `~/Project/cleanlink`. Do not delete or move that clone; `git worktree list` shows the link.
 
 ### Unit (`~/.config/systemd/user/cleanlink.service`)
 
 ```ini
 [Unit]
 Description=cleanlink Discord bot
-After=network-online.target
-Wants=network-online.target
 StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-WorkingDirectory=%h/Project/cleanlink
+WorkingDirectory=%h/.local/share/cleanlink
 ExecStart=/etc/profiles/per-user/<user>/bin/mise exec -- node --env-file-if-exists=.env src/bot.ts
 Restart=always
 RestartSec=5
@@ -204,6 +207,8 @@ WantedBy=default.target
 ```
 
 `mise exec` picks the Node version from `.mise.toml` in `WorkingDirectory`, so a Node upgrade is a change to the repo, not to the unit. `node` reads `.env` itself, so the token is parsed in exactly one place and never appears in a unit file or in `systemctl show`. The file is `600`.
+
+The unit has no `After=network-online.target`: that target does not exist in the user manager, so the line did nothing. `Restart=always` covers a start before the network is up.
 
 ### Enable
 
@@ -257,14 +262,13 @@ BOT_HOST = "my-server"   # its ssh name, and its `hostname` on the host itself
 Run `mise trust mise.local.toml` once after you create it. Then:
 
 ```sh
-mise run deploy   # from your machine, or in ~/Project/cleanlink on the bot host
+mise run deploy               # deploy HEAD
+SHA=<commit> mise run rollback   # run an earlier commit, without tests
 ```
 
-It runs `mise run test` (type-check and tests) first and stops on any failure. Then it runs `pnpm install --frozen-lockfile` and `systemctl --user restart cleanlink` on the bot host. From another machine it first copies the tree with `rsync` and runs the rest over `ssh`; on the bot host itself it runs them in place, because that checkout is the one the service runs.
+`deploy` stops if the tree has uncommitted changes. From another machine it also stops until HEAD is pushed, because the host fetches the commit from `origin`. Then it runs `mise run test` (type-check and tests) and stops on any failure. Last, on the bot host (directly, or over `ssh` from elsewhere), it checks the commit out in `~/.local/share/cleanlink`, runs `pnpm install --frozen-lockfile`, restarts the service, and prints the deployed commit.
 
-On the bot host the service runs the working tree as it is. Any restart, including a crash or a reboot, starts uncommitted edits. Commit or stash before you leave work in progress there.
-
-`rsync --delete` would remove `.env` too, hence the exclude; if you ever lose it, copy it again and `chmod 600`.
+`git -C ~/.local/share/cleanlink log --oneline -1` shows what runs. `.env` lives only in the worktree and is untracked, so a checkout never touches it.
 
 ### Declarative alternative
 
@@ -279,7 +283,7 @@ systemd.services.cleanlink = {
   serviceConfig = {
     Type = "simple";
     User = "<user>";
-    WorkingDirectory = "/home/<user>/Project/cleanlink";
+    WorkingDirectory = "/home/<user>/.local/share/cleanlink";
     ExecStart = "${pkgs.nodejs_26}/bin/node --env-file-if-exists=.env src/bot.ts";
     Restart = "always";
     RestartSec = 5;

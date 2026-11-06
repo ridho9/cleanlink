@@ -25,7 +25,7 @@ description = "Run the bot against the development application (.env.dev)"
 run = "pnpm start:dev"
 
 # BOT_HOST is the machine that runs the bot, set in the gitignored
-# `mise.local.toml` (see SETUP.md). Both tasks also run on that machine itself,
+# `mise.local.toml` (see SETUP.md). These tasks also run on that machine itself,
 # where ssh to the same machine may have no key: there they run the commands
 # directly instead of over ssh.
 [tasks.review]
@@ -36,19 +36,33 @@ cmd="journalctl --user -u cleanlink --since '${SINCE:-24 hours ago}' -o json --n
 if [ "$(hostname)" = "$host" ]; then sh -c "$cmd"; else ssh "$host" "$cmd"; fi | node scripts/review.ts
 '''
 
+# The service runs ~/.local/share/cleanlink, a git worktree that holds one
+# commit and is never edited. Deploying moves it to the commit you have tested.
 [tasks.deploy]
-description = "Type-check and test, then install and restart the bot on BOT_HOST (copied over rsync from elsewhere)"
-depends = ["test"]
+description = "Deploy HEAD: needs a clean tree (and HEAD pushed, from another machine), then tests, then activate"
 run = '''
 set -e
 host=${BOT_HOST:?set BOT_HOST in mise.local.toml}
-install='cd ~/Project/cleanlink && mise install && mise exec -- pnpm install --frozen-lockfile && systemctl --user restart cleanlink'
-if [ "$(hostname)" = "$host" ]; then
-  # This checkout is what the service runs: nothing to copy.
-  [ "$PWD" = "$HOME/Project/cleanlink" ] || { echo "deploy on $host must run from ~/Project/cleanlink" >&2; exit 1; }
-  sh -c "$install"
-else
-  rsync -az --delete --exclude node_modules --exclude .env --exclude mise.local.toml ./ "$host:Project/cleanlink/"
-  ssh "$host" "$install"
+[ -z "$(git status --porcelain)" ] || { echo "uncommitted changes: commit or stash first" >&2; exit 1; }
+sha=$(git rev-parse HEAD)
+if [ "$(hostname)" != "$host" ] && [ -z "$(git branch -r --contains "$sha")" ]; then
+  echo "$sha is not on the remote: push it first" >&2; exit 1
 fi
+mise run test
+SHA=$sha mise run activate
+'''
+
+[tasks.rollback]
+description = "Run an earlier commit on BOT_HOST, without tests (SHA=<commit>)"
+run = 'SHA=${SHA:?usage: SHA=<commit> mise run rollback} mise run activate'
+
+[tasks.activate]
+description = "Check out SHA in the deploy worktree on BOT_HOST, install, and restart the bot"
+hide = true
+run = '''
+set -e
+host=${BOT_HOST:?set BOT_HOST in mise.local.toml}
+sha=${SHA:?SHA is required}
+step="cd ~/.local/share/cleanlink && { git cat-file -e '$sha^{commit}' 2>/dev/null || git fetch -q origin; } && git checkout -q --detach '$sha' && mise install -q && mise exec -- pnpm install --frozen-lockfile && systemctl --user restart cleanlink && echo \"deployed \$(git log --oneline -1)\""
+if [ "$(hostname)" = "$host" ]; then sh -c "$step"; else ssh "$host" "$step"; fi
 '''
