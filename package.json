@@ -2,6 +2,7 @@
   "name": "cleanlink",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@11.28.8",
   "description": "Discord bot that replies in DMs with tracker-free versions of share links.",
