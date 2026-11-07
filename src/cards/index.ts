@@ -86,6 +86,8 @@ const CARD_SITES: CardSite[] = [
     // Permalinks, reels and watch links all answer on the embed endpoint.
     // A /share/ link resolves into one of these before the card is built.
     match: (url) =>
+      // A public group post: /groups/<slug>/permalink/<id> or /posts/<id>.
+      /^\/groups\/[^/]+\/(?:permalink|posts)\/(\d{6,})/.exec(url.pathname) ??
       /^\/[^/]+\/posts\/([0-9]{6,}|pfbid[0-9A-Za-z]{10,})/.exec(url.pathname) ??
       /^\/reel\/(\d{6,})/.exec(url.pathname) ??
       /^\/[^/]+\/videos\/(\d{6,})/.exec(url.pathname) ??

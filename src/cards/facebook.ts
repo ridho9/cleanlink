@@ -391,7 +391,48 @@ async function facebedPage(href: string, options: CardOptions) {
   return { page, mirror, embed };
 }
 
+/**
+ * A group post. The embed iframe refuses these ("Unavailable"), but the group
+ * post page answers a plain browser request with the post's tags - the login
+ * wall covers a page's posts, not a public group's. Measured 2026-11-07:
+ * `og:title` is the post text plus " | Facebook", `og:description` is the text
+ * alone, and the `<title>` is "<group> | <post text>".
+ */
+async function fromGroupPage(href: string, options: CardOptions): Promise<BuiltCard | null> {
+  const page = await getHtml(href, options);
+  if (!page) return null;
+
+  const name = metaContent(page.html, 'og:title');
+  const text = metaContent(page.html, 'og:description');
+  // The wall has no description, and its title is just "Facebook".
+  if (!name || !text || /^Facebook$/.test(name)) return null;
+
+  const group = /^(.+?) \| /.exec(/<title>([^<]*)<\/title>/i.exec(page.html)?.[1] ?? '')?.[1] ?? null;
+  const slug = /^\/groups\/([^/]+)\//.exec(new URL(href).pathname)?.[1];
+  const embed: CardEmbed = {
+    url: href,
+    color: FACEBOOK_BLUE,
+    footer: { text: 'Facebook' },
+    description: toField(text, 4096),
+  };
+  if (group) {
+    embed.author = authorBlock(decodeEntities(group), null, {
+      url: slug && `https://www.facebook.com/groups/${slug}/`,
+    });
+  }
+  const image = metaContent(page.html, 'og:image');
+  if (image) embed.image = { url: image };
+  return { embeds: [embed], files: [] };
+}
+
 async function buildFacebookCard(input: CardInput, options: CardOptions): Promise<BuiltCard | null> {
+  // A group post is the one layout the embed iframe never answers: it says
+  // "Unavailable" for every public group post. The page itself does answer.
+  if (/^\/groups\//.test(new URL(input.href).pathname)) {
+    const group = await fromGroupPage(input.href, options);
+    if (hasContent(group)) return group;
+  }
+
   const card = await fromEmbedPage(input, options);
 
   // A player in the message beats any mirror: one message, no unfurl needed.

@@ -289,3 +289,33 @@ test('Facebook card is skipped for a post that forbids embedding', async () => {
   });
   assert.deepEqual(cards, []);
 });
+
+test('Facebook card reads a public group post from the page itself', async () => {
+  const GROUP_HTML = fixtureText('facebook-group.html');
+  const url = 'https://www.facebook.com/groups/gocarbandungdriver/permalink/2394478257624763/';
+  // The iframe says "Unavailable" for a group post, so it is never asked.
+  const { impl, calls } = fakeFetch([[url, GROUP_HTML]]);
+  const [card] = await buildCards(url, { fetchImpl: impl });
+
+  assert.ok(card);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, url);
+  const embed = card.embeds[0];
+  assert.equal(embed.author!.name, 'GOCAR BANDUNG DRIVER');
+  assert.equal(embed.author!.url, 'https://www.facebook.com/groups/gocarbandungdriver/');
+  assert.equal(embed.description, 'Naon eta eui di mekarwangi. Meni edan gitu🤣');
+  assert.ok(embed.image!.url.startsWith('https://scontent.'));
+  assert.equal(embed.footer!.text, 'Facebook');
+});
+
+test('Facebook card matches a group post by permalink or by posts path', async () => {
+  const GROUP_HTML = fixtureText('facebook-group.html');
+  for (const url of [
+    'https://www.facebook.com/groups/gocarbandungdriver/permalink/2394478257624763/',
+    'https://www.facebook.com/groups/gocarbandungdriver/posts/2394478257624763/',
+  ]) {
+    const { impl } = fakeFetch([[url, GROUP_HTML]]);
+    const [card] = await buildCards(url, { fetchImpl: impl });
+    assert.ok(card, url);
+  }
+});
