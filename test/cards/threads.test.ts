@@ -132,10 +132,21 @@ test('a reply\'s carousel on the same page is not used for the post', async () =
   assert.equal(card!.embeds[0]!.image, undefined);
 });
 
-test('Threads card is skipped when the page has no description', async () => {
-  const { impl } = fakeFetch([['https://www.threads.com/', '<html><head></head></html>']]);
-  const cards = await buildCards('https://www.threads.com/@phodhipo/post/DfPOscPD6UR', {
+test('Threads card says so when the page carries no post', async () => {
+  // What Threads serves for a deleted post, or one limited to some audiences.
+  const { impl } = fakeFetch([['https://www.threads.com/', '<html><head><title>Threads</title></head></html>']]);
+  const [card] = await buildCards('https://www.threads.com/@phodhipo/post/DfPOscPD6UR', {
     fetchImpl: impl,
   });
-  assert.deepEqual(cards, []);
+
+  const embed = card!.embeds[0]!;
+  assert.equal(embed.title, 'Post not available');
+  assert.equal(embed.url, 'https://www.threads.com/@phodhipo/post/DfPOscPD6UR');
+  assert.equal(embed.description, 'Deleted, or limited to some audiences.');
+  assert.equal(embed.footer!.text, 'Threads');
+});
+
+test('Threads card stays silent when the fetch itself fails', async () => {
+  const { impl } = fakeFetch([]);
+  assert.deepEqual(await buildCards('https://www.threads.com/@phodhipo/post/DfPOscPD6UR', { fetchImpl: impl }), []);
 });

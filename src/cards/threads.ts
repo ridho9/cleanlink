@@ -60,7 +60,9 @@ async function buildThreadsCard({ match, href }: CardInput, options: CardOptions
   const code = match[2];
   const found = code ? findThread(page.html, code) : null;
   if (found) return postCard(found.post, found.parent, href, options);
-  return ogCard(page.html, href);
+  // A page that answered but holds no post is a post we cannot see, not a
+  // failed fetch; the reader is told which.
+  return ogCard(page.html, href) ?? unavailableCard(href);
 }
 
 /** The card built from the post's JSON, laid out like the X card. */
@@ -143,6 +145,27 @@ function ogCard(html: string, href: string): BuiltCard | null {
     else embed.image = { url: image };
   }
   return { embeds: [embed], files: [] };
+}
+
+/**
+ * The page loaded but carried no post: no JSON block and no `og:description`.
+ * Threads answers this way for a deleted post and for one limited to a smaller
+ * audience ("This content isn't available to everyone" - verified 2026-11-08).
+ * Saying so beats a blank reply, and the reader learns why there is no card.
+ */
+function unavailableCard(href: string): BuiltCard {
+  return {
+    embeds: [
+      {
+        url: href,
+        color: THREADS_BLACK,
+        title: 'Post not available',
+        description: 'Deleted, or limited to some audiences.',
+        footer: { text: 'Threads' },
+      },
+    ],
+    files: [],
+  };
 }
 
 /** `Name (@handle)`, with whichever of the two exists. */
