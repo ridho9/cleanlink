@@ -1,14 +1,17 @@
 // Reddit: the post page answers a bare "Mozilla/5.0" with 403, and the JSON
 // endpoints answer an anonymous reader with 403 too. The Atom feed of the post
 // does answer: title, author, preview picture and the outbound media link. A
-// video post's link is v.redd.it, whose HLS playlist is the only anonymous
-// rendition (the DASH mp4 files answer 403).
+// gallery post names only its gallery page there, which the embed view renders
+// in full. A video post's link is v.redd.it, whose HLS playlist is the only
+// anonymous rendition (the DASH mp4 files answer 403).
 
 import {
   authorBlock,
   decodeEntities,
   downloadVideo,
   getHtml,
+  imageEmbeds,
+  MAX_EMBEDS,
   toField,
   REDDIT_ORANGE,
 } from './shared.ts';
@@ -26,7 +29,55 @@ type RedditPost = {
   author: string | null;
   picture: string | null;
   media: string | null;
+  gallery: string | null;
 };
+
+/** The width a preview URL asks Reddit for; the widest one is the biggest copy. */
+function previewWidth(url: string): number {
+  return Number(/[?&]width=(\d+)/.exec(url)?.[1] ?? 0);
+}
+
+/**
+ * The uploaded file behind a gallery preview.
+ *
+ * A gallery picture is served from `preview.redd.it/<slug>-v0-<media>.<ext>`
+ * with a signature in the query, while the same media id answers unsigned on
+ * `i.redd.it`. The original keeps its own size; the preview is the 1080 px
+ * rendition.
+ */
+function originalPicture(preview: string): string | null {
+  const media = /-v0-([a-z0-9]+)\.(jpe?g|png|gif|webp)$/i.exec(new URL(preview).pathname);
+  return media ? `https://i.redd.it/${media[1]}.${media[2]}` : null;
+}
+
+/**
+ * Gallery pictures, in the order the post shows them.
+ *
+ * The post page is a login wall, but the embed view renders every page of a
+ * gallery: one `<li slot="page-N">` per picture, each carrying its own preview
+ * set. The page's first preview names the picture; the widest preview of that
+ * same media id is the largest copy the page offers.
+ */
+function galleryPictures(html: string): string[] {
+  const previews = [...html.matchAll(/https:\/\/preview\.redd\.it\/[^"\\ <]+/g)]
+    .map((match) => decodeEntities(match[0]));
+  const starts = [...html.matchAll(/<li slot="page-(\d+)"/g)]
+    .map((match) => ({ page: Number(match[1]), at: match.index ?? 0 }))
+    .sort((a, b) => a.page - b.page);
+
+  const pictures: string[] = [];
+  for (const [index, { at }] of starts.entries()) {
+    const page = html.slice(at, starts[index + 1]?.at ?? html.length);
+    const media = /-v0-([a-z0-9]+)\./.exec(/https:\/\/preview\.redd\.it\/[^"\\ <]+/.exec(page)?.[0] ?? '')?.[1];
+    if (!media) continue;
+    const widest = previews
+      .filter((url) => url.includes(`-v0-${media}.`))
+      .reduce((best, url) => (previewWidth(url) > previewWidth(best) ? url : best), '');
+    const picture = widest ? originalPicture(widest) : null;
+    if (picture && !pictures.includes(picture)) pictures.push(picture);
+  }
+  return pictures;
+}
 
 /**
  * The one entry of a post's Atom feed.
@@ -52,8 +103,11 @@ function feedEntry(xml: string): RedditPost | null {
       .map((match) => decodeEntities(match[1]))
       .find((href) => /^https?:\/\/(?:[a-z0-9-]+\.)*redd\.it\//i.test(href)) ?? null;
 
+  // A gallery post links its gallery page instead of a file.
+  const gallery = /\/gallery\/([a-z0-9]+)/i.exec(entry)?.[1] ?? null;
+
   if (!title && !picture && !media) return null;
-  return { title, author, picture, media };
+  return { title, author, picture, media, gallery };
 }
 
 async function buildRedditCard({ match, href }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
@@ -69,6 +123,18 @@ async function buildRedditCard({ match, href }: CardInput, options: CardOptions)
   const post = feedEntry(page.html);
   if (!post) return null;
 
+  // A gallery post links its gallery page, which an anonymous reader cannot
+  // open; the embed view renders every page of it. A picture inside the gallery
+  // keeps its own size, so the card shows the whole set.
+  const pictures = post.gallery
+    ? galleryPictures(
+      (await getHtml(`https://embed.reddit.com${url.pathname}`, {
+        ...options,
+        headers: { 'user-agent': REDDIT_UA },
+      }))?.html ?? '',
+    ).slice(0, MAX_EMBEDS)
+    : [];
+
   // A video post links v.redd.it; its HLS playlist is what an anonymous reader
   // may fetch. A picture post links i.redd.it, which is the picture itself.
   const videoId = /^https?:\/\/v\.redd\.it\/([A-Za-z0-9]+)/i.exec(post.media ?? '')?.[1] ?? null;
@@ -76,7 +142,9 @@ async function buildRedditCard({ match, href }: CardInput, options: CardOptions)
     ? await downloadVideo(`https://v.redd.it/${videoId}/HLSPlaylist.m3u8`, options, REDDIT_FORMAT)
     : null;
 
-  const image = files ? null : (/^https?:\/\/i\.redd\.it\//i.test(post.media ?? '') ? post.media : post.picture);
+  const image = files
+    ? null
+    : pictures[0] ?? (/^https?:\/\/i\.redd\.it\//i.test(post.media ?? '') ? post.media : post.picture);
   const where = [subreddit && `r/${subreddit}`, post.author && `u/${post.author}`].filter(Boolean).join(' · ');
 
   const embed: CardEmbed = {
@@ -91,7 +159,8 @@ async function buildRedditCard({ match, href }: CardInput, options: CardOptions)
   // The attached player brings its own frame, so the preview picture stays out.
   if (image) embed.image = { url: image };
 
-  return { embeds: [embed], files: files ?? [], ...(files ? { video: 'attached' as const } : {}) };
+  const embeds = [embed, ...imageEmbeds(href, REDDIT_ORANGE, embed.footer, pictures.slice(1))];
+  return { embeds, files: files ?? [], ...(files ? { video: 'attached' as const } : {}) };
 }
 
 export { buildRedditCard };
