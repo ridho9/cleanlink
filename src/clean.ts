@@ -19,7 +19,7 @@ export interface CleanOptions {
 }
 
 const URL_RE = /https?:\/\/[^\s<>"'`]+/gi;
-const TRAILING_PUNCTUATION = /[.,;:!?)\]}>]+$/;
+const TRAILING_PUNCTUATION = /[.,;:!?)\]}>|]+$/;
 
 const MAX_LINKS = 5;
 const MAX_HOPS = 3;

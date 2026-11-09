@@ -26,6 +26,10 @@ test('extractUrls finds links and trims trailing punctuation', () => {
     'https://youtu.be/abc?si=1',
   ]);
   assert.deepEqual(extractUrls('<https://youtu.be/abc>'), ['https://youtu.be/abc']);
+  // Discord's spoiler markup wraps a link in `||`, and the pipes are not part
+  // of it: a key with them answered "Unavailable" (2026-11-08).
+  assert.deepEqual(extractUrls('||https://youtu.be/abc||'), ['https://youtu.be/abc']);
+  assert.deepEqual(extractUrls('https://youtu.be/abc||'), ['https://youtu.be/abc']);
   assert.deepEqual(extractUrls('no links here'), []);
   assert.deepEqual(extractUrls(undefined), []);
 });
