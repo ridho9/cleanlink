@@ -319,3 +319,27 @@ test('Facebook card matches a group post by permalink or by posts path', async (
     assert.ok(card, url);
   }
 });
+
+test('a single cut-down rendition is replaced by the upload', async () => {
+  // What a story.php post answers: text in the iframe, one picture at 370x247,
+  // and the upload named only on the page a crawler gets, behind a `ctp` crop.
+  const story = 'https://www.facebook.com/story.php?story_fbid=1150625327544212&id=100077902655783';
+  const iframe = `<div data-testid="post_message"><div>Zeta</div></div>
+    <img src="https://scontent.fpku7-1.fna.fbcdn.net/v/t39.30808-1/891898329_1_n.jpg?stp=dst-jpg_s40x40_tt6" alt="" aria-label="Kang Aldi" role="img" />
+    <img src="https://scontent.fpku7-1.fna.fbcdn.net/v/t39.30808-6/895552032_2_n.jpg?stp=dst-jpg_p370x247_tt6&amp;oh=abc&amp;oe=6AF75D70" />`;
+  const crawler = `<meta property="og:image" content="https://scontent.fpku7-1.fna.fbcdn.net/v/t39.30808-6/895552032_2_n.jpg?stp=dst-jpg_tt6&amp;cstp=mx1523x2048&amp;ctp=p600x600&amp;_nc_ht=scontent.fpku7-1.fna&amp;oh=def" />`;
+
+  const { impl, calls } = fakeFetch([
+    ['https://www.facebook.com/plugins/post.php', iframe],
+    [story, crawler],
+  ]);
+  const [card] = await buildCards(story, { fetchImpl: impl });
+
+  assert.equal(calls.length, 2, 'the iframe, then the post page for the upload');
+  assert.equal(calls[1]!.headers['user-agent'], 'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)');
+  const image = new URL(card!.embeds[0]!.image!.url);
+  assert.ok(!image.searchParams.has('ctp'), 'the crop parameter is gone');
+  assert.equal(image.searchParams.get('cstp'), 'mx1523x2048', 'the original size is kept');
+  // A story.php address names no handle; the owner's id does.
+  assert.equal(card!.embeds[0]!.author!.url, 'https://www.facebook.com/profile.php?id=100077902655783');
+});

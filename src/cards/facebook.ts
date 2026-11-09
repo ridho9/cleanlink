@@ -92,6 +92,33 @@ function feedCard(html: string, match: CardInput['match'], href: string): BuiltC
   };
 }
 
+/** A rendition small enough that a larger one is worth a second request. */
+const SMALL_RENDITION = /[?&]stp=dst-jpg_[ps]\d{1,3}x/;
+
+/**
+ * The post picture at the size it was uploaded.
+ *
+ * A link crawler is the only reader Facebook shows a post page to, and its
+ * `og:image` is the upload, still behind a `ctp` crop parameter. Dropping that
+ * parameter from the signed URL returns the file itself (measured 2026-11-09
+ * on a `story.php` post: 600x807 with it, 1523x2048 without).
+ */
+async function fullSizePicture(href: string, options: CardOptions): Promise<string | null> {
+  const page = await getHtml(href, {
+    ...options,
+    headers: { 'user-agent': UNFURL_UA },
+  });
+  if (!page) return null;
+
+  const image = metaContent(page.html, 'og:image');
+  // Both are the page's profile picture, not the post's own.
+  if (!image || image.includes('s40x40') || image.includes('t39.30808-1')) return null;
+
+  const url = new URL(image);
+  url.searchParams.delete('ctp');
+  return url.href;
+}
+
 /**
  * The layout Facebook returns for a video it will not play without a session.
  *
@@ -262,12 +289,29 @@ async function fromEmbedPage({ match, href }: CardInput, options: CardOptions): 
     );
     const name = avatar ? /aria-label="([^"]+)"/.exec(avatar[0])?.[1] : null;
     // The iframe's own permalink is authoritative: a post can sit on a vanity
-    // path that differs from the page that owns it.
+    // path that differs from the page that owns it. A legacy `story.php` or
+    // `permalink.php` address names no handle — `pathname.split('/')[1]` would
+    // read `story.php` as one — so the owner's id is the fallback.
+    const via = new URL(href);
+    const legacy = /^\/(?:story|permalink|photo|watch)\.php$/.test(via.pathname);
     const handle =
-      /href="\/?([\w.-]+)\/posts\//.exec(page.html)?.[1] ||
-      new URL(href).pathname.split('/')[1];
+      /href="\/?([\w.-]+)\/posts\//.exec(page.html)?.[1] ??
+      (legacy ? null : via.pathname.split('/')[1]);
+    const owner = via.searchParams.get('id');
+    const profile = handle
+      ? `https://www.facebook.com/${handle}`
+      : owner && /^\d+$/.test(owner)
+        ? `https://www.facebook.com/profile.php?id=${owner}`
+        : null;
 
     const images = postImages(page.html);
+    // One picture in a rendition the embed cut down: the post page names the
+    // upload, which is worth one more request. A post with several pictures is
+    // left alone, because its `og:image` is one of them, not all of them.
+    if (images.length === 1 && SMALL_RENDITION.test(images[0]!)) {
+      const full = await fullSizePicture(href, options);
+      if (full) images[0] = full;
+    }
 
     const footer = { text: 'Facebook' };
     const embed: CardEmbed = {
@@ -277,8 +321,8 @@ async function fromEmbedPage({ match, href }: CardInput, options: CardOptions): 
       description: toField(text, 4096),
     };
     if (name) {
-      embed.author = authorBlock(decodeEntities(name), handle, {
-        url: handle && `https://www.facebook.com/${handle}`,
+      embed.author = authorBlock(decodeEntities(name), handle ?? 'Facebook', {
+        url: profile,
       });
     }
     if (images[0]) embed.image = { url: images[0] };
