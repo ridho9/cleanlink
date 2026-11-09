@@ -46,6 +46,19 @@ export const RULES: Rule[] = [
     drop: [/^igsh$/i, /^igshid$/i, /^mdxt$/i, /^psln$/i],
   },
   {
+    id: 'reddit',
+    hosts: ['reddit.com', 'redd.it'],
+    // A share link is /r/<sub>/s/<code>; a 301 names the permalink.
+    share: /^\/r\/[^/]+\/s\/[A-Za-z0-9]+\/?$/,
+    // On a permalink every parameter is a share token or a tracker.
+    dropAllOn: /\/comments\/[a-z0-9]+/i,
+    drop: [],
+    // Reddit answers the bare "Mozilla/5.0" with 403, and answers at all only
+    // an agent that names itself. Measured 2026-11-09: 301 to an agent that
+    // does, 403 to the default.
+    ua: 'cleanlink/1.0 (+https://github.com/ridho9/cleanlink)',
+  },
+  {
     id: 'tiktok',
     hosts: ['tiktok.com'],
     shorten: ['vm.tiktok.com', 'vt.tiktok.com'],

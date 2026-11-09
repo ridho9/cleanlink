@@ -4,6 +4,7 @@ import { buildInstagramCard } from './instagram.ts';
 import { buildMangadexCard } from './mangadex.ts';
 import { buildNhentaiCard } from './nhentai.ts';
 import { buildPixivCard } from './pixiv.ts';
+import { buildRedditCard } from './reddit.ts';
 import { buildThreadsCard } from './threads.ts';
 import { buildTikTokCard } from './tiktok.ts';
 import { buildXCard } from './x.ts';
@@ -28,7 +29,7 @@ export type Card = BuiltCard & {
 };
 
 /** The sites that own a card; the `card` field of the log names one of them. */
-export type SiteId = 'x' | 'pixiv' | 'instagram' | 'threads' | 'facebook' | 'nhentai' | 'tiktok' | 'mangadex';
+export type SiteId = 'x' | 'pixiv' | 'instagram' | 'threads' | 'facebook' | 'nhentai' | 'tiktok' | 'mangadex' | 'reddit';
 
 /** What a card shows besides text, as the `media` field of the log names it. */
 export type MediaKind = 'video' | 'follow_up' | 'unfurl' | `images:${number}` | 'text';
@@ -107,6 +108,15 @@ const CARD_SITES: CardSite[] = [
     // /g/<id>/ and /g/<id>/<slug>/.
     match: (url) => /^\/g\/(\d{1,9})(?:\/|$)/.exec(url.pathname),
     build: buildNhentaiCard,
+  },
+  {
+    id: 'reddit',
+    hosts: ['reddit.com', 'redd.it'],
+    // /r/<sub>/comments/<id>/<slug>/ - a share link resolves into one of these
+    // before the card is built. A video post's media lives on v.redd.it, which
+    // the card reads from the post's feed.
+    match: (url) => /^\/r\/([^/]+)\/comments\/[a-z0-9]{4,10}(?:\/|$)/i.exec(url.pathname),
+    build: buildRedditCard,
   },
   {
     id: 'tiktok',

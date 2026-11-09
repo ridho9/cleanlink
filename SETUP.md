@@ -123,7 +123,7 @@ If the reply appears in Discord, you are done. That terminal is now the bot.
 | `Error [TokenInvalid]: An invalid token was provided.` | Wrong, revoked, or mangled token (quotes, spaces, line break) | **Reset Token** and paste it raw and alone |
 | `Error [DisallowedIntents]: Privileged intent provided is not enabled or whitelisted.` | Message Content Intent is off | Enable it (step 3), wait a minute, restart |
 | `logged in as ...` but no reply at all | Message Content Intent off, or you are not DMing the bot, or the link needed no change | Check the terminal for a `cleaned ...` line: present means the reply failed, absent means it never got text |
-| No reply from a site you expect | That site is not in the rule table — Reddit, Spotify and Google were deliberately removed | See [README](README.md) → Supported sites |
+| No reply from a site you expect | That site is not in the rule table — Spotify and Google were deliberately removed | See [README](README.md) → Supported sites |
 | Reply is a bare site homepage | A shortener that no longer accepts the code | Send a fresh share link; the guard should return silence instead |
 
 ## Two applications: live and dev

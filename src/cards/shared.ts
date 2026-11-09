@@ -89,6 +89,7 @@ export const UNFURL_UA = 'Mozilla/5.0 (compatible; Discordbot/2.0; +https://disc
 export const NHENTAI_RED = 0xed2553;
 export const INSTAGRAM_PINK = 0xe1306c;
 export const MANGADEX_ORANGE = 0xff6740;
+export const REDDIT_ORANGE = 0xff4500;
 
 // ---------------------------------------------------------------- utilities
 
@@ -429,8 +430,11 @@ export function progressiveUrls(info: VideoInfo | null | undefined): string[] {
  * Optional by design: no yt-dlp, an unparseable page, or a file over the
  * message budget all return null. yt-dlp gets an argv array (never a shell),
  * a timeout, and a temporary directory that is always removed.
+ *
+ * `format` is the yt-dlp selector. The default wants a progressive file; an
+ * HLS source (Reddit) has no such rendition and names its own.
  */
-export async function downloadVideo(href: string, options: CardOptions = {}): Promise<CardFile[] | null> {
+export async function downloadVideo(href: string, options: CardOptions = {}, format = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best'): Promise<CardFile[] | null> {
   const budget = options.budget ?? {};
   if ((budget.files ?? 1) <= 0) return null;
 
@@ -442,7 +446,7 @@ export async function downloadVideo(href: string, options: CardOptions = {}): Pr
       '--no-warnings',
       '--no-playlist',
       '--max-filesize', String(cap),
-      '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
+      '-f', format,
       '--merge-output-format', 'mp4',
       '-o', file,
       href,
