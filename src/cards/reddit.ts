@@ -16,6 +16,7 @@ import {
   REDDIT_ORANGE,
 } from './shared.ts';
 import type { BuiltCard, CardEmbed, CardInput, CardOptions } from './shared.ts';
+import { note } from '../trace.ts';
 
 /** Reddit's own request policy asks every client to name itself. */
 export const REDDIT_UA = 'cleanlink/1.0 (+https://github.com/ridho9/cleanlink)';
@@ -110,6 +111,36 @@ function feedEntry(xml: string): RedditPost | null {
   return { title, author, picture, media, gallery };
 }
 
+/**
+ * The embed view of a gallery.
+ *
+ * The page is the only source that renders every gallery page, so a rate limit
+ * gets one more try; anything else is noted with its status, because the feed
+ * alone cannot say why the pictures are missing.
+ */
+async function galleryPage(permalink: URL, options: CardOptions): Promise<string> {
+  const url = `https://embed.reddit.com${permalink.pathname}`;
+  const fetchImpl = options.fetchImpl ?? fetch;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const res = await fetchImpl(url, {
+        headers: { 'user-agent': REDDIT_UA, accept: 'text/html' },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (res.ok) return await res.text();
+      note(`[reddit] gallery page answered ${res.status}`);
+      if (res.status !== 429) break;
+    } catch (error) {
+      note(`[reddit] gallery page failed: ${(error as Error).message}`);
+      break;
+    }
+    const { promise, resolve } = Promise.withResolvers<void>();
+    setTimeout(resolve, 1000);
+    await promise;
+  }
+  return '';
+}
+
 async function buildRedditCard({ match, href }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
   const subreddit = match[1] ?? null;
   const url = new URL(href);
@@ -127,12 +158,7 @@ async function buildRedditCard({ match, href }: CardInput, options: CardOptions)
   // open; the embed view renders every page of it. A picture inside the gallery
   // keeps its own size, so the card shows the whole set.
   const pictures = post.gallery
-    ? galleryPictures(
-      (await getHtml(`https://embed.reddit.com${url.pathname}`, {
-        ...options,
-        headers: { 'user-agent': REDDIT_UA },
-      }))?.html ?? '',
-    ).slice(0, MAX_EMBEDS)
+    ? galleryPictures(await galleryPage(url, options)).slice(0, MAX_EMBEDS)
     : [];
 
   // A video post links v.redd.it; its HLS playlist is what an anonymous reader
