@@ -66,7 +66,15 @@ export function findUrls(text: unknown): UrlMatch[] {
       const raw = match[0].replace(TRAILING_PUNCTUATION, '');
       return raw ? { raw, start: match.index, end: match.index + raw.length } : null;
     })
-    .filter((match): match is UrlMatch => Boolean(match));
+    .filter((match): match is UrlMatch => Boolean(match))
+    // A link inside `||…||` is hidden on purpose. Cleaning it or carding it
+    // would show it again, so the bot leaves it alone.
+    .filter((match) => !isSpoiled(text, match.start, match.end));
+}
+
+/** True when the link at these offsets sits inside Discord spoiler markup. */
+function isSpoiled(text: string, start: number, end: number): boolean {
+  return text[start - 1] === '|' && text[end] === '|';
 }
 
 /** Pull candidate URLs out of free text. */

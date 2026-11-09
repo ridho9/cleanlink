@@ -86,6 +86,8 @@ Note that server mode means the bot reads message content in every channel it ca
 
 Common trackers (`utm_*`, `fbclid`, `gclid`, `twclid`, `yclid`, `mibextid`, `_ga`, `_gl`) are stripped everywhere.
 
+A link inside Discord spoiler markup (`||…||`) is left alone: not cleaned, not carded, no reply. It is hidden on purpose, and a card would show it again.
+
 Spotify and Google were removed on purpose: only fake share codes had ever been tried against them, so they sat in the table as untested. Add them back from [src/rules.ts](src/rules.ts) once a real link from each has been checked. Reddit came back that way: a real share link was checked on 2026-11-09.
 
 ## Preview cards
