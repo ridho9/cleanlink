@@ -67,6 +67,8 @@ DISCORD_TOKEN=<your-bot-token>
 
 No quotes, no spaces, no `Bearer`, one line. If the token has spaces in it, you copied line breaks — reset it and copy again.
 
+`PIXIV_COOKIE` is optional and empty by default. An R-18 pixiv work is listed to anyone, but its files are named only to a viewer with a session; without this, the pages are read from the `pixiv.re` mirror instead. Set it to read those works from pixiv itself: open a logged-in `pixiv.net` tab, copy the value of its `cookie:` request header, and put it after `=` in one line. Treat it like the token: it is a session.
+
 ## 6. Install and start
 
 ```sh
