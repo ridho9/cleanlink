@@ -61,7 +61,11 @@ const run = promisify(execFile);
 
 const BROWSER_UA = 'Mozilla/5.0';
 const TIMEOUT_MS = 6000;
-const MEDIA_TIMEOUT_MS = 20_000;
+// A media file is read to the end before the reply goes out, and measured
+// 0.5-5 s for 0.5-6.6 MB from the CDNs the cards use. Ten seconds is that
+// with margin and half the old 20 s worst case; a slower file is dropped and
+// the card keeps its still.
+const MEDIA_TIMEOUT_MS = 10_000;
 // A yt-dlp download fetches and merges two streams, so it gets longer.
 const DOWNLOAD_TIMEOUT_MS = 30_000;
 
@@ -139,15 +143,21 @@ async function request(url: string, { fetchImpl = fetch, accept, method, headers
       ...(accept ? { accept } : {}),
       ...headers,
     },
-    signal: AbortSignal.timeout(timeout),
   };
 
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return await fetchImpl(url, init);
+      // A deadline per attempt: one signal for both attempts is already
+      // aborted when the first one timed out, so the retry never had a chance.
+      return await fetchImpl(url, { ...init, signal: AbortSignal.timeout(timeout) });
     } catch (error) {
-      if (attempt === 1) {
-        note(`[card] ${new URL(url).host} failed twice: ${(error as Error).message}`);
+      // A retry is for a connect error that may not repeat. A deadline that
+      // passed says the other side is slow, and asking again only doubles the
+      // wait.
+      const name = (error as Error).name;
+      const timedOut = name === 'TimeoutError' || name === 'AbortError';
+      if (attempt === 1 || timedOut) {
+        note(`[card] ${new URL(url).host} ${timedOut ? 'timed out' : 'failed twice'}: ${(error as Error).message}`);
         throw error;
       }
     }
@@ -259,6 +269,7 @@ export async function downloadMedia(urls: string | string[], options: CardOption
   // Candidates arrive best first. A rendition that does not fit is skipped
   // before its body is read, so a smaller one can still be attached.
   for (const url of [urls].flat().filter(Boolean)) {
+    const started = Date.now();
     let res;
     try {
       res = await request(url, { ...options, timeout: MEDIA_TIMEOUT_MS });
@@ -288,6 +299,12 @@ export async function downloadMedia(urls: string | string[], options: CardOption
       continue;
     }
     if (buffer.length === 0) continue;
+    // The reply waits for this read, so a slow file is worth a log line: it is
+    // the number behind a slow message in the review.
+    const ms = Date.now() - started;
+    if (ms > 3000) {
+      note(`[card] ${new URL(url).host} media ${Math.round(buffer.length / 1024)}KB in ${(ms / 1000).toFixed(1)}s`);
+    }
     return { files: [{ attachment: buffer, name }], refused };
   }
 

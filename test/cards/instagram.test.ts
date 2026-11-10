@@ -236,3 +236,45 @@ test('Instagram card matches every permalink shape', async () => {
     assert.ok(card, url);
   }
 });
+
+test('a video that times out is dropped after one attempt, and the frame stays', async () => {
+  let attempts = 0;
+  const { impl } = fakeFetch([
+    ['https://www.instagram.com/p/DcuMLVagTPh/embed/captioned/', EMBED_VIDEO],
+    ['https://www.instagram.com/', REEL_HTML],
+    [
+      VIDEO_URL,
+      () => {
+        attempts += 1;
+        throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+      },
+    ],
+  ]);
+  const [card] = await buildCards(URL, { fetchImpl: impl });
+
+  // A deadline that passed says the other side is slow: a second ask only
+  // doubles the wait before the same reply goes out.
+  assert.equal(attempts, 1);
+  assert.deepEqual(card.files, []);
+  assert.equal(card.embeds[0].image!.url, EMBED_FRAME);
+});
+
+test('a video whose connection failed is asked for once more', async () => {
+  let attempts = 0;
+  const { impl } = fakeFetch([
+    ['https://www.instagram.com/p/DcuMLVagTPh/embed/captioned/', EMBED_VIDEO],
+    ['https://www.instagram.com/', REEL_HTML],
+    [
+      VIDEO_URL,
+      () => {
+        attempts += 1;
+        if (attempts === 1) throw new TypeError('fetch failed');
+        return mp4();
+      },
+    ],
+  ]);
+  const [card] = await buildCards(URL, { fetchImpl: impl });
+
+  assert.equal(attempts, 2);
+  assert.equal(card.files.length, 1, 'the second attempt lands');
+});
