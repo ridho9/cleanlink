@@ -10,11 +10,18 @@ import {
   getBytes,
   getJson,
   MAX_ATTACH_BYTES,
-  MAX_IMAGES,
   PIXIV_BLUE,
   toField,
 } from './shared.ts';
 import type { BuiltCard, CardEmbed, CardInput, CardOptions } from './shared.ts';
+import { note } from '../trace.ts';
+
+/** Pages per work: SaucyBot's cap, so a long manga stays one predictable card. */
+const MAX_PAGES = 5;
+
+/** The mirror fetches the file itself before it answers, which measured 0.3 s
+ *  warm and several seconds cold. */
+const MIRROR_TIMEOUT_MS = 20_000;
 
 type PixivIllustResponse = {
   error?: boolean;
@@ -34,7 +41,15 @@ type PixivPagesResponse = {
 
 async function buildPixivCard({ match, href }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
   const [, id] = match;
-  const headers = { referer: 'https://www.pixiv.net/' };
+  // An R-18 work is listed to anyone but its files are named only to a signed-in
+  // viewer: every `urls` field is null and `ajax/illust/<id>/pages` answers 404,
+  // exactly as for a work that does not exist. With a session cookie that does
+  // not happen; without one the mirror below covers the work.
+  const cookie = process.env.PIXIV_COOKIE;
+  const headers = {
+    referer: 'https://www.pixiv.net/',
+    ...(cookie ? { cookie } : {}),
+  };
 
   const meta = await getJson<PixivIllustResponse>(`https://www.pixiv.net/ajax/illust/${id}`, {
     ...options,
@@ -47,27 +62,46 @@ async function buildPixivCard({ match, href }: CardInput, options: CardOptions):
     headers,
   });
   const budget = options.budget ?? {};
-  const filesLeft = Math.min(MAX_IMAGES, budget.files ?? MAX_IMAGES);
+  const filesLeft = Math.min(MAX_PAGES, budget.files ?? MAX_PAGES);
   const byteCap = Math.min(MAX_ATTACH_BYTES, budget.bytes ?? MAX_ATTACH_BYTES);
   // An earlier card in the same message may have spent the whole file budget.
   if (filesLeft <= 0) return null;
 
+  const restricted = (meta.body.xRestrict ?? 0) !== 0;
   const urls = (pages?.body ?? [])
     .map((page) => page?.urls?.regular)
     .filter((url): url is string => Boolean(url))
     .slice(0, filesLeft);
 
+  // No page list, but the work has pages: read them from `pixiv.re`, which
+  // serves page N of a work id and hands the file over where pixiv will not
+  // (measured 2026-11-09 on artwork 151909412: every `urls` null, and both pages
+  // at 1150x1600, the size in the metadata). It is read for the bytes only, the
+  // way facebed is read for its tags: the message keeps the pixiv link.
+  const mirrored =
+    urls.length === 0 && (meta.body.pageCount ?? 0) > 0
+      ? Array.from(
+          { length: Math.min(meta.body.pageCount ?? 0, filesLeft) },
+          (_, index) => `https://pixiv.re/${id}-${index + 1}.jpg`,
+        )
+      : [];
+  const sources = urls.length > 0 ? urls : mirrored;
+
   // The whole point of this card is the image, and it only exists if we host
-  // it: Discord cannot fetch i.pximg.net. No files means no card.
+  // it: Discord cannot fetch i.pximg.net.
+  if (sources.length === 0) {
+    note(`[card] pixiv ${id}: no pages`);
+    return null;
+  }
   const files = [];
   let bytes = 0;
-  const restricted = (meta.body.xRestrict ?? 0) !== 0;
+  const timeout = mirrored.length > 0 ? MIRROR_TIMEOUT_MS : options.timeout;
   // Fetched together, kept in page order: the wait is the slowest page, not
   // the sum of them.
   const buffers = await Promise.all(
-    urls.map((url) => getBytes(url, { ...options, headers }, byteCap)),
+    sources.map((url) => getBytes(url, { ...options, headers, ...(timeout ? { timeout } : {}) }, byteCap)),
   );
-  for (const [index, url] of urls.entries()) {
+  for (const [index, url] of sources.entries()) {
     const buffer = buffers[index];
     if (!buffer) continue;
     if (bytes + buffer.length > byteCap) break;
@@ -75,7 +109,14 @@ async function buildPixivCard({ match, href }: CardInput, options: CardOptions):
     const name = `${restricted ? 'SPOILER_' : ''}p${index}.${extensionOf(url)}`;
     files.push({ attachment: buffer, name });
   }
-  if (files.length === 0) return null;
+  if (files.length === 0) {
+    note(
+      mirrored.length > 0
+        ? `[card] pixiv ${id}: mirror gave no page`
+        : `[card] pixiv ${id}: no page could be fetched`,
+    );
+    return null;
+  }
 
   const embed: CardEmbed = {
     url: href,
