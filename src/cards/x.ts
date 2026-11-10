@@ -42,7 +42,7 @@ type XTweet = {
 
 type XResponse = { code?: number; tweet?: XTweet | null };
 
-async function buildXCard({ match, href }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
+async function buildXCard({ match }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
   const [, handle, id] = match;
   const data = await getJson<XResponse>(`https://api.fxtwitter.com/${handle}/status/${id}`, options);
   if (data?.code !== 200 || !data.tweet) return null;

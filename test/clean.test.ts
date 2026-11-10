@@ -38,7 +38,7 @@ test('extractUrls finds links and trims trailing punctuation', () => {
 
 test('a transient resolution failure is retried once', async () => {
   let attempts = 0;
-  const fetchImpl = async (url: string) => {
+  const fetchImpl = async () => {
     attempts += 1;
     // First call times out, which used to mean a silent drop.
     if (attempts === 1) throw new Error('The operation was aborted due to timeout');

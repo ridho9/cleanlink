@@ -27,7 +27,9 @@ import {
   authorBlock,
   getHtml,
   getJson,
+  readPage,
   INSTAGRAM_PINK,
+  MAX_EMBEDS,
   servesImage,
   metaContent,
   statLine,
@@ -56,9 +58,6 @@ const COUNT_PREFIX = /^([\d.,]+[KMB]?)\s+likes?,\s+([\d.,]+[KMB]?)\s+comments?\s
 /** oginstagram's description: `🖼️ 4 ❤️ 3,578 💬 47 caption`; the image count only on carousels. */
 const MIRROR_PREFIX = /^(?:🖼️\s*(\d+)\s+)?❤️\s*([\d.,]+[KMB]?)\s+💬\s*([\d.,]+[KMB]?)\s*/u;
 
-/** Instagram allows 20 images per carousel; Discord allows 10 embeds a message. */
-const MAX_IMAGES = 10;
-
 export async function buildInstagramCard(
   { href }: CardInput,
   options: CardOptions,
@@ -66,18 +65,20 @@ export async function buildInstagramCard(
   const url = new URL(href);
   const shortcode = url.pathname.split('/').filter(Boolean).pop();
   const [page, embedPage, oembed] = await Promise.all([
-    getHtml(href, options),
-    getHtml(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, options),
+    readPage(href, options),
+    readPage(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, options),
     getJson<InstagramOEmbed>(`https://www.instagram.com/api/v1/oembed/?url=${encodeURIComponent(href)}`, options),
   ]);
 
   // The handler's own URL is only a fallback: an embed-only answer still has a
   // usable caption.
-  const source = page?.html ?? embedPage?.html;
+  const source = page.html ?? embedPage.html;
   const title = source ? metaContent(source, 'og:title') : null;
   if (!source || !title) {
     // Say why, so the review can tell a login wall from a dead post.
-    note(`[card] instagram ${page ? `page had no og:title (${page.html.length} bytes)` : 'page did not answer 200'}`);
+    note(
+      `[card] instagram ${page.html ? `page had no og:title (${page.html.length} bytes)` : `page answered ${page.status}`}`,
+    );
     return fromMirrors(shortcode!, options);
   }
 
@@ -115,10 +116,10 @@ export async function buildInstagramCard(
 
   // Fetched before the frame is chosen: once the player is in the message, the
   // frame only repeats the video's first second.
-  const media = embedMedia(embedPage?.html ?? '');
+  const media = embedMedia(embedPage.html ?? '');
   // Some reels - seen with licensed music - are marked as video in the payload
   // but carry no `video_url`. yt-dlp still resolves the same CDN file.
-  const video = media.video ?? (media.isVideo ? await videoLinks(href, options) : null);
+  const video = media.video ?? (media.isVideo ? await videoLinks(href) : null);
   const played = await attachMedia(video, options);
   const playing = played.kind !== 'none';
 
@@ -149,7 +150,7 @@ export async function buildInstagramCard(
  * and carries no play button, and `og:image` is the last resort.
  */
 function imagesFor(media: InstagramMedia, source: string, oembed: InstagramOEmbed | null): string[] {
-  const carousel = media.images.slice(0, MAX_IMAGES);
+  const carousel = media.images.slice(0, MAX_EMBEDS);
   if (carousel.length > 0) return carousel;
 
   const single = oembed?.thumbnail_url ?? metaContent(source, 'og:image');
@@ -251,7 +252,7 @@ async function fromMirrors(shortcode: string, options: CardOptions): Promise<Bui
   // from oginstagram; without it, one image is all that is safe. A video item
   // answers with an MP4, which an embed cannot show, so each is checked.
   const candidates = Array.from(
-    { length: Math.min(Math.max(count, 1), MAX_IMAGES) },
+    { length: Math.min(Math.max(count, 1), MAX_EMBEDS) },
     (_, index) => (index === 0 && preview ? preview : `https://vxinstagram.com/offload/${shortcode}/${index}`),
   );
   const stills = await Promise.all(candidates.map((url) => (url === preview ? true : servesImage(url, options))));

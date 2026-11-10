@@ -342,7 +342,7 @@ async function fromEmbedPage({ match, href }: CardInput, options: CardOptions): 
       // No merged file fits. A single-file rendition may still fit, or play
       // as a follow-up: Discord unfurls it when it arrives on its own. The URLs
       // are signed and expire, so they are only worth sending straight away.
-      const played = await attachMedia(await videoLinks(href, options), options);
+      const played = await attachMedia(await videoLinks(href), options);
       if (played.kind !== 'none') {
         delete embed.image;
         return { embeds: [embed], ...playback(played) };

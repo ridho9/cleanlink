@@ -70,7 +70,6 @@ const DOWNLOAD_TIMEOUT_MS = 30_000;
 export const MAX_CARDS = 5; // mirrors the cleaner's 5-link cap
 export const MAX_EMBEDS = 10; // Discord's hard limit per message
 export const MAX_FILES = 10; // Discord's hard limit per message
-export const MAX_IMAGES = 5; // pages per Pixiv work, matching SaucyBot's cap
 // Discord's upload limit is 10 MiB on unboosted and tier 1 servers and in DMs.
 // The margin covers the rest of the request: the JSON payload and the
 // multipart framing.
@@ -180,10 +179,20 @@ export async function servesImage(url: string, options?: CardOptions): Promise<b
   }
 }
 
-export async function getHtml(url: string, options?: CardOptions): Promise<{ status: number; html: string } | null> {
+/**
+ * The page and its status, also when the status is an error.
+ *
+ * A builder that has a fallback wants `getHtml`: no answer, no page. A builder
+ * that reports the failure wants the status, which `getHtml` throws away.
+ */
+export async function readPage(url: string, options?: CardOptions): Promise<{ status: number; html: string | null }> {
   const res = await request(url, { ...options, accept: 'text/html' });
-  if (!res.ok) return null;
-  return { status: res.status, html: await res.text() };
+  return { status: res.status, html: res.ok ? await res.text() : null };
+}
+
+export async function getHtml(url: string, options?: CardOptions): Promise<{ status: number; html: string } | null> {
+  const { status, html } = await readPage(url, options);
+  return html === null ? null : { status, html };
 }
 
 /**
@@ -395,7 +404,7 @@ export function extensionOf(url: string): string {
  *
  * href is the page URL, already validated by the caller's matcher.
  */
-export async function videoLinks(href: string, options: CardOptions = {}): Promise<string[]> {
+export async function videoLinks(href: string): Promise<string[]> {
   try {
     const { stdout } = await run('yt-dlp', [
       '-J',

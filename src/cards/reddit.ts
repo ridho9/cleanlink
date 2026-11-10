@@ -12,6 +12,7 @@ import {
   getHtml,
   imageEmbeds,
   MAX_EMBEDS,
+  readPage,
   toField,
   REDDIT_ORANGE,
 } from './shared.ts';
@@ -19,7 +20,7 @@ import type { BuiltCard, CardEmbed, CardInput, CardOptions } from './shared.ts';
 import { note } from '../trace.ts';
 
 /** Reddit's own request policy asks every client to name itself. */
-export const REDDIT_UA = 'cleanlink/1.0 (+https://github.com/ridho9/cleanlink)';
+const REDDIT_UA = 'cleanlink/1.0 (+https://github.com/ridho9/cleanlink)';
 
 // HLS offers one file per rendition with the sound in a separate group, so the
 // selector has to take whatever yt-dlp can pair up.
@@ -120,20 +121,19 @@ function feedEntry(xml: string): RedditPost | null {
  */
 async function galleryPage(permalink: URL, options: CardOptions): Promise<string> {
   const url = `https://embed.reddit.com${permalink.pathname}`;
-  const fetchImpl = options.fetchImpl ?? fetch;
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    let page;
     try {
-      const res = await fetchImpl(url, {
-        headers: { 'user-agent': REDDIT_UA, accept: 'text/html' },
-        signal: AbortSignal.timeout(6000),
-      });
-      if (res.ok) return await res.text();
-      note(`[reddit] gallery page answered ${res.status}`);
-      if (res.status !== 429) break;
+      page = await readPage(url, { ...options, headers: { 'user-agent': REDDIT_UA } });
     } catch (error) {
+      // The gallery is an extra on top of the feed picture, so a request that
+      // never answers costs the gallery, not the card.
       note(`[reddit] gallery page failed: ${(error as Error).message}`);
-      break;
+      return '';
     }
+    if (page.html !== null) return page.html;
+    note(`[reddit] gallery page answered ${page.status}`);
+    if (page.status !== 429) return '';
     const { promise, resolve } = Promise.withResolvers<void>();
     setTimeout(resolve, 1000);
     await promise;
@@ -168,9 +168,10 @@ async function buildRedditCard({ match, href }: CardInput, options: CardOptions)
     ? await downloadVideo(`https://v.redd.it/${videoId}/HLSPlaylist.m3u8`, options, REDDIT_FORMAT)
     : null;
 
-  const image = files
-    ? null
-    : pictures[0] ?? (/^https?:\/\/i\.redd\.it\//i.test(post.media ?? '') ? post.media : post.picture);
+  // A picture post links i.redd.it, which is the file itself; the feed's own
+  // thumbnail is the 640 px proxy of it.
+  const linkedFile = /^https?:\/\/i\.redd\.it\//i.test(post.media ?? '') ? post.media : post.picture;
+  const image = files ? null : pictures[0] ?? linkedFile;
   const where = [subreddit && `r/${subreddit}`, post.author && `u/${post.author}`].filter(Boolean).join(' · ');
 
   const embed: CardEmbed = {

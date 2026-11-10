@@ -95,3 +95,45 @@ test('Reddit card falls back to the feed picture when the gallery page fails', a
   assert.equal(card!.embeds.length, 1);
   assert.equal(card!.embeds[0]!.image!.url, 'https://external-preview.redd.it/abc.png?width=640&s=1');
 });
+
+test('Reddit card retries a rate-limited gallery page once', async () => {
+  let attempts = 0;
+  const { impl } = fakeFetch([
+    ['https://www.reddit.com/r/WkwkwkLand/comments/', feed({ gallery: '1xqvap5' })],
+    [
+      'https://embed.reddit.com/r/WkwkwkLand/comments/',
+      () => {
+        attempts += 1;
+        // What Reddit answered the bot host on 2026-11-09, measured from the
+        // headers: x-ratelimit-remaining: 0.0, x-ratelimit-reset: 23.
+        if (attempts === 1) return new Response('', { status: 429 });
+        return new Response(galleryPage(['aaa1', 'bbb2']), { status: 200 });
+      },
+    ],
+  ]);
+  const [card] = await buildCards(POST, { fetchImpl: impl });
+
+  assert.equal(attempts, 2, 'a 429 is the one answer worth a second try');
+  assert.deepEqual(
+    card!.embeds.map((embed) => embed.image?.url),
+    ['https://i.redd.it/aaa1.png', 'https://i.redd.it/bbb2.png'],
+    'and the retry still shows the gallery',
+  );
+});
+
+test('a gallery page that never answers still leaves the feed picture', async () => {
+  const { impl } = fakeFetch([
+    ['https://www.reddit.com/r/WkwkwkLand/comments/', feed({ gallery: '1xqvap5' })],
+    [
+      'https://embed.reddit.com/',
+      () => {
+        throw new Error('The operation was aborted due to timeout');
+      },
+    ],
+  ]);
+  const [card] = await buildCards(POST, { fetchImpl: impl });
+
+  assert.ok(card, 'a dead gallery page is not a dead card');
+  assert.equal(card.embeds.length, 1);
+  assert.equal(card.embeds[0]!.image!.url, 'https://external-preview.redd.it/abc.png?width=640&s=1');
+});

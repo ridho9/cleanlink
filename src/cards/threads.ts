@@ -10,6 +10,7 @@ import {
   clip,
   escapeMarkdown,
   getHtml,
+  MAX_EMBEDS,
   metaContent,
   playback,
   statLine,
@@ -17,9 +18,6 @@ import {
   toField,
 } from './shared.ts';
 import type { BuiltCard, CardEmbed, CardInput, CardOptions } from './shared.ts';
-
-/** Threads allows 20 items per carousel; Discord allows 10 embeds a message. */
-const MAX_IMAGES = 10;
 
 /** Instagram's profile-photo buckets end in `-19` (`t51.2885-19`, `t51.82787-19`); post media does not. */
 const AVATAR = /\/t\d+\.\d+-19\//;
@@ -78,7 +76,7 @@ async function postCard(post: ThreadsPost, parent: ThreadsPost | null, href: str
     Boolean(item && (item.carousel_media?.length || item.video_versions?.length || item.image_versions2?.candidates?.length)));
   const played = await attachMedia(source ? videoUrls(source) : null, options);
   const playing = played.kind !== 'none';
-  const images = source ? stills(source, playing).slice(0, MAX_IMAGES) : [];
+  const images = source ? stills(source, playing).slice(0, MAX_EMBEDS) : [];
 
   const parts = [];
   if (post.caption?.text) parts.push(escapeMarkdown(post.caption.text));
