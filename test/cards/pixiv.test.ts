@@ -65,12 +65,12 @@ test('Pixiv card spoils restricted works and caps the page count', async () => {
     'SPOILER_p3.jpg',
     'SPOILER_p4.jpg',
   ]);
-  assert.equal(card.embeds[0].image!.url, 'attachment://SPOILER_p0.jpg');
   assert.equal(card.embeds[0].footer!.text, 'Pixiv · restricted');
-  assert.equal(card.embeds.length, 5);
-  assert.equal(card.files.length, 5);
-  assert.equal(card.embeds[4].image!.url, 'attachment://SPOILER_p4.jpg');
-  assert.equal(card.embeds[4].footer!.text, 'Pixiv · page 5/5');
+  // Discord marks a spoiler on the attachment, and an embed that shows that
+  // file drops the mark. A restricted card is therefore text only: every
+  // picture stays an unclaimed, blurred attachment.
+  assert.equal(card.embeds.length, 1);
+  assert.equal(card.embeds[0].image, undefined);
   assert.equal(calls.filter((call) => call.url.startsWith('https://i.pximg.net/')).length, 5);
 });
 
@@ -134,7 +134,8 @@ test('an R-18 work with no page list is carded from the mirror', async () => {
     const [card] = await buildCards('https://www.pixiv.net/en/artworks/151616953', { fetchImpl: impl });
     assert.ok(card);
     assert.deepEqual(card.files.map((file) => file.name), ['SPOILER_p0.jpg', 'SPOILER_p1.jpg']);
-    assert.equal(card.embeds.length, 2);
+    assert.equal(card.embeds.length, 1, 'text only: the pictures are unclaimed attachments');
+    assert.equal(card.embeds[0].image, undefined);
     assert.equal(card.embeds[0].footer!.text, 'Pixiv · restricted');
     assert.equal(card.embeds[0].title, PIXIV.body.illustTitle);
     assert.deepEqual(

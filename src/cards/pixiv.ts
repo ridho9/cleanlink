@@ -19,9 +19,10 @@ import { note } from '../trace.ts';
 /** Pages per work: SaucyBot's cap, so a long manga stays one predictable card. */
 const MAX_PAGES = 5;
 
-/** The mirror fetches the file itself before it answers, which measured 0.3 s
- *  warm and several seconds cold. */
-const MIRROR_TIMEOUT_MS = 20_000;
+/** A page is a media file, not a page fetch: 1.9 MB measured 7-18 s, and the
+ *  mirror took 21 s on a cold entry. The card budget is seconds, so one slow
+ *  page is dropped, not waited for. */
+const PAGE_TIMEOUT_MS = 20_000;
 
 type PixivIllustResponse = {
   error?: boolean;
@@ -95,11 +96,19 @@ async function buildPixivCard({ match, href }: CardInput, options: CardOptions):
   }
   const files = [];
   let bytes = 0;
-  const timeout = mirrored.length > 0 ? MIRROR_TIMEOUT_MS : options.timeout;
+  const timeout = PAGE_TIMEOUT_MS;
   // Fetched together, kept in page order: the wait is the slowest page, not
   // the sum of them.
+  // One page that never answers must not take the others with it.
   const buffers = await Promise.all(
-    sources.map((url) => getBytes(url, { ...options, headers, ...(timeout ? { timeout } : {}) }, byteCap)),
+    sources.map(async (url) => {
+      try {
+        return await getBytes(url, { ...options, headers, ...(timeout ? { timeout } : {}) }, byteCap);
+      } catch (error) {
+        note(`[card] pixiv page failed: ${(error as Error).message}`);
+        return null;
+      }
+    }),
   );
   for (const [index, url] of sources.entries()) {
     const buffer = buffers[index];
@@ -125,19 +134,22 @@ async function buildPixivCard({ match, href }: CardInput, options: CardOptions):
       url: meta.body.userId && `https://www.pixiv.net/users/${meta.body.userId}`,
     }),
     title: toField(meta.body.illustTitle ?? `Pixiv ${id}`, 256),
-    image: { url: `attachment://${files[0].name}` },
     footer: {
       text: restricted
         ? 'Pixiv · restricted'
         : `Pixiv · ${meta.body.pageCount ?? files.length} page(s)`,
     },
   };
+  // Discord marks a spoiler on the attachment, and an embed that shows that
+  // same file drops the mark: a restricted work keeps its pictures unclaimed,
+  // so they arrive blurred.
+  if (!restricted) embed.image = { url: `attachment://${files[0].name}` };
 
   // One image per embed, same as X: the first embed carries the title and the
   // author, the rest are pages. Every file is claimed, so no loose attachment
   // is left above the card.
   const embeds = [embed];
-  for (const [offset, file] of files.slice(1).entries()) {
+  for (const [offset, file] of restricted ? [] : files.slice(1).entries()) {
     embeds.push({
       url: href,
       color: PIXIV_BLUE,
