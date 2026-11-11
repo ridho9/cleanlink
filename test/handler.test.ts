@@ -11,8 +11,8 @@ import { originalDeleted } from '../src/replies.ts';
 const LINK = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&si=abc';
 
 interface Hooks {
-  /** Runs inside react(): the bot is working on the message. */
-  onReact?: (id: string) => Promise<void>;
+  /** Runs inside sendTyping(): the bot is working on the message. */
+  onTyping?: (id: string) => Promise<void>;
   /** Runs inside reply(), before it answers. */
   onReply?: (id: string) => Promise<void>;
   /** reply() throws this instead of answering. */
@@ -36,14 +36,19 @@ function guildMessage(hooks: Hooks = {}) {
       name: 'general',
       type: ChannelType.GuildText,
       permissionsFor: () => ({ has: () => true }),
+      sendTyping: async () => {
+        events.push('typing');
+        await hooks.onTyping?.(id);
+      },
     },
     client: { user },
     suppressEmbeds: async (on: boolean) => {
       events.push(on ? 'hide' : 'restore');
     },
+    // Nothing may react to the message any more: a reaction notifies its
+    // author, which is why the indicator replaced it.
     react: async () => {
       events.push('react');
-      await hooks.onReact?.(id);
       return { users: { remove: async () => { events.push('unreact'); } } };
     },
     reply: async () => {
@@ -76,15 +81,15 @@ test('a reply replaces the hidden preview, and hides it again after', async () =
 
   assert.equal(record.reply, 'sent');
   // The second hide catches a preview Discord added after the first one.
-  assert.deepEqual(events, ['hide', 'react', 'reply', 'hide', 'unreact']);
+  assert.deepEqual(events, ['hide', 'typing', 'reply', 'hide']);
 });
 
 test('deleted before the reply: no reply, and no preview to restore', async () => {
-  const { message, events } = guildMessage({ onReact: (id) => originalDeleted(id) });
+  const { message, events } = guildMessage({ onTyping: (id) => originalDeleted(id) });
   const record = await run(message);
 
   assert.equal(record.reply, 'deleted');
-  assert.deepEqual(events, ['hide', 'react', 'unreact']);
+  assert.deepEqual(events, ['hide', 'typing']);
 });
 
 test('deleted while the reply is in flight: the reply is removed', async () => {
@@ -92,7 +97,7 @@ test('deleted while the reply is in flight: the reply is removed', async () => {
   const record = await run(message);
 
   assert.equal(record.reply, 'withdrawn');
-  assert.deepEqual(events, ['hide', 'react', 'reply', 'reply deleted', 'unreact']);
+  assert.deepEqual(events, ['hide', 'typing', 'reply', 'reply deleted']);
 });
 
 test('a refused reply hands the preview back', async () => {
@@ -101,7 +106,7 @@ test('a refused reply hands the preview back', async () => {
   const record = await run(message);
 
   assert.equal(record.reply, 'refused');
-  assert.deepEqual(events, ['hide', 'react', 'restore', 'unreact']);
+  assert.deepEqual(events, ['hide', 'typing', 'restore']);
 });
 
 test('an unexpected error hands the preview back and is recorded', async () => {
@@ -109,5 +114,5 @@ test('an unexpected error hands the preview back and is recorded', async () => {
   const record = await run(message);
 
   assert.equal(record.reply, 'error');
-  assert.deepEqual(events, ['hide', 'react', 'restore', 'unreact']);
+  assert.deepEqual(events, ['hide', 'typing', 'restore']);
 });

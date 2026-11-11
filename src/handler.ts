@@ -12,8 +12,33 @@ import { sendReply } from './reply.ts';
 import { track } from './replies.ts';
 import { finishTrace, logError, markReply, note, runTraced, startTrace } from './trace.ts';
 
-// Shown on the incoming message while the bot works on it, removed afterwards.
-const ACK_EMOJI = '👀';
+// Discord keeps a typing indicator up for 10 s; refresh a little sooner.
+const TYPING_REFRESH_MS = 8_000;
+
+/**
+ * Hold the typing indicator up for as long as the work takes.
+ *
+ * This used to be a 👀 reaction on the message. A reaction on someone's message
+ * can notify them, which is noise on a busy server; the indicator notifies
+ * nobody and clears itself.
+ * @param channel The channel the message came from.
+ * @returns A function that stops the refresh.
+ */
+function showTyping(channel: Message['channel']): () => void {
+  // A group DM has no typing indicator; every other channel type has one.
+  if (!('sendTyping' in channel)) return () => {};
+
+  const type = () => {
+    channel.sendTyping().catch((error: Error) => {
+      note(`[ack] could not type: ${error.message}`);
+    });
+  };
+  type();
+  const timer = setInterval(type, TYPING_REFRESH_MS);
+  // The indicator alone must never hold the process open.
+  timer.unref();
+  return () => clearInterval(timer);
+}
 
 /**
  * Strip the preview card from someone else's message, when allowed.
@@ -131,21 +156,17 @@ async function work(message: OmitPartialGroupDMChannel<Message>, isDM: boolean):
   // does not show it and then swap it for our card a few seconds later.
   const suppressed = isDM ? false : await suppressOriginalEmbed(message);
 
-  // Acknowledge on receipt so it is obvious the message landed, and drop the
-  // reaction once the reply is out (or once we know there is nothing to do).
-  // A reaction failure must never break the actual work.
-  let ack = null;
-  try {
-    ack = await message.react(ACK_EMOJI);
-  } catch (error) {
-    note(`[ack] could not react: ${(error as Error).message}`);
-  }
+  // Acknowledge on receipt so it is obvious the message landed; the indicator
+  // stops when the reply lands, or once we know there is nothing to do. A
+  // failure there must never break the actual work.
+  const stopTyping = showTyping(message.channel);
 
   let outcome: Outcome = 'error';
   try {
     outcome = await deliver(message, replies);
     return outcome;
   } finally {
+    stopTyping();
     replies.close();
     // A deleted original has no preview left to restore, whatever the outcome.
     if (suppressed && mustRestore(outcome) && !replies.deleted()) {
@@ -159,13 +180,6 @@ async function work(message: OmitPartialGroupDMChannel<Message>, isDM: boolean):
         await message.suppressEmbeds(true);
       } catch (error) {
         note(`[guild] second suppress failed: ${(error as Error).message}`);
-      }
-    }
-    if (ack) {
-      try {
-        await ack.users.remove(message.client.user);
-      } catch (error) {
-        note(`[ack] could not remove reaction: ${(error as Error).message}`);
       }
     }
   }
