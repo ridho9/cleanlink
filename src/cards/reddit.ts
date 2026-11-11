@@ -10,7 +10,6 @@ import {
   decodeEntities,
   downloadVideo,
   getHtml,
-  imageEmbeds,
   MAX_EMBEDS,
   readPage,
   toField,
@@ -40,16 +39,28 @@ function previewWidth(url: string): number {
 }
 
 /**
- * The uploaded file behind a gallery preview.
+ * The media id and extension a gallery preview names.
  *
- * A gallery picture is served from `preview.redd.it/<slug>-v0-<media>.<ext>`
- * with a signature in the query, while the same media id answers unsigned on
- * `i.redd.it`. The original keeps its own size; the preview is the 1080 px
- * rendition.
+ * A gallery picture is served from `preview.redd.it` with a signature in the
+ * query, while the same media id answers unsigned on `i.redd.it`. The name is
+ * the media id alone now (`<media>.<ext>`), and older previews put it after a
+ * `-v0-` marker (`<slug>-v0-<media>.<ext>`).
+ */
+function previewFile(preview: string): { id: string; ext: string } | null {
+  // Read with a pattern rather than a URL parse: a page that is not the embed
+  // view can carry a half-written preview name, and that must not throw.
+  const file = /^https:\/\/preview\.redd\.it\/([^/?#]+)/i.exec(preview)?.[1];
+  const hit = /^(?:.*-v0-)?([a-z0-9]+)\.(jpe?g|png|gif|webp)$/i.exec(file ?? '');
+  return hit ? { id: hit[1]!, ext: hit[2]! } : null;
+}
+
+/**
+ * The uploaded file behind a gallery preview: the original keeps its own size,
+ * while the preview is a rendition, 640 px or 1080 px wide.
  */
 function originalPicture(preview: string): string | null {
-  const media = /-v0-([a-z0-9]+)\.(jpe?g|png|gif|webp)$/i.exec(new URL(preview).pathname);
-  return media ? `https://i.redd.it/${media[1]}.${media[2]}` : null;
+  const file = previewFile(preview);
+  return file ? `https://i.redd.it/${file.id}.${file.ext}` : null;
 }
 
 /**
@@ -70,10 +81,10 @@ function galleryPictures(html: string): string[] {
   const pictures: string[] = [];
   for (const [index, { at }] of starts.entries()) {
     const page = html.slice(at, starts[index + 1]?.at ?? html.length);
-    const media = /-v0-([a-z0-9]+)\./.exec(/https:\/\/preview\.redd\.it\/[^"\\ <]+/.exec(page)?.[0] ?? '')?.[1];
+    const media = previewFile(/https:\/\/preview\.redd\.it\/[^"\\ <]+/.exec(page)?.[0] ?? '')?.id;
     if (!media) continue;
     const widest = previews
-      .filter((url) => url.includes(`-v0-${media}.`))
+      .filter((url) => previewFile(url)?.id === media)
       .reduce((best, url) => (previewWidth(url) > previewWidth(best) ? url : best), '');
     const picture = widest ? originalPicture(widest) : null;
     if (picture && !pictures.includes(picture)) pictures.push(picture);
@@ -113,14 +124,23 @@ function feedEntry(xml: string): RedditPost | null {
 }
 
 /**
- * The embed view of a gallery.
+ * The embed view of a gallery post.
  *
+ * A crosspost's own view is only the shell: its feed links the gallery post it
+ * shows, and the pages belong to that post. The view ignores the slug and the
+ * subreddit — checked against a wrong one — so only the post id has to change.
+ */
+function galleryUrl(permalink: URL, gallery: string): string {
+  const path = permalink.pathname.replace(/(\/comments\/)[a-z0-9]+/i, `$1${gallery}`);
+  return `https://embed.reddit.com${path}`;
+}
+
+/**
  * The page is the only source that renders every gallery page, so a rate limit
  * gets one more try; anything else is noted with its status, because the feed
  * alone cannot say why the pictures are missing.
  */
-async function galleryPage(permalink: URL, options: CardOptions): Promise<string> {
-  const url = `https://embed.reddit.com${permalink.pathname}`;
+async function galleryPage(url: string, options: CardOptions): Promise<string> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let page;
     try {
@@ -158,7 +178,7 @@ async function buildRedditCard({ match, href }: CardInput, options: CardOptions)
   // open; the embed view renders every page of it. A picture inside the gallery
   // keeps its own size, so the card shows the whole set.
   const pictures = post.gallery
-    ? galleryPictures(await galleryPage(url, options)).slice(0, MAX_EMBEDS)
+    ? galleryPictures(await galleryPage(galleryUrl(url, post.gallery), options)).slice(0, MAX_EMBEDS)
     : [];
 
   // A video post links v.redd.it; its HLS playlist is what an anonymous reader
@@ -186,7 +206,18 @@ async function buildRedditCard({ match, href }: CardInput, options: CardOptions)
   // The attached player brings its own frame, so the preview picture stays out.
   if (image) embed.image = { url: image };
 
-  const embeds = [embed, ...imageEmbeds(href, REDDIT_ORANGE, embed.footer, pictures.slice(1))];
+  // Numbered like every other multi-picture card, so the reader knows how many
+  // pages the set has.
+  if (pictures.length > 1) embed.footer = { text: `Reddit · 1/${pictures.length}` };
+  const embeds = [
+    embed,
+    ...pictures.slice(1).map((picture, index) => ({
+      url: href,
+      color: REDDIT_ORANGE,
+      image: { url: picture },
+      footer: { text: `Reddit · ${index + 2}/${pictures.length}` },
+    })),
+  ];
   return { embeds, files: files ?? [], ...(files ? { video: 'attached' as const } : {}) };
 }
 

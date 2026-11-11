@@ -86,6 +86,14 @@ test('Reddit card shows every gallery picture at its uploaded size', async () =>
   const embedCall = calls.find((call) => call.url.startsWith('https://embed.reddit.com/'));
   assert.ok(embedCall, 'the embed view is the only page that renders a gallery');
   assert.match(embedCall.headers['user-agent']!, /^cleanlink\//);
+  // A crosspost links the gallery it shows, and that post owns the pages. Its
+  // own view is only the shell, so the id in this path has to be the gallery's.
+  assert.match(embedCall.url, /\/comments\/1xqvap5\//, 'the gallery post, not the crosspost');
+  assert.deepEqual(
+    card!.embeds.map((embed) => embed.footer?.text),
+    ['Reddit · 1/3', 'Reddit · 2/3', 'Reddit · 3/3'],
+    'one number per picture, as on the other multi-picture cards',
+  );
 });
 
 test('Reddit card falls back to the feed picture when the gallery page fails', async () => {
@@ -136,4 +144,22 @@ test('a gallery page that never answers still leaves the feed picture', async ()
   assert.ok(card, 'a dead gallery page is not a dead card');
   assert.equal(card.embeds.length, 1);
   assert.equal(card.embeds[0]!.image!.url, 'https://external-preview.redd.it/abc.png?width=640&s=1');
+});
+
+test('Reddit card reads the picture id from a preview that carries no -v0-', async () => {
+  // Preview names are the media id alone now; older ones put it after -v0-.
+  const html = `<html><body><ul>
+<li slot="page-1"><faceplate-img src="https://preview.redd.it/7llnyjhod51g1.png?width=640&amp;crop=smart&amp;auto=webp&amp;s=1"></faceplate-img></li>
+<li slot="page-2"><faceplate-img src="https://preview.redd.it/wzd6wkjod51g1.png?width=1080&amp;crop=smart&amp;auto=webp&amp;s=2"></faceplate-img></li>
+</ul></body></html>`;
+  const { impl } = fakeFetch([
+    ['https://www.reddit.com/r/WkwkwkLand/comments/', feed({ gallery: '1xqvap5' })],
+    ['https://embed.reddit.com/r/WkwkwkLand/comments/', html],
+  ]);
+  const [card] = await buildCards(POST, { fetchImpl: impl });
+
+  assert.deepEqual(
+    card!.embeds.map((embed) => embed.image?.url),
+    ['https://i.redd.it/7llnyjhod51g1.png', 'https://i.redd.it/wzd6wkjod51g1.png'],
+  );
 });
