@@ -36,6 +36,17 @@ test('extractUrls finds links and trims trailing punctuation', () => {
   assert.deepEqual(extractUrls(undefined), []);
 });
 
+test('foreign links do not spend the five-link cap', async () => {
+  const foreign = Array.from({ length: 5 }, (_, index) => `https://example.com/${index}`);
+  const text = [...foreign, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&si=abc'].join(' ');
+
+  // The foreign links have no rule, so they are not candidates: the tracker
+  // link after them is still cleaned, and the message is not left unanswered.
+  assert.deepEqual(await cleanMessage(text), [
+    { from: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&si=abc', to: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
+  ]);
+});
+
 test('a transient resolution failure is retried once', async () => {
   let attempts = 0;
   const fetchImpl = async () => {

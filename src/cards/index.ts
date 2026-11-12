@@ -1,4 +1,4 @@
-import { findUrls, hostMatches } from '../clean.ts';
+import { findUrls, hostMatches, isSpoiled } from '../clean.ts';
 import { buildFacebookCard } from './facebook.ts';
 import { buildInstagramCard } from './instagram.ts';
 import { buildMangadexCard } from './mangadex.ts';
@@ -14,10 +14,26 @@ import {
   MAX_EMBEDS,
   MAX_FILES,
 } from './shared.ts';
-import type { BuiltCard, CardInput, CardOptions } from './shared.ts';
+import type { BuiltCard, CardEmbed, CardInput, CardOptions } from './shared.ts';
 import { mark, note, withUrl } from '../trace.ts';
 
 // Preview cards for the links where Discord's own unfurl is broken or thin.
+
+// Discord counts embed text per message: 6000 characters across every embed.
+// A card past that is refused with the whole reply, so it is dropped here.
+const MAX_EMBED_CHARS = 6000;
+
+/** The characters Discord counts for one embed. */
+function embedChars(embed: CardEmbed): number {
+  const fields = (embed.fields ?? []).reduce((total, field) => total + field.name.length + field.value.length, 0);
+  return (
+    (embed.title?.length ?? 0) +
+    (embed.description?.length ?? 0) +
+    (embed.author?.name.length ?? 0) +
+    (embed.footer?.text.length ?? 0) +
+    fields
+  );
+}
 // Sites with a good native preview need nothing here: Misskey answers Discord's
 // crawler with complete OpenGraph tags, and YouTube has a native player.
 //
@@ -156,6 +172,8 @@ function candidateRefs(text: string, cleanedFor: Map<string, string>): Array<{ f
     for (const match of text.matchAll(pattern)) {
       // `.../nh/123` is part of a URL, not a shorthand someone typed.
       const start = match.index;
+      // `||nh/123||` is hidden on purpose, exactly like a spoiled link.
+      if (isSpoiled(text, start, start + match[0].length)) continue;
       if (urls.some(({ start: from, end }) => start >= from && start < end)) continue;
       refs.push({ from: match[0], href: expand(match) });
     }
@@ -218,6 +236,7 @@ export async function buildCards(text: string, { cleaned = [], fetchImpl = fetch
   let filesLeft = MAX_FILES;
   let bytesLeft = MAX_ATTACH_BYTES;
   let embedsLeft = MAX_EMBEDS;
+  let charsLeft = MAX_EMBED_CHARS;
 
   for (const { from: raw, href } of candidateRefs(text, cleanedFor)) {
     if (cards.length >= MAX_CARDS) break;
@@ -245,8 +264,10 @@ export async function buildCards(text: string, { cleaned = [], fetchImpl = fetch
       }
 
       // A card is taken whole or not at all: a card with half its pages looks
-      // broken, and Discord rejects the whole message past ten embeds.
-      if (card.embeds.length > embedsLeft || card.files.length > filesLeft) {
+      // broken, and Discord rejects the whole message past ten embeds or 6000
+      // characters of embed text.
+      const chars = card.embeds.reduce((total, embed) => total + embedChars(embed), 0);
+      if (card.embeds.length > embedsLeft || card.files.length > filesLeft || chars > charsLeft) {
         note(`[card] ${site.id} skipped: message budget spent`);
         mark('card', `${site.id}:budget`);
         return;
@@ -257,6 +278,7 @@ export async function buildCards(text: string, { cleaned = [], fetchImpl = fetch
       mark('media', mediaOf(card));
       embedsLeft -= card.embeds.length;
       filesLeft -= card.files.length;
+      charsLeft -= chars;
       bytesLeft -= card.files.reduce((total, file) => total + file.attachment.length, 0);
     } catch (error) {
       // A card is decoration, so the reply still goes out — but a swallowed

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildCards } from '../../src/cards/index.ts';
+import { buildCards, hasCardFor } from '../../src/cards/index.ts';
 import { fakeFetch, fixture, imageResponse } from '../../test-support/harness.ts';
 
 const X_TEXT = fixture('x-text.json');
@@ -29,6 +29,32 @@ test('buildCards stops at the image budget', async () => {
 
   const [card] = await buildCards('https://www.pixiv.net/artworks/151616953', { fetchImpl: impl });
   assert.equal(card.files.length, 1);
+});
+
+test('a shorthand inside spoiler markup is left alone', async () => {
+  const { impl, calls } = fakeFetch([]);
+
+  // `||nh/693549||` hides the reference on purpose, exactly like a spoiled
+  // link. Carding it would post the expanded gallery in the clear.
+  assert.equal(hasCardFor('||nh/693549||'), false);
+  assert.equal(hasCardFor('nh/693549'), true);
+  assert.deepEqual(await buildCards('||nh/693549||', { fetchImpl: impl }), []);
+  assert.equal(calls.length, 0);
+});
+
+test('a card that would pass the embed text budget is dropped whole', async () => {
+  const long = {
+    ...X_TEXT,
+    tweet: { ...X_TEXT.tweet, text: 'x'.repeat(4000) },
+  };
+  const { impl } = fakeFetch([['https://api.fxtwitter.com/', long]]);
+
+  // Two cards of about 4000 characters each pass the embed count (10) and the
+  // byte budget, but not Discord's 6000 characters of embed text; the second
+  // is dropped, and the reply still goes out with the first.
+  const cards = await buildCards('https://x.com/a/status/1 https://x.com/b/status/2', { fetchImpl: impl });
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].from, 'https://x.com/a/status/1');
 });
 
 test('buildCards only cards the listed sites, once, and in order', async () => {

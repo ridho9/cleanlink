@@ -73,7 +73,7 @@ export function findUrls(text: unknown): UrlMatch[] {
 }
 
 /** True when the link at these offsets sits inside Discord spoiler markup. */
-function isSpoiled(text: string, start: number, end: number): boolean {
+export function isSpoiled(text: string, start: number, end: number): boolean {
   return text[start - 1] === '|' && text[end] === '|';
 }
 
@@ -293,6 +293,16 @@ export async function cleanMessage(text: unknown, options: CleanOptions = {}): P
   const candidates = [];
 
   for (const raw of extractUrls(text)) {
+    // Only a link a rule owns spends the cap. A message can carry five links
+    // the bot does not handle and one tracker link; the foreign ones must not
+    // hide the one that was meant for it.
+    let handled = null;
+    try {
+      handled = ruleFor(new URL(raw));
+    } catch {
+      continue;
+    }
+    if (!handled) continue;
     const key = dedupeKey(raw);
     if (seen.has(key)) continue;
     seen.add(key);
