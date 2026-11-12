@@ -39,6 +39,31 @@ test('Pixiv card re-hosts the pages, because Discord cannot fetch pximg', async 
   }
 });
 
+test('the pixiv session never reaches the mirror', async () => {
+  process.env.PIXIV_COOKIE = 'PHPSESSID=secret';
+  try {
+    const restricted = { ...PIXIV, body: { ...PIXIV.body, xRestrict: 1, pageCount: 2 } };
+    const noPages = { body: [{ urls: null }, { urls: null }] };
+    const { impl, calls } = fakeFetch([
+      ['https://www.pixiv.net/ajax/illust/151616953/pages', noPages],
+      ['https://www.pixiv.net/ajax/illust/151616953', restricted],
+      ['https://pixiv.re/', imageResponse()],
+    ]);
+
+    const [card] = await buildCards('https://www.pixiv.net/artworks/151616953', { fetchImpl: impl });
+    assert.equal(card.files.length, 2);
+    assert.deepEqual(card.files.map((file) => file.name), ['SPOILER_p0.jpg', 'SPOILER_p1.jpg']);
+
+    // Only pixiv's own hosts get the session: a mirror is a third party.
+    for (const call of calls) {
+      if (call.url.startsWith('https://pixiv.re/')) assert.equal(call.headers.cookie, undefined, call.url);
+      else assert.equal(call.headers.cookie, 'PHPSESSID=secret', call.url);
+    }
+  } finally {
+    delete process.env.PIXIV_COOKIE;
+  }
+});
+
 test('Pixiv card spoils restricted works and caps the page count', async () => {
   const many = {
     ...PIXIV,

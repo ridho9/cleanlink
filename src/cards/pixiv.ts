@@ -47,20 +47,23 @@ async function buildPixivCard({ match, href }: CardInput, options: CardOptions):
   // exactly as for a work that does not exist. With a session cookie that does
   // not happen; without one the mirror below covers the work.
   const cookie = process.env.PIXIV_COOKIE;
-  const headers = {
+  // The session goes to pixiv only. The mirror that stands in for a refused
+  // page must never receive it: a cookie is a credential, and a mirror is a
+  // third party.
+  const apiHeaders = {
     referer: 'https://www.pixiv.net/',
     ...(cookie ? { cookie } : {}),
   };
 
   const meta = await getJson<PixivIllustResponse>(`https://www.pixiv.net/ajax/illust/${id}`, {
     ...options,
-    headers,
+    headers: apiHeaders,
   });
   if (!meta || meta.error || !meta.body) return null;
 
   const pages = await getJson<PixivPagesResponse>(`https://www.pixiv.net/ajax/illust/${id}/pages`, {
     ...options,
-    headers,
+    headers: apiHeaders,
   });
   const budget = options.budget ?? {};
   const filesLeft = Math.min(MAX_PAGES, budget.files ?? MAX_PAGES);
@@ -96,14 +99,13 @@ async function buildPixivCard({ match, href }: CardInput, options: CardOptions):
   }
   const files = [];
   let bytes = 0;
-  const timeout = PAGE_TIMEOUT_MS;
   // Fetched together, kept in page order: the wait is the slowest page, not
   // the sum of them.
   // One page that never answers must not take the others with it.
   const buffers = await Promise.all(
     sources.map(async (url) => {
       try {
-        return await getBytes(url, { ...options, headers, ...(timeout ? { timeout } : {}) }, byteCap);
+        return await getBytes(url, { ...options, ...(needsPixivSession(url) ? { headers: apiHeaders } : {}), timeout: PAGE_TIMEOUT_MS }, byteCap);
       } catch (error) {
         note(`[card] pixiv page failed: ${(error as Error).message}`);
         return null;
@@ -167,6 +169,16 @@ async function buildPixivCard({ match, href }: CardInput, options: CardOptions):
   }
 
   return { embeds, files };
+}
+
+/** True when the request needs the pixiv session: its API or its file CDN. */
+function needsPixivSession(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === 'pixiv.net' || host.endsWith('.pixiv.net') || host === 'pximg.net' || host.endsWith('.pximg.net');
+  } catch {
+    return false;
+  }
 }
 
 export { buildPixivCard };
