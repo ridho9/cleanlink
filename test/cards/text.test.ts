@@ -16,6 +16,9 @@ test('decodeEntities handles numeric and named entities', () => {
   assert.equal(decodeEntities('Yoan (&#064;phodhipo)'), 'Yoan (@phodhipo)');
   assert.equal(decodeEntities('a &amp; b &lt;c&gt; &quot;d&quot; &#39;e&#39;'), "a & b <c> \"d\" 'e'");
   assert.equal(decodeEntities('&#x2022; dot'), '• dot');
+  // A page can name a code point that does not exist. The entity stays as
+  // written instead of throwing the whole card away.
+  assert.equal(decodeEntities('&#x110000; &#55296; &#x2022;'), '&#x110000; &#55296; •');
 });
 
 test('toField clips inside the limit and never leaves a dangling escape', () => {

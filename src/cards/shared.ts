@@ -1,11 +1,10 @@
 // Shared pieces for every card builder: limits, colours, one HTTP helper,
 // the text and embed helpers, and the optional yt-dlp downloader.
 
-import { execFile } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import type { APIEmbed } from 'discord.js';
 import { note } from '../trace.ts';
 
@@ -57,7 +56,61 @@ type RequestOptions = CardOptions & { accept?: string; method?: 'HEAD' };
 type RefusedMedia = { url: string; size: number };
 type VideoFormat = { url?: string; protocol?: string; vcodec?: string; acodec?: string };
 type VideoInfo = { formats?: VideoFormat[] };
-const run = promisify(execFile);
+/**
+ * Run a media tool and return its output.
+ *
+ * Spawned detached, so it leads its own process group. yt-dlp merges its two
+ * streams through ffmpeg, a separate child: a timeout that killed only yt-dlp
+ * left the merge writing into a directory the caller was about to remove. The
+ * whole group is killed when the call fails, which includes the timeout.
+ */
+function run(
+  command: string,
+  args: string[],
+  { timeout, maxBuffer = 1024 * 1024 }: { timeout: number; maxBuffer?: number },
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let timer: NodeJS.Timeout;
+
+    const killGroup = () => {
+      if (!child.pid) return;
+      try {
+        process.kill(-child.pid, 'SIGKILL');
+      } catch {
+        // No member of the group is left.
+      }
+    };
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) {
+        killGroup();
+        reject(error);
+      } else {
+        resolve({ stdout, stderr });
+      }
+    };
+
+    timer = setTimeout(() => finish(new Error(`${command} took longer than ${timeout / 1000} s`)), timeout);
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk;
+      if (stdout.length > maxBuffer) finish(new Error(`${command} wrote more than ${maxBuffer} bytes`));
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk;
+      if (stderr.length > maxBuffer) finish(new Error(`${command} wrote more than ${maxBuffer} bytes`));
+    });
+    child.on('error', (error) => finish(error));
+    child.on('close', (code) => {
+      finish(code === 0 ? undefined : new Error(`${command} exited with ${code}: ${stderr.split('\n')[0]}`));
+    });
+  });
+}
 
 const BROWSER_UA = 'Mozilla/5.0';
 const TIMEOUT_MS = 6000;
@@ -68,6 +121,9 @@ const TIMEOUT_MS = 6000;
 const MEDIA_TIMEOUT_MS = 10_000;
 // A yt-dlp download fetches and merges two streams, so it gets longer.
 const DOWNLOAD_TIMEOUT_MS = 30_000;
+// Card pages run 0.5-1 MB. A body past this cap is an error page or an
+// outright attack, and the deadline alone does not stop it from being read.
+const MAX_BODY_BYTES = 8_000_000;
 
 // A message can carry several cards, but each one spends the same per-message
 // budget that Discord enforces, so the limits below are shared, not per card.
@@ -167,8 +223,13 @@ async function request(url: string, { fetchImpl = fetch, accept, method, headers
 export async function getJson<T>(url: string, options?: CardOptions): Promise<T | null> {
   const res = await request(url, { ...options, accept: 'application/json' });
   if (!res.ok) return null;
+  const body = await readTextCapped(res);
+  if (body === null) {
+    note(`[card] ${new URL(url).host} answered with a body over ${MAX_BODY_BYTES / 1_000_000} MB`);
+    return null;
+  }
   try {
-    return await res.json() as T;
+    return JSON.parse(body) as T;
   } catch {
     // A JSON endpoint answering HTML is an error page, not a card.
     note(`[card] ${new URL(url).host} answered non-JSON`);
@@ -197,7 +258,12 @@ export async function servesImage(url: string, options?: CardOptions): Promise<b
  */
 export async function readPage(url: string, options?: CardOptions): Promise<{ status: number; html: string | null }> {
   const res = await request(url, { ...options, accept: 'text/html' });
-  return { status: res.status, html: res.ok ? await res.text() : null };
+  if (!res.ok) return { status: res.status, html: null };
+  const html = await readTextCapped(res);
+  if (html === null) {
+    note(`[card] ${new URL(url).host} answered with a body over ${MAX_BODY_BYTES / 1_000_000} MB`);
+  }
+  return { status: res.status, html };
 }
 
 export async function getHtml(url: string, options?: CardOptions): Promise<{ status: number; html: string } | null> {
@@ -293,7 +359,15 @@ export async function downloadMedia(urls: string | string[], options: CardOption
       continue;
     }
 
-    const buffer = await readCapped(res, cap);
+    let buffer;
+    try {
+      buffer = await readCapped(res, cap);
+    } catch (error) {
+      // The deadline covers the body read too. A stream that dies mid-file
+      // costs this candidate, not the card that owns it.
+      note(`[card] ${new URL(url).host} media read failed: ${(error as Error).message}`);
+      continue;
+    }
     if (buffer === null) {
       refused.push({ url, size: declared });
       continue;
@@ -327,14 +401,14 @@ export async function getBytes(url: string, options?: CardOptions, cap = MAX_ATT
  * body is counted while it streams: a file over the budget is never held in
  * memory in full.
  */
-async function readCapped(res: Response, cap: number): Promise<Buffer | null> {
-  if (!res.body) return Buffer.alloc(0);
+async function readChunks(res: Response, cap: number): Promise<Uint8Array[] | null> {
+  if (!res.body) return [];
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
   for (;;) {
     const { done, value } = await reader.read();
-    if (done) return Buffer.concat(chunks, total);
+    if (done) return chunks;
     total += value.length;
     if (total > cap) {
       // Not awaited: the answer is already known, and a cancel can wait on
@@ -346,11 +420,34 @@ async function readCapped(res: Response, cap: number): Promise<Buffer | null> {
   }
 }
 
+async function readCapped(res: Response, cap: number): Promise<Buffer | null> {
+  const chunks = await readChunks(res, cap);
+  if (chunks === null) return null;
+  return Buffer.concat(chunks);
+}
+
+/**
+ * Read a page or JSON body, but stop past `MAX_BODY_BYTES`.
+ * @returns The body, or null when it ran past the cap.
+ */
+async function readTextCapped(res: Response): Promise<string | null> {
+  const chunks = await readChunks(res, MAX_BODY_BYTES);
+  if (chunks === null) return null;
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+/** A code point, or null when the number cannot form one. */
+function codePoint(value: number): string | null {
+  const valid = Number.isInteger(value) && value >= 0 && value <= 0x10ffff && !(value >= 0xd800 && value <= 0xdfff);
+  return valid ? String.fromCodePoint(value) : null;
+}
+
 /** Decode the handful of HTML entities Meta puts in its meta tags. */
 export function decodeEntities(text: unknown): string {
   return String(text ?? '')
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
+    // A page may name a code point that does not exist; the entity stays.
+    .replace(/&#x([0-9a-f]+);/gi, (whole, hex) => codePoint(parseInt(hex, 16)) ?? whole)
+    .replace(/&#(\d+);/g, (whole, dec) => codePoint(Number(dec)) ?? whole)
     .replace(/&quot;/g, '"')
     .replace(/&#39;|&apos;/g, "'")
     .replace(/&lt;/g, '<')
