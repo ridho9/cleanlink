@@ -92,7 +92,7 @@ export async function handleMessage(message: OmitPartialGroupDMChannel<Message>)
   if (process.env.DEBUG) {
     const where = message.guild ? `guild:${message.guild.name}` : 'DM';
     console.log(
-      `[event] ${where} channel=${message.channel.type} author=${message.author.tag} bot=${message.author.bot} chars=${message.content.length} text=${JSON.stringify(message.content.slice(0, 100))}`,
+      `[event] ${where} channel=${message.channel.type} author=${message.author.tag} bot=${message.author.bot} chars=${message.content.length} handles=${handlesAny(message.content) || hasCardFor(message.content)}`,
     );
   }
 
