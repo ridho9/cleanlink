@@ -25,24 +25,52 @@ function innerDiv(html: string, from: number): string | null {
   const open = html.indexOf('>', from);
   if (open === -1) return null;
   const start = open + 1;
+  const end = matchingClose(html, 'div', start);
+  return end === -1 ? null : html.slice(start, html.lastIndexOf('</', end));
+}
+
+/** The index just past the close tag of `tag`, counting nesting from `from`. */
+function matchingClose(html: string, tag: string, from: number): number {
   let depth = 1;
-  const tag = /<\/?div\b/gi;
-  tag.lastIndex = start;
-  for (let match = tag.exec(html); match; match = tag.exec(html)) {
+  const pattern = new RegExp(`<\\/?${tag}\\b`, 'gi');
+  pattern.lastIndex = from;
+  for (let match = pattern.exec(html); match; match = pattern.exec(html)) {
     if (match[0][1] === '/') {
       depth -= 1;
-      if (depth === 0) return html.slice(start, match.index);
+      if (depth === 0) {
+        const end = html.indexOf('>', match.index);
+        return end === -1 ? -1 : end + 1;
+      }
     } else {
       depth += 1;
     }
   }
-  return null;
+  return -1;
+}
+
+/**
+ * Drop every subtree marked `aria-hidden="true"`.
+ *
+ * A text-image post repeats its words in two layers: the visible span is
+ * `aria-hidden`, and the absolutely positioned overlay that follows carries the
+ * same text for a screen reader. Reading both put the sentence on the card
+ * twice (measured 2026-11-12 on /share/18mbLjEsrz).
+ */
+function withoutHidden(html: string): string {
+  let out = html;
+  for (;;) {
+    const open = /<([a-z][a-z0-9]*)\b[^>]*\baria-hidden="true"[^>]*>/i.exec(out);
+    if (!open) return out;
+    const end = matchingClose(out, open[1]!.toLowerCase(), open.index + open[0].length);
+    if (end === -1) return out;
+    out = out.slice(0, open.index) + out.slice(end);
+  }
 }
 
 /** Turn the post body's paragraphs and links into plain text. */
 function htmlToText(fragment: string): string {
   return decodeEntities(
-    fragment
+    withoutHidden(fragment)
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/p>/gi, '\n\n')
       .replace(/<[^>]+>/g, ''),

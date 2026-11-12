@@ -273,6 +273,28 @@ test('a post that comes back as a page feed is still carded', async () => {
   assert.equal(card.embeds[0].footer!.text, 'Facebook');
 });
 
+test('a text-image post is read once, not from both layers', async () => {
+  // A text-image post repeats its words: the visible span is aria-hidden, the
+  // overlay under it carries the same text for a screen reader.
+  const sentence = 'Kalau kalian datang ke pemakaman saya, saya gak akan datang ke pemakaman kalian!';
+  const page = `<html><body>
+<div data-testid="post_message"><div>
+<span aria-hidden="true" class="_4a6n _a5_">${sentence}</span>
+<span class="_5z6m"><span class="_4a6n">${sentence}</span></span>
+</div></div>
+<img role="img" aria-label="Fauzul Rizal" src="https://scontent.example/avatar.jpg">
+<a href="/fauzul.rizal/posts/29906301288996012/">permalink</a>
+</body></html>`;
+  const { impl } = fakeFetch([['https://www.facebook.com/plugins/post.php', page]]);
+  const [card] = await buildCards('https://www.facebook.com/100001286044418/posts/29906301288996012/', {
+    fetchImpl: impl,
+  });
+
+  const embed = card!.embeds[0]!;
+  assert.equal(embed.description, sentence, 'the sentence appears once');
+  assert.equal(embed.author!.name, 'Fauzul Rizal');
+});
+
 test('a feed showing a different post is not carded', async () => {
   const other = FACEBOOK_FEED.replace('1603794385111948', '9999999999999999');
   const { impl } = fakeFetch([['https://www.facebook.com/plugins/post.php', other]]);
