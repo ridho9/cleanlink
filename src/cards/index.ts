@@ -128,17 +128,15 @@ const CARD_SITES: CardSite[] = [
   {
     id: 'reddit',
     hosts: ['reddit.com', 'redd.it'],
-    // /r/<sub>/comments/<id>/<slug>/ is a post. The gallery link Reddit's
-    // share sheet gives (/gallery/<id>) and the short /comments/<id> form are
-    // posts too: the feed names the subreddit and the slug.
-    match: (url) => {
-      const post =
-        /^\/r\/([^/]+)\/comments\/[a-z0-9]{4,10}(?:\/|$)/i.exec(url.pathname) ??
-        /^\/(?:gallery|comments)\/([a-z0-9]{4,10})(?:\/|$)/i.exec(url.pathname);
-      if (post) return post;
-      // redd.it/<id> is the short form, and it redirects to /comments/<id>.
-      return /(^|\.)redd\.it$/i.test(url.hostname) ? /^\/([a-z0-9]{4,10})(?:\/|$)/i.exec(url.pathname) : null;
-    },
+    // Every form names the post by id: /r/<sub>/comments/<id>, /comments/<id>,
+    // /gallery/<id> (what the share sheet gives), and /<id> on redd.it, which
+    // redirects to /comments/<id>. Keyed on the id, so the same post sent twice
+    // in two forms makes one card.
+    match: (url) =>
+      /\/comments\/([a-z0-9]{4,10})(?:\/|$)/i.exec(url.pathname) ??
+      /^\/gallery\/([a-z0-9]{4,10})(?:\/|$)/i.exec(url.pathname) ??
+      // The media hosts (i., v., preview.redd.it) are not post links.
+      (url.hostname === 'redd.it' ? /^\/([a-z0-9]{4,10})(?:\/|$)/i.exec(url.pathname) : null),
     build: buildRedditCard,
   },
   {

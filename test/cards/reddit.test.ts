@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildCards } from '../../src/cards/index.ts';
+import { buildCards, hasCardFor } from '../../src/cards/index.ts';
 import { fakeFetch } from '../../test-support/harness.ts';
 
 const POST = 'https://www.reddit.com/r/WkwkwkLand/comments/1xreva8/lagu_macam_apa_ini/';
@@ -44,6 +44,23 @@ test('Reddit card names itself to Reddit and reads the post feed', async () => {
   assert.equal(card.embeds[0]!.author!.name, 'r/WkwkwkLand · u/Faketaxidriver\\_069');
   assert.equal(card.embeds[0]!.footer!.text, 'Reddit');
   assert.equal(card.embeds[0]!.url, POST);
+});
+
+test('the same post in two link forms makes one card', async () => {
+  const { impl } = fakeFetch([
+    ['https://www.reddit.com/comments/1xreva8.rss', feed({ gallery: '1xreva8' })],
+    ['https://embed.reddit.com/r/WkwkwkLand/comments/1xreva8/', galleryPage(['aaa1', 'bbb2'])],
+  ]);
+
+  const cards = await buildCards(`${POST} https://reddit.com/gallery/1xreva8`, { fetchImpl: impl });
+  assert.equal(cards.length, 1, 'the card is keyed on the post id, not the link form');
+});
+
+test('a direct media link is not treated as a post', async () => {
+  // Reddit's own posts use these hosts for the file, not for a permalink.
+  assert.equal(hasCardFor('https://v.redd.it/abc123'), false);
+  assert.equal(hasCardFor('https://i.redd.it/abc123.jpeg'), false);
+  assert.equal(hasCardFor('https://redd.it/1xreva8'), true);
 });
 
 test('a redd.it short link is carded from the post its feed names', async () => {
