@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test, { after, before } from 'node:test';
 
 import { buildCards } from '../../src/cards/index.ts';
 import { fakeFetch, fixtureText } from '../../test-support/harness.ts';
@@ -9,6 +12,19 @@ const FACEBOOK_ALBUM = fixtureText('facebook-album.html');
 const FACEBOOK_REEL = fixtureText('facebook-reel.html');
 const FACEBOOK_FEED = fixtureText('facebook-feed.html');
 const FACEBOOK_BLOCKED = fixtureText('facebook-video-blocked.html');
+
+// No test in this file may reach the real yt-dlp: a live download depends on a
+// third party's answer and made one test pass or fail with the network. Tests
+// that need a file put their own stand-in first on PATH.
+let stub: string;
+before(async () => {
+  stub = await mkdtemp(join(tmpdir(), 'cleanlink-test-'));
+  await writeFile(join(stub, 'yt-dlp'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  process.env.PATH = `${stub}:${process.env.PATH}`;
+});
+after(async () => {
+  await rm(stub, { recursive: true, force: true });
+});
 
 // The JSON-LD renditions in facebook-album.html, as the card should embed them.
 const ALBUM_PHOTO_1 = 'https://scontent.fpku7-1.fna.fbcdn.net/v/t39.30808-6/863298455_28850503304591533_3686722848884984021_n.jpg?_nc_cat=101&_nc_sid=833d8c&_nc_ht=scontent.fpku7-1.fna&oh=00_AQQYpXiG5Z9ZzdALD2SXFtDugj3rKo8O-ahc5V7c3lhVeA&oe=6AF36778';
@@ -279,6 +295,34 @@ test('a video Facebook will not play still gets a card naming its owner', async 
   assert.equal(embed.image, undefined, 'there is no media to show');
   assert.match(embed.description!, /not logged in/);
   assert.equal(embed.footer!.text, 'Facebook');
+});
+
+test('an attached video drops the login-wall sentence', async () => {
+  // A yt-dlp stand-in on PATH: write one byte where `-o` points.
+  const dir = await mkdtemp(join(tmpdir(), 'cleanlink-test-'));
+  await writeFile(
+    join(dir, 'yt-dlp'),
+    '#!/bin/sh\nout=\nwhile [ $# -gt 0 ]; do if [ "$1" = "-o" ]; then out="$2"; shift 2; else shift; fi; done\nprintf x > "$out"\n',
+    { mode: 0o755 },
+  );
+  const path = process.env.PATH;
+  process.env.PATH = `${dir}:${path}`;
+  try {
+    const { impl } = fakeFetch([['https://www.facebook.com/plugins/post.php', FACEBOOK_BLOCKED]]);
+    const [card] = await buildCards('https://www.facebook.com/reel/1473617888008342', {
+      fetchImpl: impl,
+    });
+
+    assert.ok(card);
+    assert.equal(card.files.length, 1, 'yt-dlp reached the file');
+    assert.equal(card.video, 'attached');
+    // The blocked layout is only what the page said before the file arrived.
+    assert.equal(card.embeds[0].description, undefined, 'no login-wall sentence next to a playing video');
+    assert.equal(card.embeds[0].author!.name, 'Know Your Meme Indonesia - Unofficial');
+  } finally {
+    process.env.PATH = path;
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('Facebook card is skipped for a post that forbids embedding', async () => {

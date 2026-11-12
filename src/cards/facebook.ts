@@ -250,14 +250,16 @@ async function fromEmbedPage({ match, href }: CardInput, options: CardOptions): 
       if (blocked || refused) {
         const files = await downloadVideo(href, options);
         if (files) {
-          const embed = {
+          const embed: CardEmbed = {
             url: href,
             color: FACEBOOK_BLUE,
             footer: { text: 'Facebook' },
           };
           // The player's own frame is the picture; the author name is all the
-          // page gave us.
-          Object.assign(embed, blocked?.embeds[0] ?? {});
+          // page gave us. The sentence about the login wall is not true once
+          // the file is here, so only the author is carried over.
+          const author = blocked?.embeds[0]?.author;
+          if (author) embed.author = author;
           return { embeds: [embed], files, video: 'attached' };
         }
       }
