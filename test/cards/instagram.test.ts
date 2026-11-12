@@ -178,6 +178,23 @@ test('behind a login wall, oginstagram gives the text and vxinstagram the other 
   assert.ok(card!.embeds.every((embed) => embed.url === 'https://www.instagram.com/p/DeKG8FGDKX3/'), 'one gallery, linked to Instagram');
 });
 
+test('a page that does not answer falls back to the mirrors', async () => {
+  const { impl } = fakeFetch([
+    ['https://www.oginstagram.com/p/DeKG8FGDKX3/', mirrorPage('Nil Mısırlıoğlu (@nilsworks)', '🖼️ 3 ❤️ 3,578 💬 47 Best villainess manhwa ever')],
+    ['https://vxinstagram.com/offload/', imageResponse()],
+  ]);
+  // instagram.com refuses the connection, rather than answering with a login
+  // wall. The mirrors exist for exactly this case.
+  const failing = (async (url: string, init: RequestInit = {}) => {
+    if (String(url).startsWith('https://www.instagram.com/')) throw new Error('fetch failed');
+    return impl(url as unknown as string, init);
+  }) as typeof fetch;
+
+  const [card] = await buildCards('https://www.instagram.com/p/DeKG8FGDKX3/', { fetchImpl: failing });
+  assert.equal(card!.embeds[0]!.author!.name, 'Nil Mısırlıoğlu (@nilsworks)');
+  assert.equal(card!.embeds.length, 3);
+});
+
 test('a carousel item that is a video is left out, not shown as a broken image', async () => {
   const { impl, calls } = fakeFetch([
     ['https://www.instagram.com/', LOGIN_WALL],

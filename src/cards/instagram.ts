@@ -64,21 +64,24 @@ export async function buildInstagramCard(
 ): Promise<BuiltCard | null> {
   const url = new URL(href);
   const shortcode = url.pathname.split('/').filter(Boolean).pop();
+  // A request that fails outright is caught here: the mirrors below exist for
+  // exactly the case where Instagram will not answer us, and reaching them must
+  // not depend on the failure being a login wall rather than a timeout. Each
+  // failure is already in the log, from `request()`.
   const [page, embedPage, oembed] = await Promise.all([
-    readPage(href, options),
-    readPage(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, options),
-    getJson<InstagramOEmbed>(`https://www.instagram.com/api/v1/oembed/?url=${encodeURIComponent(href)}`, options),
+    readPage(href, options).catch(() => null),
+    readPage(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, options).catch(() => null),
+    getJson<InstagramOEmbed>(`https://www.instagram.com/api/v1/oembed/?url=${encodeURIComponent(href)}`, options).catch(() => null),
   ]);
 
   // The handler's own URL is only a fallback: an embed-only answer still has a
   // usable caption.
-  const source = page.html ?? embedPage.html;
+  const source = page?.html ?? embedPage?.html ?? null;
   const title = source ? metaContent(source, 'og:title') : null;
   if (!source || !title) {
     // Say why, so the review can tell a login wall from a dead post.
-    note(
-      `[card] instagram ${page.html ? `page had no og:title (${page.html.length} bytes)` : `page answered ${page.status}`}`,
-    );
+    const why = !page ? 'page did not answer' : page.html ? `page had no og:title (${page.html.length} bytes)` : `page answered ${page.status}`;
+    note(`[card] instagram ${why}`);
     return fromMirrors(shortcode!, options);
   }
 
@@ -116,7 +119,7 @@ export async function buildInstagramCard(
 
   // Fetched before the frame is chosen: once the player is in the message, the
   // frame only repeats the video's first second.
-  const media = embedMedia(embedPage.html ?? '');
+  const media = embedMedia(embedPage?.html ?? '');
   // Some reels - seen with licensed music - are marked as video in the payload
   // but carry no `video_url`. yt-dlp still resolves the same CDN file.
   const video = media.video ?? (media.isVideo ? await videoLinks(href) : null);
