@@ -70,6 +70,12 @@ test('a transient resolution failure is retried once', async () => {
   assert.equal(attempts, 2);
 });
 
+test('a redd.it short link resolves to the post', async () => {
+  const fetchImpl = stubFetch({ 'https://redd.it/1xu1rxj': 'https://www.reddit.com/comments/1xu1rxj' });
+
+  assert.equal(await cleanUrl('https://redd.it/1xu1rxj', { fetchImpl }), 'https://www.reddit.com/comments/1xu1rxj');
+});
+
 test('a YouTube watch link keeps only the video id', async () => {
   const fetchImpl = stubFetch();
   const cases = [

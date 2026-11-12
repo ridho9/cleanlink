@@ -31,6 +31,7 @@ type RedditPost = {
   picture: string | null;
   media: string | null;
   gallery: string | null;
+  permalink: string | null;
 };
 
 /** The width a preview URL asks Reddit for; the widest one is the biggest copy. */
@@ -119,8 +120,15 @@ function feedEntry(xml: string): RedditPost | null {
   // A gallery post links its gallery page instead of a file.
   const gallery = /\/gallery\/([a-z0-9]+)/i.exec(entry)?.[1] ?? null;
 
+  // The post's own permalink names the subreddit and the slug, which a bare
+  // /gallery/<id> link does not carry.
+  const permalink =
+    [...entry.matchAll(/href="(https:\/\/www\.reddit\.com\/r\/[^"]+\/comments\/[^"]+)"/g)]
+      .map((match) => decodeEntities(match[1]))
+      .find(Boolean) ?? null;
+
   if (!title && !picture && !media) return null;
-  return { title, author, picture, media, gallery };
+  return { title, author, picture, media, gallery, permalink };
 }
 
 /**
@@ -161,10 +169,18 @@ async function galleryPage(url: string, options: CardOptions): Promise<string> {
   return '';
 }
 
-async function buildRedditCard({ match, href }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
-  const subreddit = match[1] ?? null;
+async function buildRedditCard({ href }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
   const url = new URL(href);
-  const feed = `${url.origin}${url.pathname.replace(/\/?$/, '/')}.rss`;
+  // Every link form names the post by id: /r/<sub>/comments/<id>, /comments/<id>
+  // and /gallery/<id>. The id-only feed answers for all of them; Reddit itself
+  // redirects a gallery link's feed to it.
+  const postId =
+    /\/comments\/([a-z0-9]{4,10})(?:\/|$)/i.exec(url.pathname)?.[1] ??
+    /^\/gallery\/([a-z0-9]{4,10})(?:\/|$)/i.exec(url.pathname)?.[1] ??
+    /^\/([a-z0-9]{4,10})(?:\/|$)/i.exec(url.pathname)?.[1] ??
+    null;
+  if (!postId) return null;
+  const feed = `https://www.reddit.com/comments/${postId}.rss`;
 
   const page = await getHtml(feed, {
     ...options,
@@ -174,11 +190,15 @@ async function buildRedditCard({ match, href }: CardInput, options: CardOptions)
   const post = feedEntry(page.html);
   if (!post) return null;
 
+  // A bare gallery link carries no subreddit; the post the feed names does.
+  const permalink = new URL(post.permalink ?? href);
+  const subreddit = /^\/r\/([^/]+)\/comments\//i.exec(permalink.pathname)?.[1] ?? null;
+
   // A gallery post links its gallery page, which an anonymous reader cannot
   // open; the embed view renders every page of it. A picture inside the gallery
   // keeps its own size, so the card shows the whole set.
   const pictures = post.gallery
-    ? galleryPictures(await galleryPage(galleryUrl(url, post.gallery), options)).slice(0, MAX_EMBEDS)
+    ? galleryPictures(await galleryPage(galleryUrl(permalink, post.gallery), options)).slice(0, MAX_EMBEDS)
     : [];
 
   // A video post links v.redd.it; its HLS playlist is what an anonymous reader

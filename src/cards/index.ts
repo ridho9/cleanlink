@@ -128,10 +128,17 @@ const CARD_SITES: CardSite[] = [
   {
     id: 'reddit',
     hosts: ['reddit.com', 'redd.it'],
-    // /r/<sub>/comments/<id>/<slug>/ - a share link resolves into one of these
-    // before the card is built. A video post's media lives on v.redd.it, which
-    // the card reads from the post's feed.
-    match: (url) => /^\/r\/([^/]+)\/comments\/[a-z0-9]{4,10}(?:\/|$)/i.exec(url.pathname),
+    // /r/<sub>/comments/<id>/<slug>/ is a post. The gallery link Reddit's
+    // share sheet gives (/gallery/<id>) and the short /comments/<id> form are
+    // posts too: the feed names the subreddit and the slug.
+    match: (url) => {
+      const post =
+        /^\/r\/([^/]+)\/comments\/[a-z0-9]{4,10}(?:\/|$)/i.exec(url.pathname) ??
+        /^\/(?:gallery|comments)\/([a-z0-9]{4,10})(?:\/|$)/i.exec(url.pathname);
+      if (post) return post;
+      // redd.it/<id> is the short form, and it redirects to /comments/<id>.
+      return /(^|\.)redd\.it$/i.test(url.hostname) ? /^\/([a-z0-9]{4,10})(?:\/|$)/i.exec(url.pathname) : null;
+    },
     build: buildRedditCard,
   },
   {

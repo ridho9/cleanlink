@@ -33,11 +33,12 @@ function galleryPage(pictures: string[]) {
 }
 
 test('Reddit card names itself to Reddit and reads the post feed', async () => {
-  const { impl, calls } = fakeFetch([['https://www.reddit.com/r/WkwkwkLand/comments/', feed()]]);
+  const { impl, calls } = fakeFetch([['https://www.reddit.com/comments/', feed()]]);
   const [card] = await buildCards(POST, { fetchImpl: impl });
 
   assert.ok(card);
-  assert.match(calls[0]!.url, /\/lagu_macam_apa_ini\/\.rss$/, 'the post feed, not the page');
+  // The id-only feed answers for every link form, including /gallery/<id>.
+  assert.equal(calls[0]!.url, 'https://www.reddit.com/comments/1xreva8.rss', 'the post feed, not the page');
   assert.match(calls[0]!.headers['user-agent']!, /^cleanlink\//, 'the bare Mozilla/5.0 gets 403');
   assert.equal(card.embeds[0]!.title, 'LAGU MACAM APA INI?!');
   assert.equal(card.embeds[0]!.author!.name, 'r/WkwkwkLand · u/Faketaxidriver\\_069');
@@ -45,17 +46,28 @@ test('Reddit card names itself to Reddit and reads the post feed', async () => {
   assert.equal(card.embeds[0]!.url, POST);
 });
 
+test('a redd.it short link is carded from the post its feed names', async () => {
+  const { impl } = fakeFetch([
+    ['https://www.reddit.com/comments/1xreva8.rss', feed()],
+  ]);
+
+  const [card] = await buildCards('https://redd.it/1xreva8', { fetchImpl: impl });
+  assert.ok(card);
+  assert.equal(card.embeds[0]!.title, 'LAGU MACAM APA INI?!');
+  assert.equal(card.embeds[0]!.url, 'https://redd.it/1xreva8');
+});
+
 test('Reddit card shows an uploaded picture at its own size', async () => {
   // A picture post links i.redd.it; the feed's preview is a 640 px proxy of it.
   const picture = 'https://i.redd.it/wxyz1234.jpeg';
-  const { impl } = fakeFetch([['https://www.reddit.com/r/WkwkwkLand/comments/', feed({ media: picture })]]);
+  const { impl } = fakeFetch([['https://www.reddit.com/comments/', feed({ media: picture })]]);
   const [card] = await buildCards(POST, { fetchImpl: impl });
 
   assert.equal(card!.embeds[0]!.image!.url, picture);
 });
 
 test('Reddit card keeps the preview picture when the post only has one', async () => {
-  const { impl } = fakeFetch([['https://www.reddit.com/r/WkwkwkLand/comments/', feed()]]);
+  const { impl } = fakeFetch([['https://www.reddit.com/comments/', feed()]]);
   const [card] = await buildCards(POST, { fetchImpl: impl });
 
   assert.equal(card!.embeds[0]!.image!.url, 'https://external-preview.redd.it/abc.png?width=640&s=1');
@@ -68,9 +80,24 @@ test('Reddit card is skipped when the feed has no entry', async () => {
   assert.deepEqual(await buildCards(POST, { fetchImpl: impl }), []);
 });
 
+test('a bare gallery link is carded from the post its feed names', async () => {
+  const { impl, calls } = fakeFetch([
+    ['https://www.reddit.com/comments/1xreva8.rss', feed({ gallery: '1xreva8' })],
+    ['https://embed.reddit.com/r/WkwkwkLand/comments/1xreva8/', galleryPage(['aaa1', 'bbb2'])],
+  ]);
+
+  // Reddit's share sheet gives /gallery/<id> with no subreddit or slug. The
+  // feed names the post, and the card is built as if the permalink was sent.
+  const [card] = await buildCards('https://reddit.com/gallery/1xreva8', { fetchImpl: impl });
+  assert.ok(card?.embeds.length === 2, 'both gallery pages are on the card');
+  assert.equal(card.embeds[0]!.author!.name, 'r/WkwkwkLand · u/Faketaxidriver\\_069');
+  assert.equal(card.embeds[0]!.url, 'https://reddit.com/gallery/1xreva8');
+  assert.ok(calls.some((call) => call.url.startsWith('https://www.reddit.com/comments/1xreva8.rss')));
+});
+
 test('Reddit card shows every gallery picture at its uploaded size', async () => {
   const { impl, calls } = fakeFetch([
-    ['https://www.reddit.com/r/WkwkwkLand/comments/', feed({ gallery: '1xqvap5' })],
+    ['https://www.reddit.com/comments/', feed({ gallery: '1xqvap5' })],
     ['https://embed.reddit.com/r/WkwkwkLand/comments/', galleryPage(['aaa1', 'bbb2', 'ccc3'])],
   ]);
   const [card] = await buildCards(POST, { fetchImpl: impl });
@@ -97,7 +124,7 @@ test('Reddit card shows every gallery picture at its uploaded size', async () =>
 });
 
 test('Reddit card falls back to the feed picture when the gallery page fails', async () => {
-  const { impl } = fakeFetch([['https://www.reddit.com/r/WkwkwkLand/comments/', feed({ gallery: '1xqvap5' })]]);
+  const { impl } = fakeFetch([['https://www.reddit.com/comments/', feed({ gallery: '1xqvap5' })]]);
   const [card] = await buildCards(POST, { fetchImpl: impl });
 
   assert.equal(card!.embeds.length, 1);
@@ -107,7 +134,7 @@ test('Reddit card falls back to the feed picture when the gallery page fails', a
 test('Reddit card retries a rate-limited gallery page once', async () => {
   let attempts = 0;
   const { impl } = fakeFetch([
-    ['https://www.reddit.com/r/WkwkwkLand/comments/', feed({ gallery: '1xqvap5' })],
+    ['https://www.reddit.com/comments/', feed({ gallery: '1xqvap5' })],
     [
       'https://embed.reddit.com/r/WkwkwkLand/comments/',
       () => {
@@ -131,7 +158,7 @@ test('Reddit card retries a rate-limited gallery page once', async () => {
 
 test('a gallery page that never answers still leaves the feed picture', async () => {
   const { impl } = fakeFetch([
-    ['https://www.reddit.com/r/WkwkwkLand/comments/', feed({ gallery: '1xqvap5' })],
+    ['https://www.reddit.com/comments/', feed({ gallery: '1xqvap5' })],
     [
       'https://embed.reddit.com/',
       () => {
@@ -153,7 +180,7 @@ test('Reddit card reads the picture id from a preview that carries no -v0-', asy
 <li slot="page-2"><faceplate-img src="https://preview.redd.it/wzd6wkjod51g1.png?width=1080&amp;crop=smart&amp;auto=webp&amp;s=2"></faceplate-img></li>
 </ul></body></html>`;
   const { impl } = fakeFetch([
-    ['https://www.reddit.com/r/WkwkwkLand/comments/', feed({ gallery: '1xqvap5' })],
+    ['https://www.reddit.com/comments/', feed({ gallery: '1xqvap5' })],
     ['https://embed.reddit.com/r/WkwkwkLand/comments/', html],
   ]);
   const [card] = await buildCards(POST, { fetchImpl: impl });

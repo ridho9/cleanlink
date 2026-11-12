@@ -48,8 +48,9 @@ export const RULES: Rule[] = [
   {
     id: 'reddit',
     hosts: ['reddit.com', 'redd.it'],
-    // A share link is /r/<sub>/s/<code>; a 301 names the permalink.
-    share: /^\/r\/[^/]+\/s\/[A-Za-z0-9]+\/?$/,
+    // A share link is /r/<sub>/s/<code>, or /<id> on redd.it; a 301 names the
+    // permalink.
+    share: /^(?:\/r\/[^/]+\/s\/[A-Za-z0-9]+|\/[A-Za-z0-9]{4,10})\/?$/,
     // On a permalink every parameter is a share token or a tracker.
     dropAllOn: /\/comments\/[a-z0-9]+/i,
     drop: [],
