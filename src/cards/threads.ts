@@ -48,7 +48,11 @@ interface ThreadsPost extends ThreadsMedia {
     direct_reply_count?: number;
     repost_count?: number;
     quote_count?: number;
-    share_info?: { quoted_post?: ThreadsPost | null } | null;
+    share_info?: {
+      quoted_post?: ThreadsPost | null;
+      /** The quoted post, whole: author, caption and media. Served since 2026-11. */
+      quoted_attachment_post?: ThreadsPost | null;
+    } | null;
   } | null;
 }
 
@@ -67,7 +71,9 @@ async function buildThreadsCard({ match, href }: CardInput, options: CardOptions
 /** The card built from the post's JSON, laid out like the X card. */
 async function postCard(post: ThreadsPost, parent: ThreadsPost | null, href: string, options: CardOptions): Promise<BuiltCard | null> {
   const info = post.text_post_app_info ?? {};
-  const quoted = info.share_info?.quoted_post ?? null;
+  // A quote names the quoted post in `quoted_attachment_post`; `quoted_post`
+  // is null on the pages seen since 2026-11-11 and stays as the fallback.
+  const quoted = info.share_info?.quoted_attachment_post ?? info.share_info?.quoted_post ?? null;
   const url = post.user?.username && post.code ? `https://www.threads.com/@${post.user.username}/post/${post.code}` : href;
 
   // The post's own media first. A post without media shows the quoted post's,
@@ -76,7 +82,9 @@ async function postCard(post: ThreadsPost, parent: ThreadsPost | null, href: str
   const source = [post, quoted, parent].find((item): item is ThreadsPost =>
     Boolean(item && (item.carousel_media?.length || item.video_versions?.length || item.image_versions2?.candidates?.length)));
   const played = await attachMedia(source ? videoUrls(source) : null, options);
-  const playing = played.kind !== 'none';
+  // Only an attached file replaces the poster with its own frame. A follow-up
+  // link does not: the card keeps the picture, and the link goes underneath.
+  const playing = played.kind === 'attached';
   const images = source ? stills(source, playing).slice(0, MAX_EMBEDS) : [];
 
   const parts = [];

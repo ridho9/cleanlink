@@ -132,6 +132,83 @@ test('a reply\'s carousel on the same page is not used for the post', async () =
   assert.equal(card!.embeds[0]!.image, undefined);
 });
 
+test('a quote post shows the quoted post and its picture', async () => {
+  // The shape Threads served on 2026-11-11: the quoted work sits in
+  // `quoted_attachment_post`; `quoted_post` is null.
+  const quoted = {
+    pk: '4027823477192858930',
+    code: 'DfltBy4Dx0y',
+    user: { username: 'dedimulyadi71' },
+    caption: { text: 'Maju ‼️ Jalan ‼️' },
+    media_type: 2,
+    image_versions2: {
+      candidates: [{ url: 'https://cdn.example/poster.jpg' }, { url: 'https://cdn.example/poster-small.jpg' }],
+    },
+    video_versions: [{ url: 'https://cdn.example/quote.mp4' }],
+  };
+  const post = {
+    pk: '18115491902271970',
+    code: 'QuotePost01',
+    user: { username: 'ryanachadiat', full_name: 'Ryan' },
+    caption: { text: 'Memilih badut, ya dapat sirkus.' },
+    taken_at: 1794405503,
+    like_count: 6468,
+    image_versions2: { candidates: [] },
+    text_post_app_info: {
+      is_reply: false,
+      direct_reply_count: 783,
+      repost_count: 471,
+      quote_count: 31,
+      share_info: { quoted_post: null, quoted_attachment_post: quoted },
+    },
+  };
+  const script = `<script type="application/json" data-sjs>${JSON.stringify({ data: { media: post } })}</script>`;
+  const { impl } = fakeFetch([['https://www.threads.com/', `<html><body>${script}</body></html>`]]);
+  const [card] = await buildCards('https://www.threads.com/@ryanachadiat/post/QuotePost01', {
+    fetchImpl: impl,
+  });
+
+  const embed = card!.embeds[0]!;
+  assert.match(embed.description!, /> \*\*Quoting \(@dedimulyadi71\)\*\*/);
+  assert.match(embed.description!, /> Maju/);
+  assert.equal(embed.image!.url, 'https://cdn.example/poster.jpg', 'the poster of the quoted video');
+  assert.equal(embed.author!.name, 'Ryan (@ryanachadiat)');
+});
+
+test('a quoted video too large to attach keeps its poster and gains a link', async () => {
+  const quoted = {
+    code: 'DfltBy4Dx0y',
+    user: { username: 'dedimulyadi71' },
+    caption: { text: 'Maju' },
+    media_type: 2,
+    image_versions2: { candidates: [{ url: 'https://cdn.example/poster.jpg' }] },
+    video_versions: [{ url: 'https://cdn.example/quote.mp4' }],
+  };
+  const post = {
+    code: 'QuotePost02',
+    user: { username: 'ryanachadiat', full_name: 'Ryan' },
+    caption: { text: 'Memilih badut, ya dapat sirkus.' },
+    image_versions2: { candidates: [] },
+    text_post_app_info: { share_info: { quoted_post: null, quoted_attachment_post: quoted } },
+  };
+  const script = `<script type="application/json" data-sjs>${JSON.stringify({ data: { media: post } })}</script>`;
+  const { impl } = fakeFetch([
+    ['https://www.threads.com/', `<html><body>${script}</body></html>`],
+    // A file over the attachment budget is refused unread and becomes a link.
+    ['https://cdn.example/quote.mp4', () => new Response(null, {
+      status: 200,
+      headers: { 'content-length': '10000000', 'content-type': 'video/mp4' },
+    })],
+  ]);
+  const [card] = await buildCards('https://www.threads.com/@ryanachadiat/post/QuotePost02', {
+    fetchImpl: impl,
+  });
+
+  assert.equal(card!.video, 'follow_up');
+  assert.equal(card!.followUp, 'https://cdn.example/quote.mp4');
+  assert.equal(card!.embeds[0]!.image!.url, 'https://cdn.example/poster.jpg');
+});
+
 test('Threads card says so when the page carries no post', async () => {
   // What Threads serves for a deleted post, or one limited to some audiences.
   const { impl } = fakeFetch([['https://www.threads.com/', '<html><head><title>Threads</title></head></html>']]);
