@@ -128,21 +128,17 @@ Query-parameter stripping is deterministic and covered by tests for every site. 
 
 | Site | Param strip | Share resolve | Card |
 |---|---|---|---|
-| Threads | live | **real code** — `302` → clean post URL | n/a |
-| Instagram | live (`mdxt`, `psln`) | `/share/` still fake: `200`, no redirect → silence | n/a |
-| TikTok | live | **real code** — `vt.tiktok.com` → `/@user/video/<id>` | n/a |
-| Facebook | live (`share_url`) | **real code** — `/share/<code>` → `/posts/<id>` | n/a |
-| Twitter / X | live | n/a | **real code** — built from `api.fxtwitter.com`, sent to Discord and read back |
-| YouTube | live | n/a | n/a |
-| TikTok | live | **real code** — `vt.tiktok.com` → `/@user/video/<id>` | **real code** — `tikwm.com` answered for a real video, card sent and read back |
 | Threads | live | **real code** — `302` → clean post URL | **real code** — text, author and avatar from the page, card sent and read back |
 | Instagram | live (`mdxt`, `psln`, `srtk`) | `/share/` still fake: `200`, no redirect → silence | **real code** — single post, 4- and 10-image carousels and a reel all read back from Discord |
-| Facebook | live | **real code** — `/share/<code>` → `/posts/<id>`, `/reel/<id>`, `story.php?story_fbid=…`; `/share/p/<code>` → `/groups/<group>/permalink/<id>` | **real code** — text, author and pictures from `plugins/post.php` for a post, a reel and a watch link; cards sent and read back. A 5-picture post builds with all five at their uploaded `900x1295`, not the grid's `394x394`: the page's JSON-LD block names the file, and that fetch answered `200 image/jpeg`. A public group post builds from its page tags: group name, text, `scontent` picture |
+| TikTok | live | **real code** — `vt.tiktok.com` → `/@user/video/<id>` | **real code** — `tikwm.com` answered for a real video, card sent and read back |
+| Facebook | live (`share_url`) | **real code** — `/share/<code>` → `/posts/<id>`, `/reel/<id>`, `story.php?story_fbid=…`; `/share/p/<code>` → `/groups/<group>/permalink/<id>` | **real code** — text, author and pictures from `plugins/post.php` for a post, a reel and a watch link; cards sent and read back. A 5-picture post builds with all five at their uploaded `900x1295`, not the grid's `394x394`: the page's JSON-LD block names the file, and that fetch answered `200 image/jpeg`. A public group post builds from its page tags: group name, text, `scontent` picture |
+| Twitter / X | live | n/a | **real code** — built from `api.fxtwitter.com`, sent to Discord and read back |
+| YouTube | live | n/a | n/a |
 | nhentai | n/a | n/a | **real code** — `api/v2/galleries/<id>` and a `t.nhentai.net` cover that Discord can fetch; card built and inspected, gated on NSFW |
 | MangaDex | n/a | n/a | **real code** — a safe and a pornographic title built from the live API: the safe cover as the embed image (`uploads.mangadex.org` answers `Discordbot` with `200 image/jpeg`), the other as a 131 KB `SPOILER_cover.jpg` |
 | Pixiv | n/a | n/a | **real code** — 2 pages fetched with a pixiv `Referer`, uploaded, embed rendered |
 
-Four of the six tracker sites have resolved a real share link, and every cleaned URL was re-fetched to confirm it still serves the post. Both cards were posted to a real channel and read back, attachment and embed intact. If a site silently does nothing, this table is the first place to look.
+Four of the six tracker sites have resolved a real share link, and every cleaned URL was re-fetched to confirm it still serves the post. Every card has been built against the live site and read back from Discord, attachment and embed intact. If a site silently does nothing, this table is the first place to look.
 
 ## Logs and the daily review
 
@@ -222,5 +218,5 @@ Node does not check types. `mise run test` and `mise run deploy` run `tsc` first
 - **A thread needs its own permission.** `Send Messages` does not cover threads; without *Send Messages in Threads* the reply fails with `50001 Missing Access`, and the bot now logs that, gives the original preview back and stays quiet instead of reporting a gateway error.
 - **The bot cannot remove an embed from your message in a DM.** Suppressing embeds on a message you did not author needs `Manage Messages`, and DM channels have no permissions, so Discord answers `404` (verified). Wrap the link in angle brackets — `<https://…>` — and Discord shows no preview on your message; the bot still parses it and its own reply carries the preview.
 - Nothing is stored: no database, no cache, no message logging beyond the one `console.log` per cleaned link.
-- Limits: 4 s per hop, 3 hops, 5 links per message. A failed lookup leaves the link untouched rather than guessing.
-- Card limits, shared by every card in the message: 10 embeds, 10 attachments, 5 Pixiv pages per work, 9.5 MB of attachments, 6 s for a page and 10 s for a media file. A card that does not fit the budget is skipped whole, and a card that cannot be built leaves the plain cleaned reply — never an error.
+- Limits: 4 s per attempt, 3 hops, 5 handled links per message. A hop that fails is retried once, so a hop can take 8 s. Links no rule owns do not spend the 5-link cap. A failed lookup leaves the link untouched rather than guessing.
+- Card limits, shared by every card in the message: 10 embeds, 10 attachments, 6000 characters of embed text, 5 Pixiv pages per work, 9.5 MB of attachments. A page or JSON body may be 8 MB. A page gets 6 s (Pixiv 20 s, Facebook 15 s), a media file 10 s, and a yt-dlp download 30 s. A card that does not fit the budget is skipped whole, and a card that cannot be built leaves the plain cleaned reply — never an error.

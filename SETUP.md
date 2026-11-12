@@ -121,7 +121,6 @@ If the reply appears in Discord, you are done. That terminal is now the bot.
 | What you see | Cause | Fix |
 |---|---|---|
 | `DISCORD_TOKEN is not set...` and exit | No `.env`, or it is not in the repo root | `cp .env.example .env`, fill it in, run from the repo root |
-| `.env not found. Continuing without it.` | Same as above — the bot then exits with the message above | Create `.env` |
 | `Error [TokenInvalid]: An invalid token was provided.` | Wrong, revoked, or mangled token (quotes, spaces, line break) | **Reset Token** and paste it raw and alone |
 | `Error [DisallowedIntents]: Privileged intent provided is not enabled or whitelisted.` | Message Content Intent is off | Enable it (step 3), wait a minute, restart |
 | `logged in as ...` but no reply at all | Message Content Intent off, or you are not DMing the bot, or the link needed no change | Check the terminal for a `cleaned ...` line: present means the reply failed, absent means it never got text |

@@ -12,7 +12,7 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env src/bot.ts",
     "start:dev": "node --env-file-if-exists=.env.dev src/bot.ts",
-    "test": "node --test"
+    "test": "tsc && node --test"
   },
   "dependencies": {
     "discord.js": "^14.28.0"

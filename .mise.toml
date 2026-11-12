@@ -13,7 +13,6 @@ run = "pnpm exec tsc"
 
 [tasks.test]
 description = "Type-check, then run the unit tests"
-depends = ["typecheck"]
 run = "pnpm test"
 
 [tasks.start]
