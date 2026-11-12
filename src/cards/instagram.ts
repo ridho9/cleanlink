@@ -32,6 +32,7 @@ import {
   MAX_EMBEDS,
   servesImage,
   metaContent,
+  numberedEmbeds,
   statLine,
   toField,
   videoLinks,
@@ -134,12 +135,7 @@ export async function buildInstagramCard(
 
   const embeds = [
     embed,
-    ...images.slice(1).map((image, index) => ({
-      url: embed.url,
-      color: INSTAGRAM_PINK,
-      image: { url: image },
-      footer: { text: `Instagram · ${index + 2}/${images.length}` },
-    })),
+    ...numberedEmbeds(embed.url, INSTAGRAM_PINK, images, (position, total) => `Instagram · ${position}/${total}`),
   ];
 
   return { embeds, ...playback(played) };
@@ -266,12 +262,7 @@ async function fromMirrors(shortcode: string, options: CardOptions): Promise<Bui
   return {
     embeds: [
       embed,
-      ...images.slice(1).map((image, index) => ({
-        url: canonical,
-        color: INSTAGRAM_PINK,
-        image: { url: image },
-        footer: { text: `Instagram · ${index + 2}/${images.length}` },
-      })),
+      ...numberedEmbeds(canonical, INSTAGRAM_PINK, images, (position, total) => `Instagram · ${position}/${total}`),
     ],
     files: [],
   };

@@ -8,6 +8,7 @@ import {
   playback,
   escapeMarkdown,
   getJson,
+  numberedEmbeds,
   statLine,
   X_BLUE,
 } from './shared.ts';
@@ -121,12 +122,7 @@ async function buildXCard({ match }: CardInput, options: CardOptions): Promise<B
 
   const embeds = [
     embed,
-    ...images.slice(1).map((image, index) => ({
-      url: embed.url,
-      color: X_BLUE,
-      image: { url: image },
-      footer: { text: `Twitter · ${index + 2}/${images.length}` },
-    })),
+    ...numberedEmbeds(embed.url, X_BLUE, images, (position, total) => `Twitter · ${position}/${total}`),
   ];
 
   return { embeds, ...playback(played) };

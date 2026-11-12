@@ -489,6 +489,27 @@ export function imageEmbeds(url: string | undefined, color: number, footer: Card
   return images.map((image) => ({ url, color, footer, image: { url: image } }));
 }
 
+/**
+ * The same, numbered `label(position, total)`: every image after the first
+ * gets one embed and says where it sits in the set, so a reader knows how many
+ * pictures the card holds. Callers pass the whole list; the first image stays
+ * on the card's own embed.
+ */
+export function numberedEmbeds(
+  url: string | undefined,
+  color: number,
+  images: string[],
+  label: (position: number, total: number) => string,
+): CardEmbed[] {
+  const total = images.length;
+  return images.slice(1).map((image, index) => ({
+    url,
+    color,
+    image: { url: image },
+    footer: { text: label(index + 2, total) },
+  }));
+}
+
 /** The author block, with whichever of its two optional fields exist. */
 export function authorBlock(name: string | null | undefined, fallback: string | null | undefined, { url, iconUrl }: { url?: string | null; iconUrl?: string | null } = {}): NonNullable<CardEmbed['author']> {
   const block: NonNullable<CardEmbed['author']> = { name: toField(name || fallback, 256) };

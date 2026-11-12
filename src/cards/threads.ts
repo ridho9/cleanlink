@@ -12,6 +12,7 @@ import {
   getHtml,
   MAX_EMBEDS,
   metaContent,
+  numberedEmbeds,
   playback,
   statLine,
   THREADS_BLACK,
@@ -111,12 +112,7 @@ async function postCard(post: ThreadsPost, parent: ThreadsPost | null, href: str
   if (images.length > 1) embed.footer = { text: `Threads · 1/${images.length}` };
   const embeds = [
     embed,
-    ...images.slice(1).map((image, index) => ({
-      url,
-      color: THREADS_BLACK,
-      image: { url: image },
-      footer: { text: `Threads · ${index + 2}/${images.length}` },
-    })),
+    ...numberedEmbeds(url, THREADS_BLACK, images, (position, total) => `Threads · ${position}/${total}`),
   ];
   return { embeds, ...playback(played) };
 }

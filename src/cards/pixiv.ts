@@ -10,6 +10,7 @@ import {
   getBytes,
   getJson,
   MAX_ATTACH_BYTES,
+  numberedEmbeds,
   PIXIV_BLUE,
   toField,
 } from './shared.ts';
@@ -150,15 +151,15 @@ async function buildPixivCard({ match, href }: CardInput, options: CardOptions):
   // One image per embed, same as X: the first embed carries the title and the
   // author, the rest are pages. Every file is claimed, so no loose attachment
   // is left above the card.
-  const embeds = [embed];
-  for (const [offset, file] of restricted ? [] : files.slice(1).entries()) {
-    embeds.push({
-      url: href,
-      color: PIXIV_BLUE,
-      image: { url: `attachment://${file.name}` },
-      footer: { text: `Pixiv · page ${offset + 2}/${files.length}` },
-    });
-  }
+  const embeds = [
+    embed,
+    ...numberedEmbeds(
+      href,
+      PIXIV_BLUE,
+      restricted ? [] : files.map((file) => `attachment://${file.name}`),
+      (position, total) => `Pixiv · page ${position}/${total}`,
+    ),
+  ];
 
   const tags = (meta.body.tags?.tags ?? [])
     .map((tag) => tag?.tag)

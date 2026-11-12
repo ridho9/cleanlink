@@ -11,6 +11,7 @@ import {
   downloadVideo,
   getHtml,
   MAX_EMBEDS,
+  numberedEmbeds,
   readPage,
   toField,
   REDDIT_ORANGE,
@@ -231,12 +232,7 @@ async function buildRedditCard({ href }: CardInput, options: CardOptions): Promi
   if (pictures.length > 1) embed.footer = { text: `Reddit · 1/${pictures.length}` };
   const embeds = [
     embed,
-    ...pictures.slice(1).map((picture, index) => ({
-      url: href,
-      color: REDDIT_ORANGE,
-      image: { url: picture },
-      footer: { text: `Reddit · ${index + 2}/${pictures.length}` },
-    })),
+    ...numberedEmbeds(href, REDDIT_ORANGE, pictures, (position, total) => `Reddit · ${position}/${total}`),
   ];
   return { embeds, files: files ?? [], ...(files ? { video: 'attached' as const } : {}) };
 }
