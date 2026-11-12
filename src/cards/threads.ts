@@ -82,9 +82,7 @@ async function postCard(post: ThreadsPost, parent: ThreadsPost | null, href: str
   const source = [post, quoted, parent].find((item): item is ThreadsPost =>
     Boolean(item && (item.carousel_media?.length || item.video_versions?.length || item.image_versions2?.candidates?.length)));
   const played = await attachMedia(source ? videoUrls(source) : null, options);
-  // Only an attached file replaces the poster with its own frame. A follow-up
-  // link does not: the card keeps the picture, and the link goes underneath.
-  const playing = played.kind === 'attached';
+  const playing = played.kind !== 'none';
   const images = source ? stills(source, playing).slice(0, MAX_EMBEDS) : [];
 
   const parts = [];

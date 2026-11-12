@@ -8,6 +8,7 @@ import {
   playback,
   decodeEntities,
   getHtml,
+  downloadMedia,
   downloadVideo,
   videoLinks,
   imageEmbeds,
@@ -387,16 +388,19 @@ async function fromFacebed(href: string, options: CardOptions): Promise<BuiltCar
 
   // A reel's `og:video` is the full file on Facebook's own CDN, usually past
   // the upload budget (a 17 s reel measured 24 MB).
-  const played = await attachMedia(metaContent(page.html, 'og:video'), options);
+  const video = metaContent(page.html, 'og:video');
+  const media = video ? await downloadMedia(video, options) : { files: null, refused: [] };
   const image = metaContent(page.html, 'og:image');
-  if (played.kind === 'none' && image) embed.image = { url: image };
+  if (!media.files && media.refused.length === 0 && image) embed.image = { url: image };
 
-  // The file would not fit, and the CDN URL does not unfurl when posted alone
-  // (measured: no embed). The page does, so the page is the link that gets
-  // shown - one message, one player, and no caption twice.
-  if (played.kind === 'follow_up') return { url: mirror.href, embeds: [], files: [], video: 'unfurl' };
+  // The file answered but would not fit, and the CDN URL does not unfurl when
+  // posted alone (measured: no embed). The page does, so the page is the link
+  // that gets shown - one message, one player, and no caption twice.
+  if (!media.files && media.refused.length > 0) {
+    return { url: mirror.href, embeds: [], files: [], video: 'unfurl' };
+  }
 
-  return { embeds: [embed], ...playback(played) };
+  return media.files ? { embeds: [embed], files: media.files, video: 'attached' } : { embeds: [embed], files: [] };
 }
 
 /** Fetch the facebed page and build the text part of a card from its tags. */

@@ -137,7 +137,9 @@ test('a reel over the budget follows up with its video URL', async () => {
   const { impl } = fakeFetch([
     ['https://www.instagram.com/p/DcuMLVagTPh/embed/captioned/', EMBED_VIDEO],
     ['https://www.instagram.com/', REEL_HTML],
-    [VIDEO_URL, mp4(15 * 1024 * 1024)],
+    // Over the upload budget, inside the unfurl ceiling: a 15 MiB file would
+    // already be one Discord does not play.
+    [VIDEO_URL, mp4(14 * 1024 * 1024)],
   ]);
   const [card] = await buildCards(URL, { fetchImpl: impl });
 

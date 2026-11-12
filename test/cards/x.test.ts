@@ -305,6 +305,26 @@ test('a follow-up uses the largest rendition Discord still unfurls, not the larg
   assert.equal(card!.followUp, urls[2]);
 });
 
+test('no follow-up when every rendition is too large for Discord to play', async () => {
+  const tweet = structuredClone(X_VIDEO);
+  const sized = (bytes: number) => () => new Response(MP4_BYTES, {
+    status: 200, headers: { 'content-type': 'video/mp4', 'content-length': String(bytes) },
+  });
+  const urls = ['huge', 'big'].map((n) => `https://video.twimg.com/amplify_video/1/vid/${n}.mp4`);
+  tweet.tweet.media.all[0].url = urls[0];
+  tweet.tweet.media.all[0].formats = urls.map((url, i) => ({ url, bitrate: 3e6 - i * 1e6, container: 'mp4' }));
+  const { impl } = fakeFetch([
+    ['https://api.fxtwitter.com/', tweet],
+    [urls[0]!, sized(39_458_600)],
+    [urls[1]!, sized(20_000_000)],
+  ]);
+
+  const [card] = await buildCards('https://x.com/someone/status/2117280148445962692', { fetchImpl: impl });
+
+  assert.deepEqual(card!.files, []);
+  assert.equal(card!.followUp, undefined, 'a link that cannot play is noise');
+});
+
 test('yt-dlp renditions keep only complete files, best first', () => {
   // Shape of `yt-dlp -J` on facebook.com/kizaragieril/videos/29857166957218154.
   const info = { formats: [

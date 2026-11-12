@@ -305,8 +305,10 @@ export function playback(media: Media): Playback & { files: CardFile[] } {
 
 /**
  * The rendition to send as a follow-up: the largest that Discord still
- * unfurls, otherwise the smallest one offered. A URL that never answered is
- * not a candidate, because it would put a dead link in the channel.
+ * unfurls. No link when every file that declared a size is past that ceiling,
+ * because Discord would show a bare URL instead of a player; the card keeps
+ * its poster and the post's own link. A URL that never answered is not a
+ * candidate either, and one that declared no size is still worth the try.
  * Refused files are best first; size is 0 when the server did not declare it.
  */
 function followUpOf(refused: RefusedMedia[]): string | null {
@@ -314,7 +316,7 @@ function followUpOf(refused: RefusedMedia[]): string | null {
   const known = refused.filter((item) => item.size > 0);
   const playable = known.filter((item) => item.size <= MAX_UNFURL_BYTES);
   if (playable.length > 0) return playable.reduce((a, b) => (b.size > a.size ? b : a)).url;
-  if (known.length > 0) return known.reduce((a, b) => (b.size < a.size ? b : a)).url;
+  if (known.length > 0) return null;
   return refused[0].url;
 }
 

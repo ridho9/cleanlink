@@ -175,7 +175,41 @@ test('a quote post shows the quoted post and its picture', async () => {
   assert.equal(embed.author!.name, 'Ryan (@ryanachadiat)');
 });
 
-test('a quoted video too large to attach keeps its poster and gains a link', async () => {
+test('a quoted video over the unfurl ceiling keeps its poster and gets no link', async () => {
+  const quoted = {
+    code: 'DfltBy4Dx0y',
+    user: { username: 'dedimulyadi71' },
+    caption: { text: 'Maju' },
+    media_type: 2,
+    image_versions2: { candidates: [{ url: 'https://cdn.example/poster.jpg' }] },
+    video_versions: [{ url: 'https://cdn.example/quote.mp4' }],
+  };
+  const post = {
+    code: 'QuotePost03',
+    user: { username: 'ryanachadiat', full_name: 'Ryan' },
+    caption: { text: 'Memilih badut, ya dapat sirkus.' },
+    image_versions2: { candidates: [] },
+    text_post_app_info: { share_info: { quoted_post: null, quoted_attachment_post: quoted } },
+  };
+  const script = `<script type="application/json" data-sjs>${JSON.stringify({ data: { media: post } })}</script>`;
+  const { impl } = fakeFetch([
+    ['https://www.threads.com/', `<html><body>${script}</body></html>`],
+    // 28 MB: past the upload budget and past what Discord plays from a link.
+    ['https://cdn.example/quote.mp4', () => new Response(null, {
+      status: 200,
+      headers: { 'content-length': '29268946', 'content-type': 'video/mp4' },
+    })],
+  ]);
+  const [card] = await buildCards('https://www.threads.com/@ryanachadiat/post/QuotePost03', {
+    fetchImpl: impl,
+  });
+
+  assert.equal(card!.video, undefined, 'no link Discord would only print as text');
+  assert.equal(card!.followUp, undefined);
+  assert.equal(card!.embeds[0]!.image!.url, 'https://cdn.example/poster.jpg');
+});
+
+test('a quoted video that can still play becomes a follow-up link, not a poster', async () => {
   const quoted = {
     code: 'DfltBy4Dx0y',
     user: { username: 'dedimulyadi71' },
@@ -206,7 +240,7 @@ test('a quoted video too large to attach keeps its poster and gains a link', asy
 
   assert.equal(card!.video, 'follow_up');
   assert.equal(card!.followUp, 'https://cdn.example/quote.mp4');
-  assert.equal(card!.embeds[0]!.image!.url, 'https://cdn.example/poster.jpg');
+  assert.equal(card!.embeds[0]!.image, undefined, 'the player brings its own frame');
 });
 
 test('Threads card says so when the page carries no post', async () => {
