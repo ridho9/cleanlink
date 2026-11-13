@@ -205,6 +205,34 @@ test('X card keeps every photo of a four-photo post', async () => {
   assert.deepEqual(card!.files, []);
 });
 
+test('a post with more pictures than Discord allows stops at ten embeds', async () => {
+  // Measured on /KuriUni0/status/2121051101927788715, a 15-photo post: the card
+  // used to exceed the message's embed limit and was dropped whole.
+  const photos = Array.from({ length: 15 }, (_, index) => ({
+    type: 'photo',
+    url: `https://pbs.twimg.com/media/photo${index + 1}.jpg`,
+  }));
+  const payload = {
+    ...X_TWO_PHOTOS,
+    tweet: { ...X_TWO_PHOTOS.tweet, quote: null, media: { all: photos } },
+  };
+  const { impl } = fakeFetch([['https://api.fxtwitter.com/', payload]]);
+  const [card] = await buildCards('https://x.com/KuriUni0/status/2121051101927788715', {
+    fetchImpl: impl,
+  });
+
+  assert.ok(card, 'a gallery past the limit still gets a card');
+  assert.equal(card!.embeds.length, 10);
+  assert.deepEqual(
+    card!.embeds.map((embed) => embed.footer!.text),
+    Array.from({ length: 10 }, (_, index) => `Twitter · ${index + 1}/15`),
+  );
+  assert.deepEqual(
+    card!.embeds.map((embed) => embed.image!.url),
+    photos.slice(0, 10).map((photo) => photo.url),
+  );
+});
+
 test('a quote tweet\'s photos join the card, after the main tweet\'s', async () => {
   const { impl } = fakeFetch([['https://api.fxtwitter.com/', X_QUOTE_PHOTOS]]);
   const [card] = await buildCards('https://x.com/someone/status/2117268467812331634', {
