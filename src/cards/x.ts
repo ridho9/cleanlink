@@ -6,6 +6,10 @@ import {
   clip,
   attachMedia,
   playback,
+  tailFiles,
+  MAX_ATTACH_BYTES,
+  MAX_EMBEDS,
+  MAX_FILES,
   escapeMarkdown,
   getJson,
   numberedEmbeds,
@@ -125,7 +129,22 @@ async function buildXCard({ match }: CardInput, options: CardOptions): Promise<B
     ...numberedEmbeds(embed.url, X_BLUE, images, (position, total) => `Twitter · ${position}/${total}`),
   ];
 
-  return { embeds, ...playback(played) };
+  // Ten embeds is the message limit, so the pictures past it ride as files:
+  // ten more fill the same message. A video already attached spends one file
+  // and its bytes first.
+  const playedCard = playback(played);
+  const used = playedCard.files;
+  const tail = images.length > MAX_EMBEDS
+    ? await tailFiles(images.slice(MAX_EMBEDS), MAX_EMBEDS + 1, {
+        ...options,
+        budget: {
+          files: (options.budget?.files ?? MAX_FILES) - used.length,
+          bytes: (options.budget?.bytes ?? MAX_ATTACH_BYTES) - used.reduce((total, file) => total + file.attachment.length, 0),
+        },
+      })
+    : [];
+
+  return { embeds, ...playedCard, files: [...used, ...tail] };
 }
 
 /**

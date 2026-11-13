@@ -387,6 +387,36 @@ export async function downloadMedia(urls: string | string[], options: CardOption
   return { files: null, refused };
 }
 
+/**
+ * The pictures past the embed limit, as attachments.
+ *
+ * One message carries ten embeds and ten files, so the twenty pictures a post
+ * can now hold fit in one message once the tail rides as files. Every picture
+ * is fetched at once, one timeout each, and the tail is taken in order: the
+ * first picture that fails or no longer fits ends it, because skipping one
+ * would misnumber the rest. Each file keeps its position in its name, so a
+ * reader can match it against the embed labels.
+ */
+export async function tailFiles(
+  images: string[],
+  first: number,
+  options: CardOptions = {},
+): Promise<CardFile[]> {
+  const filesLeft = Math.min(MAX_FILES, options.budget?.files ?? MAX_FILES);
+  const bytesLeft = Math.min(MAX_ATTACH_BYTES, options.budget?.bytes ?? MAX_ATTACH_BYTES);
+  const picked = images.slice(0, Math.max(0, filesLeft));
+  const buffers = await Promise.all(picked.map((url) => getBytes(url, options, bytesLeft)));
+
+  const files: CardFile[] = [];
+  let total = 0;
+  for (const [index, buffer] of buffers.entries()) {
+    if (!buffer || total + buffer.length > bytesLeft) break;
+    total += buffer.length;
+    files.push({ name: `photo${first + index}.${extensionOf(picked[index]!)}`, attachment: buffer });
+  }
+  return files;
+}
+
 /** Download one image, or null when it fails, is empty, or exceeds `cap`. */
 export async function getBytes(url: string, options?: CardOptions, cap = MAX_ATTACH_BYTES): Promise<Buffer | null> {
   const res = await request(url, options);
