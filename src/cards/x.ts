@@ -130,7 +130,13 @@ async function buildXCard({ match }: CardInput, options: CardOptions): Promise<B
       ...mainImages.map((url, index) => ({ url, name: `photo${index + 1}` })),
       ...quoteImages.map((url, index) => ({ url, name: `quote${index + 1}` })),
     ], options);
-    return { embeds: [embed], ...playedCard, files: [...playedCard.files, ...pictures], gallery: true };
+    return {
+      embeds: [embed],
+      ...playedCard,
+      files: [...playedCard.files, ...pictures],
+      gallery: true,
+      galleryPictures: pictures.length,
+    };
   }
 
   const embeds = [

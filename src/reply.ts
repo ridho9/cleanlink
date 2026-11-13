@@ -88,12 +88,14 @@ export async function sendReply<T>(
 
   for (const card of cards.filter((item) => item.gallery)) {
     let target: 'reply' | number | null = null;
+    let placedFiles = 0;
     for (const batch of batchFiles(card.files)) {
       const batchBytes = batch.reduce((total, file) => total + file.attachment.length, 0);
       const replyRoom = files.length + batch.length <= MAX_FILES && bytes + batchBytes <= MAX_ATTACH_BYTES;
       if (replyRoom && galleryMessages < MAX_GALLERY_MESSAGES) {
         files = [...files, ...batch];
         bytes += batchBytes;
+        placedFiles += batch.length;
         if (!replyHasGallery) {
           replyHasGallery = true;
           galleryMessages += 1;
@@ -104,16 +106,18 @@ export async function sendReply<T>(
       if (galleryMessages < MAX_GALLERY_MESSAGES) {
         extras.push({ files: batch });
         galleryMessages += 1;
+        placedFiles += batch.length;
         target = extras.length - 1;
         continue;
       }
       break;
     }
-    if (target === 'reply') embeds.push(...card.embeds);
+    const cardEmbeds = withAttachedCount(card, placedFiles);
+    if (target === 'reply') embeds.push(...cardEmbeds);
     else if (typeof target === 'number') {
       const extra = extras[target]!;
-      extra.embeds = [...(extra.embeds ?? []), ...card.embeds];
-    } else embeds.push(...card.embeds);
+      extra.embeds = [...(extra.embeds ?? []), ...cardEmbeds];
+    } else embeds.push(...cardEmbeds);
   }
 
   const full: MessageReplyOptions = { content, allowedMentions: { parse: [] } };
@@ -146,6 +150,30 @@ export async function sendReply<T>(
 
   await sendExtras(message, extras, onSent);
   await sendFollowUps(message, cards, onSent);
+}
+
+/**
+ * The card's embeds, with the footer naming the pictures that actually go out.
+ *
+ * The card promises `galleryPictures` files, but the reply layer drops some
+ * when the reply and its one extra message are full, so the count comes from
+ * what was placed, not from what was built.
+ */
+function withAttachedCount(card: Card, placedFiles: number): CardEmbed[] {
+  const total = card.galleryPictures ?? 0;
+  if (total === 0) return card.embeds;
+  const leading = card.files.length - total;
+  const attached = Math.max(0, Math.min(placedFiles - leading, total));
+  if (attached === 0) return card.embeds;
+  const label =
+    attached === total
+      ? `${total} ${total === 1 ? 'picture' : 'pictures'} attached`
+      : `${attached} of ${total} pictures attached`;
+  return card.embeds.map((embed, index) => {
+    if (index > 0) return embed;
+    const footer = embed.footer ? { ...embed.footer, text: `${embed.footer.text} · ${label}` } : { text: label };
+    return { ...embed, footer };
+  });
 }
 
 /** Split a gallery into messages: ten files and 9.5 MB each. */

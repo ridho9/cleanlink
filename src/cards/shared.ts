@@ -43,11 +43,17 @@ export type BuiltCard = Playback & {
   embeds: CardEmbed[];
   files: CardFile[];
   /**
-   * The files go out after the reply, in batches of ten, and these embeds ride
-   * with the last batch. A message shows ten files and ten embeds, and mixing
-   * the two in one message would put the pictures out of post order.
+   * The files are pictures: the reply carries the first ten, the rest follow in
+   * batches of ten, and these embeds ride with the last batch. A message shows
+   * ten files and ten embeds, and mixing the two in one message would put the
+   * pictures out of post order.
    */
   gallery?: boolean;
+  /**
+   * How many of the trailing `files` are pictures. The reply layer counts the
+   * ones it actually sends and says so in the card footer.
+   */
+  galleryPictures?: number;
   degraded?: boolean;
   url?: string;
 };

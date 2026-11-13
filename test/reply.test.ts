@@ -201,9 +201,10 @@ test('a card that hands the link over sends it bare, so it unfurls', async () =>
 const galleryCard = (files: CardFile[], description = 'text') => ({
   from: 'https://x.com/a/status/1',
   url: 'https://x.com/a/status/1',
-  embeds: [{ url: 'https://x.com/a/status/1', description }],
+  embeds: [{ url: 'https://x.com/a/status/1', description, footer: { text: 'Twitter' } }],
   files,
   gallery: true,
+  galleryPictures: files.length,
 });
 
 const pictures = (count: number, size = 1) =>
@@ -212,23 +213,23 @@ const pictures = (count: number, size = 1) =>
     attachment: Buffer.alloc(size, index + 1),
   }));
 
+const footerOf = (embed: { footer?: { text: string } }) => embed.footer?.text;
+
 test('a small gallery rides in the reply with its card', async () => {
   const message = fakeMessage();
-  const card = galleryCard(pictures(5));
-  await sendReply(message, { lines: [], cards: [card] });
+  await sendReply(message, { lines: [], cards: [galleryCard(pictures(5))] });
 
   // Five pictures fit one message, so the reply carries them and the card.
   assert.equal(message.sent.length, 1);
   assert.equal(message.sent[0].content, '<https://x.com/a/status/1>');
   assert.equal(message.sent[0].files!.length, 5);
-  assert.deepEqual(message.sent[0].embeds, card.embeds);
+  assert.equal(footerOf(message.sent[0].embeds![0]!), 'Twitter · 5 pictures attached');
   assert.equal(message.followUps.length, 0);
 });
 
 test('a larger gallery keeps ten files in the reply, the rest follow with the card', async () => {
   const message = fakeMessage();
-  const card = galleryCard(pictures(12));
-  await sendReply(message, { lines: [], cards: [card] });
+  await sendReply(message, { lines: [], cards: [galleryCard(pictures(12))] });
 
   assert.equal(message.sent.length, 1);
   assert.equal(message.sent[0].files!.length, 10);
@@ -236,7 +237,7 @@ test('a larger gallery keeps ten files in the reply, the rest follow with the ca
 
   assert.equal(message.followUps.length, 1);
   assert.equal(message.followUps[0].files!.length, 2);
-  assert.deepEqual(message.followUps[0].embeds, card.embeds);
+  assert.equal(footerOf(message.followUps[0].embeds![0]!), 'Twitter · 12 pictures attached');
   assert.deepEqual(
     [...message.sent[0].files!, ...message.followUps[0].files!].map((file) => file.name),
     pictures(12).map((file) => file.name),
@@ -245,14 +246,24 @@ test('a larger gallery keeps ten files in the reply, the rest follow with the ca
 
 test('a gallery batch splits early when the files are large', async () => {
   const message = fakeMessage();
-  const card = galleryCard(pictures(3, 4_000_000));
-  await sendReply(message, { lines: [], cards: [card] });
+  await sendReply(message, { lines: [], cards: [galleryCard(pictures(3, 4_000_000))] });
 
   // Two 4 MB pictures fit the reply's 9.5 MB; the third takes its own message.
   assert.equal(message.sent[0].files!.length, 2);
   assert.equal(message.followUps.length, 1);
   assert.equal(message.followUps[0].files!.length, 1);
-  assert.deepEqual(message.followUps[0].embeds, card.embeds);
+  assert.equal(footerOf(message.followUps[0].embeds![0]!), 'Twitter · 3 pictures attached');
+});
+
+test('a gallery cut by the two-message limit says how many arrived', async () => {
+  const message = fakeMessage();
+  // 1.5 MB each: six fill a batch, so twenty pictures need four batches.
+  await sendReply(message, { lines: [], cards: [galleryCard(pictures(20, 1_500_000))] });
+
+  assert.equal(message.sent[0].files!.length, 6);
+  assert.equal(message.followUps.length, 1);
+  assert.equal(message.followUps[0].files!.length, 6);
+  assert.equal(footerOf(message.followUps[0].embeds![0]!), 'Twitter · 12 of 20 pictures attached');
 });
 
 test('two gallery cards take two messages, and a third keeps only its card', async () => {
@@ -274,7 +285,13 @@ test('two gallery cards take two messages, and a third keeps only its card', asy
   assert.equal(message.sent[0].files!.length, 10);
   assert.equal(message.followUps.length, 1);
   assert.equal(message.followUps[0].files!.length, 10);
-  assert.deepEqual(message.followUps[0].embeds, second.embeds);
-  // The third card gets no picture message; its card still rides the reply.
-  assert.deepEqual(message.sent[0].embeds, [...first.embeds, ...third.embeds]);
+  assert.deepEqual(
+    message.followUps[0].embeds!.map(footerOf),
+    ['Twitter · 10 pictures attached'],
+  );
+  // The third card gets no picture message, so its footer claims none.
+  assert.deepEqual(message.sent[0].embeds!.map(footerOf), [
+    'Twitter · 10 pictures attached',
+    'Twitter',
+  ]);
 });

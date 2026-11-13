@@ -327,6 +327,7 @@ test('a quoted gallery names its files by source', async () => {
   });
 
   assert.equal(card!.gallery, true);
+  assert.equal(card!.galleryPictures, 20, 'both posts contribute twenty pictures');
   assert.deepEqual(
     card!.files.map((file) => file.name),
     [
