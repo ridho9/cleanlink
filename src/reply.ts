@@ -15,6 +15,8 @@ export interface ReplyTarget<T> {
 }
 
 const MESSAGE_LIMIT = 2000;
+/** Messages per reply that may carry gallery pictures, the reply included. */
+const MAX_GALLERY_MESSAGES = 2;
 
 /** Keep whole lines only, so a URL is never cut in half. */
 export function fitLines(lines: string[], max = MESSAGE_LIMIT) {
@@ -72,11 +74,47 @@ export async function sendReply<T>(
     ...lines.filter(({ from }) => !carded.has(from)).map(({ to }) => to),
   ]).join('\n');
 
-  // A gallery's files and card do not ride in the reply: they follow as their
-  // own messages, pictures first and the card on the last batch.
-  const replyCards = cards.filter((card) => !card.gallery);
-  const files = replyCards.flatMap((card) => card.files ?? []);
-  const embeds = replyCards.flatMap((card) => card.embeds);
+  // A gallery's pictures ride as files: the first batch in the reply itself,
+  // the rest in messages after it, with the card on the last batch. Two
+  // messages per reply may carry gallery pictures, so several gallery links
+  // cannot flood the channel.
+  const plain = cards.filter((card) => !card.gallery);
+  let files = plain.flatMap((card) => card.files ?? []);
+  let bytes = files.reduce((total, file) => total + file.attachment.length, 0);
+  const embeds = plain.flatMap((card) => card.embeds);
+  const extras: { files: CardFile[]; embeds?: CardEmbed[] }[] = [];
+  let galleryMessages = 0;
+  let replyHasGallery = false;
+
+  for (const card of cards.filter((item) => item.gallery)) {
+    let target: 'reply' | number | null = null;
+    for (const batch of batchFiles(card.files)) {
+      const batchBytes = batch.reduce((total, file) => total + file.attachment.length, 0);
+      const replyRoom = files.length + batch.length <= MAX_FILES && bytes + batchBytes <= MAX_ATTACH_BYTES;
+      if (replyRoom && galleryMessages < MAX_GALLERY_MESSAGES) {
+        files = [...files, ...batch];
+        bytes += batchBytes;
+        if (!replyHasGallery) {
+          replyHasGallery = true;
+          galleryMessages += 1;
+        }
+        target = 'reply';
+        continue;
+      }
+      if (galleryMessages < MAX_GALLERY_MESSAGES) {
+        extras.push({ files: batch });
+        galleryMessages += 1;
+        target = extras.length - 1;
+        continue;
+      }
+      break;
+    }
+    if (target === 'reply') embeds.push(...card.embeds);
+    else if (typeof target === 'number') {
+      const extra = extras[target]!;
+      extra.embeds = [...(extra.embeds ?? []), ...card.embeds];
+    } else embeds.push(...card.embeds);
+  }
 
   const full: MessageReplyOptions = { content, allowedMentions: { parse: [] } };
   if (embeds.length > 0) full.embeds = embeds;
@@ -106,7 +144,7 @@ export async function sendReply<T>(
     }
   }
 
-  await sendGalleries(message, cards, onSent);
+  await sendExtras(message, extras, onSent);
   await sendFollowUps(message, cards, onSent);
 }
 
@@ -129,37 +167,29 @@ export function batchFiles(files: CardFile[]): CardFile[][] {
 }
 
 /**
- * Send a gallery's pictures after the reply, ten per message, and put its card
- * on the last batch so the pictures stay in post order.
+ * Send the gallery batches that did not fit the reply, in order.
  *
- * The card is the point and the pictures are decoration: a rejected batch
- * costs only its own pictures, and the last batch falls back to the card alone.
+ * A batch rejected for its files still posts its embeds, so a card whose last
+ * batch failed is not lost with it; the pictures are decoration, the card is
+ * the point.
  */
-async function sendGalleries<T>(message: ReplyTarget<T>, cards: Card[], onSent: (sent: T) => Promise<unknown>) {
-  for (const card of cards.filter((item) => item.gallery)) {
-    const batches = batchFiles(card.files);
-    if (batches.length === 0) {
+async function sendExtras<T>(
+  message: ReplyTarget<T>,
+  extras: { files: CardFile[]; embeds?: CardEmbed[] }[],
+  onSent: (sent: T) => Promise<unknown>,
+) {
+  for (const extra of extras) {
+    const payload: MessageCreateOptions = { files: extra.files, allowedMentions: { parse: [] } };
+    if (extra.embeds) payload.embeds = extra.embeds;
+    try {
+      await onSent(await message.channel.send(payload));
+    } catch (error) {
+      note(`[reply] gallery batch rejected: ${(error as Error).message}`);
+      if (!extra.embeds) continue;
       try {
-        await onSent(await message.channel.send({ embeds: card.embeds, allowedMentions: { parse: [] } }));
-      } catch (error) {
-        note(`[reply] gallery card failed: ${(error as Error).message}`);
-      }
-      continue;
-    }
-    for (const [index, files] of batches.entries()) {
-      const last = index === batches.length - 1;
-      const payload: MessageCreateOptions = { files, allowedMentions: { parse: [] } };
-      if (last) payload.embeds = card.embeds;
-      try {
-        await onSent(await message.channel.send(payload));
-      } catch (error) {
-        note(`[reply] gallery batch ${index + 1}/${batches.length} failed: ${(error as Error).message}`);
-        if (!last) continue;
-        try {
-          await onSent(await message.channel.send({ embeds: card.embeds, allowedMentions: { parse: [] } }));
-        } catch (again) {
-          note(`[reply] gallery card failed: ${(again as Error).message}`);
-        }
+        await onSent(await message.channel.send({ embeds: extra.embeds, allowedMentions: { parse: [] } }));
+      } catch (again) {
+        note(`[reply] gallery card failed: ${(again as Error).message}`);
       }
     }
   }

@@ -198,52 +198,83 @@ test('a card that hands the link over sends it bare, so it unfurls', async () =>
   assert.equal(sent[0].embeds, undefined, 'the link itself is the preview');
 });
 
-test('a gallery follows the reply in batches of ten, card on the last', async () => {
-  const message = fakeMessage();
-  const files = Array.from({ length: 12 }, (_, index) => ({
-    name: `photo${index + 1}.jpg`,
-    attachment: Buffer.from([index + 1]),
-  }));
-  const gallery = {
-    from: 'https://x.com/a/status/1',
-    url: 'https://x.com/a/status/1',
-    embeds: [{ url: 'https://x.com/a/status/1', description: 'text' }],
-    files,
-    gallery: true,
-  };
-  await sendReply(message, { lines: [], cards: [gallery] });
+const galleryCard = (files: CardFile[], description = 'text') => ({
+  from: 'https://x.com/a/status/1',
+  url: 'https://x.com/a/status/1',
+  embeds: [{ url: 'https://x.com/a/status/1', description }],
+  files,
+  gallery: true,
+});
 
-  // The reply carries the clean link only; the pictures come after it.
+const pictures = (count: number, size = 1) =>
+  Array.from({ length: count }, (_, index) => ({
+    name: `photo${index + 1}.jpg`,
+    attachment: Buffer.alloc(size, index + 1),
+  }));
+
+test('a small gallery rides in the reply with its card', async () => {
+  const message = fakeMessage();
+  const card = galleryCard(pictures(5));
+  await sendReply(message, { lines: [], cards: [card] });
+
+  // Five pictures fit one message, so the reply carries them and the card.
   assert.equal(message.sent.length, 1);
   assert.equal(message.sent[0].content, '<https://x.com/a/status/1>');
-  assert.equal(message.sent[0].embeds, undefined);
-  assert.equal(message.sent[0].files, undefined);
+  assert.equal(message.sent[0].files!.length, 5);
+  assert.deepEqual(message.sent[0].embeds, card.embeds);
+  assert.equal(message.followUps.length, 0);
+});
 
-  assert.equal(message.followUps.length, 2);
-  assert.equal(message.followUps[0].files!.length, 10);
-  assert.equal(message.followUps[0].embeds, undefined);
-  assert.equal(message.followUps[1].files!.length, 2);
-  assert.deepEqual(message.followUps[1].embeds, gallery.embeds);
+test('a larger gallery keeps ten files in the reply, the rest follow with the card', async () => {
+  const message = fakeMessage();
+  const card = galleryCard(pictures(12));
+  await sendReply(message, { lines: [], cards: [card] });
+
+  assert.equal(message.sent.length, 1);
+  assert.equal(message.sent[0].files!.length, 10);
+  assert.equal(message.sent[0].embeds, undefined);
+
+  assert.equal(message.followUps.length, 1);
+  assert.equal(message.followUps[0].files!.length, 2);
+  assert.deepEqual(message.followUps[0].embeds, card.embeds);
   assert.deepEqual(
-    message.followUps.flatMap((payload) => payload.files!.map((file) => file.name)),
-    files.map((file) => file.name),
+    [...message.sent[0].files!, ...message.followUps[0].files!].map((file) => file.name),
+    pictures(12).map((file) => file.name),
   );
 });
 
 test('a gallery batch splits early when the files are large', async () => {
   const message = fakeMessage();
-  const gallery = {
-    from: 'https://x.com/a/status/1',
-    url: 'https://x.com/a/status/1',
-    embeds: [{ description: 'text' }],
-    files: [1, 2, 3].map((n) => ({ name: `photo${n}.jpg`, attachment: Buffer.alloc(4_000_000, n) })),
-    gallery: true,
-  };
-  await sendReply(message, { lines: [], cards: [gallery] });
+  const card = galleryCard(pictures(3, 4_000_000));
+  await sendReply(message, { lines: [], cards: [card] });
 
-  // Two 4 MB files fit 9.5 MB; a third would not, so it takes its own message.
-  assert.deepEqual(
-    message.followUps.map((payload) => payload.files!.length),
-    [2, 1],
-  );
+  // Two 4 MB pictures fit the reply's 9.5 MB; the third takes its own message.
+  assert.equal(message.sent[0].files!.length, 2);
+  assert.equal(message.followUps.length, 1);
+  assert.equal(message.followUps[0].files!.length, 1);
+  assert.deepEqual(message.followUps[0].embeds, card.embeds);
+});
+
+test('two gallery cards take two messages, and a third keeps only its card', async () => {
+  const message = fakeMessage();
+  const first = galleryCard(pictures(10), 'first');
+  const second = {
+    ...galleryCard(pictures(10), 'second'),
+    from: 'https://x.com/b/status/2',
+    url: 'https://x.com/b/status/2',
+  };
+  const third = {
+    ...galleryCard(pictures(10), 'third'),
+    from: 'https://x.com/c/status/3',
+    url: 'https://x.com/c/status/3',
+  };
+  await sendReply(message, { lines: [], cards: [first, second, third] });
+
+  // The reply carries the first card's ten pictures; one message may follow.
+  assert.equal(message.sent[0].files!.length, 10);
+  assert.equal(message.followUps.length, 1);
+  assert.equal(message.followUps[0].files!.length, 10);
+  assert.deepEqual(message.followUps[0].embeds, second.embeds);
+  // The third card gets no picture message; its card still rides the reply.
+  assert.deepEqual(message.sent[0].embeds, [...first.embeds, ...third.embeds]);
 });

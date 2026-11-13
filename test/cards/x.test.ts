@@ -295,6 +295,48 @@ test('a picture past the two-message byte budget ends the gallery', async () => 
   assert.equal(card!.files.at(-1)!.name, 'photo9.jpg');
 });
 
+test('a quoted gallery names its files by source', async () => {
+  const main = Array.from({ length: 10 }, (_, index) => ({
+    type: 'photo',
+    url: `https://pbs.twimg.com/media/mainphoto${index + 1}.jpg?name=orig`,
+  }));
+  const quoted = Array.from({ length: 10 }, (_, index) => ({
+    type: 'photo',
+    url: `https://pbs.twimg.com/media/thirdphoto${index + 1}.jpg?name=orig`,
+  }));
+  const payload = {
+    ...X_TWO_PHOTOS,
+    tweet: {
+      ...X_TWO_PHOTOS.tweet,
+      media: { all: main },
+      quote: {
+        id: '2120980000000000000',
+        text: 'X has increased the limit',
+        author: { name: 'Dexerto', screen_name: 'Dexerto' },
+        media: { all: quoted },
+      },
+    },
+  };
+  const { impl } = fakeFetch([
+    ['https://api.fxtwitter.com/', payload],
+    ['https://pbs.twimg.com/media/mainphoto', imageResponse()],
+    ['https://pbs.twimg.com/media/thirdphoto', imageResponse()],
+  ]);
+  const [card] = await buildCards('https://x.com/Tomako_locodol/status/2121037247235723377', {
+    fetchImpl: impl,
+  });
+
+  assert.equal(card!.gallery, true);
+  assert.deepEqual(
+    card!.files.map((file) => file.name),
+    [
+      ...Array.from({ length: 10 }, (_, index) => `photo${index + 1}.jpg`),
+      ...Array.from({ length: 10 }, (_, index) => `quote${index + 1}.jpg`),
+    ],
+    'the main tweet keeps photo names, the quoted post quote names',
+  );
+});
+
 test('a quote tweet\'s photos join the card, after the main tweet\'s', async () => {
   const { impl } = fakeFetch([['https://api.fxtwitter.com/', X_QUOTE_PHOTOS]]);
   const [card] = await buildCards('https://x.com/someone/status/2117268467812331634', {

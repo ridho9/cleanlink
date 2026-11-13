@@ -393,26 +393,33 @@ export async function downloadMedia(urls: string | string[], options: CardOption
   return { files: null, refused };
 }
 
+/** A picture that goes out as a file, and the name it keeps the position in. */
+export interface GalleryPicture {
+  url: string;
+  name: string;
+}
+
 /**
  * A gallery's pictures, as attachments in post order.
  *
  * Ten files ride in one message, so the reply layer splits these into batches
  * and puts the card on the last one. Two messages cover the twenty pictures a
  * post can hold; a picture that fails or no longer fits that byte budget ends
- * the gallery, because skipping one would misnumber the rest. Each file keeps
- * its position in its name.
+ * the gallery, because skipping one would misnumber the rest. Each file is
+ * named after its source and position, so a reader can tell which post it came
+ * from.
  */
-export async function galleryFiles(images: string[], options: CardOptions = {}): Promise<CardFile[]> {
+export async function galleryFiles(pictures: GalleryPicture[], options: CardOptions = {}): Promise<CardFile[]> {
   const limit = MAX_FILES * 2;
   const totalBudget = MAX_ATTACH_BYTES * 2;
   const files: CardFile[] = [];
   let total = 0;
-  for (const [index, url] of images.slice(0, limit).entries()) {
+  for (const picture of pictures.slice(0, limit)) {
     if (total >= totalBudget) break;
-    const buffer = await getBytes(url, options, Math.min(MAX_ATTACH_BYTES, totalBudget - total));
+    const buffer = await getBytes(picture.url, options, Math.min(MAX_ATTACH_BYTES, totalBudget - total));
     if (!buffer) break;
     total += buffer.length;
-    files.push({ name: `photo${index + 1}.${extensionOf(url)}`, attachment: buffer });
+    files.push({ name: `${picture.name}.${extensionOf(picture.url)}`, attachment: buffer });
   }
   return files;
 }

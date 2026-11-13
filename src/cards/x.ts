@@ -62,10 +62,9 @@ async function buildXCard({ match }: CardInput, options: CardOptions): Promise<B
   // The main tweet's picture first, then the quoted tweet's. A quote can carry
   // photos of its own and they were being dropped; the API exposes them as
   // `quote.media.all`, same shape as `media.all`.
-  const images = [
-    ...stills(tweet.media?.all, playing),
-    ...stills(tweet.quote?.media?.all, playing),
-  ];
+  const mainImages = stills(tweet.media?.all, playing);
+  const quoteImages = stills(tweet.quote?.media?.all, playing);
+  const images = [...mainImages, ...quoteImages];
 
   const parts = [];
   if (tweet.text) parts.push(escapeMarkdown(tweet.text));
@@ -125,8 +124,12 @@ async function buildXCard({ match }: CardInput, options: CardOptions): Promise<B
 
   const playedCard = playback(played);
   if (gallery) {
-    // An attached video is the first file; the pictures follow in post order.
-    const pictures = await galleryFiles(images, options);
+    // An attached video is the first file; the pictures follow in post order,
+    // named after their source so the quoted post's pictures are recognisable.
+    const pictures = await galleryFiles([
+      ...mainImages.map((url, index) => ({ url, name: `photo${index + 1}` })),
+      ...quoteImages.map((url, index) => ({ url, name: `quote${index + 1}` })),
+    ], options);
     return { embeds: [embed], ...playedCard, files: [...playedCard.files, ...pictures], gallery: true };
   }
 
