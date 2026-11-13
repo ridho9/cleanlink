@@ -5,11 +5,8 @@ import {
   authorBlock,
   clip,
   attachMedia,
+  galleryFiles,
   playback,
-  tailFiles,
-  MAX_ATTACH_BYTES,
-  MAX_EMBEDS,
-  MAX_FILES,
   escapeMarkdown,
   getJson,
   numberedEmbeds,
@@ -111,40 +108,33 @@ async function buildXCard({ match }: CardInput, options: CardOptions): Promise<B
 
   if (parts.length > 0) embed.description = clip(parts.join('\n\n'), 4096);
 
-  // One embed per image. A Discord embed has a single `image` field and a
-  // single `thumbnail` field, so two images cannot share a card at full size;
-  // SaucyBot solves the same limit the same way (one embed per photo in
-  // `FxTwitter.cs`). The first embed carries the text, the rest are images.
-  if (images[0]) embed.image = { url: images[0] };
+  // More than four pictures go as attachments, not image embeds: the client
+  // lays files out in post order, and the reply layer sends them in batches of
+  // ten with this card on the last batch. Up to four keep the embed layout,
+  // where each picture is a full-size embed and nothing is uploaded.
+  //
+  // One embed per image is the fallback for that: a Discord embed has a single
+  // `image` field, so two pictures cannot share an embed; SaucyBot splits them
+  // the same way (`FxTwitter.cs`).
+  const gallery = images.length > 4;
+  if (!gallery && images[0]) embed.image = { url: images[0] };
   if (tweet.created_timestamp) {
     embed.timestamp = new Date(tweet.created_timestamp * 1000).toISOString();
   }
+  if (!gallery && images.length > 1) embed.footer = { text: `Twitter · 1/${images.length}` };
 
-  // pbs.twimg.com is fetchable by Discord, so extra images cost nothing here.
-  const footer = images.length > 1 ? { text: `Twitter · 1/${images.length}` } : embed.footer;
-  if (images.length > 1) embed.footer = footer;
+  const playedCard = playback(played);
+  if (gallery) {
+    // An attached video is the first file; the pictures follow in post order.
+    const pictures = await galleryFiles(images, options);
+    return { embeds: [embed], ...playedCard, files: [...playedCard.files, ...pictures], gallery: true };
+  }
 
   const embeds = [
     embed,
     ...numberedEmbeds(embed.url, X_BLUE, images, (position, total) => `Twitter · ${position}/${total}`),
   ];
-
-  // Ten embeds is the message limit, so the pictures past it ride as files:
-  // ten more fill the same message. A video already attached spends one file
-  // and its bytes first.
-  const playedCard = playback(played);
-  const used = playedCard.files;
-  const tail = images.length > MAX_EMBEDS
-    ? await tailFiles(images.slice(MAX_EMBEDS), MAX_EMBEDS + 1, {
-        ...options,
-        budget: {
-          files: (options.budget?.files ?? MAX_FILES) - used.length,
-          bytes: (options.budget?.bytes ?? MAX_ATTACH_BYTES) - used.reduce((total, file) => total + file.attachment.length, 0),
-        },
-      })
-    : [];
-
-  return { embeds, ...playedCard, files: [...used, ...tail] };
+  return { embeds, ...playedCard };
 }
 
 /**

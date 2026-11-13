@@ -197,3 +197,53 @@ test('a card that hands the link over sends it bare, so it unfurls', async () =>
   assert.equal(sent[0].content, 'https://www.facebed.com/reel/1/');
   assert.equal(sent[0].embeds, undefined, 'the link itself is the preview');
 });
+
+test('a gallery follows the reply in batches of ten, card on the last', async () => {
+  const message = fakeMessage();
+  const files = Array.from({ length: 12 }, (_, index) => ({
+    name: `photo${index + 1}.jpg`,
+    attachment: Buffer.from([index + 1]),
+  }));
+  const gallery = {
+    from: 'https://x.com/a/status/1',
+    url: 'https://x.com/a/status/1',
+    embeds: [{ url: 'https://x.com/a/status/1', description: 'text' }],
+    files,
+    gallery: true,
+  };
+  await sendReply(message, { lines: [], cards: [gallery] });
+
+  // The reply carries the clean link only; the pictures come after it.
+  assert.equal(message.sent.length, 1);
+  assert.equal(message.sent[0].content, '<https://x.com/a/status/1>');
+  assert.equal(message.sent[0].embeds, undefined);
+  assert.equal(message.sent[0].files, undefined);
+
+  assert.equal(message.followUps.length, 2);
+  assert.equal(message.followUps[0].files!.length, 10);
+  assert.equal(message.followUps[0].embeds, undefined);
+  assert.equal(message.followUps[1].files!.length, 2);
+  assert.deepEqual(message.followUps[1].embeds, gallery.embeds);
+  assert.deepEqual(
+    message.followUps.flatMap((payload) => payload.files!.map((file) => file.name)),
+    files.map((file) => file.name),
+  );
+});
+
+test('a gallery batch splits early when the files are large', async () => {
+  const message = fakeMessage();
+  const gallery = {
+    from: 'https://x.com/a/status/1',
+    url: 'https://x.com/a/status/1',
+    embeds: [{ description: 'text' }],
+    files: [1, 2, 3].map((n) => ({ name: `photo${n}.jpg`, attachment: Buffer.alloc(4_000_000, n) })),
+    gallery: true,
+  };
+  await sendReply(message, { lines: [], cards: [gallery] });
+
+  // Two 4 MB files fit 9.5 MB; a third would not, so it takes its own message.
+  assert.deepEqual(
+    message.followUps.map((payload) => payload.files!.length),
+    [2, 1],
+  );
+});

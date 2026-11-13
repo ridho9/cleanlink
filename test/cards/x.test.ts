@@ -205,49 +205,19 @@ test('X card keeps every photo of a four-photo post', async () => {
   assert.deepEqual(card!.files, []);
 });
 
-test('a post with more pictures than Discord allows stops at ten embeds', async () => {
-  // Measured on /KuriUni0/status/2121051101927788715, a 15-photo post: the card
-  // used to exceed the message's embed limit and was dropped whole.
-  const photos = Array.from({ length: 15 }, (_, index) => ({
+test('more than four pictures arrive as attachments, in post order', async () => {
+  const photos = Array.from({ length: 5 }, (_, index) => ({
     type: 'photo',
-    url: `https://pbs.twimg.com/media/photo${index + 1}.jpg`,
-  }));
-  const payload = {
-    ...X_TWO_PHOTOS,
-    tweet: { ...X_TWO_PHOTOS.tweet, quote: null, media: { all: photos } },
-  };
-  const { impl } = fakeFetch([['https://api.fxtwitter.com/', payload]]);
-  const [card] = await buildCards('https://x.com/KuriUni0/status/2121051101927788715', {
-    fetchImpl: impl,
-  });
-
-  assert.ok(card, 'a gallery past the limit still gets a card');
-  assert.equal(card!.embeds.length, 10);
-  assert.deepEqual(
-    card!.embeds.map((embed) => embed.footer!.text),
-    Array.from({ length: 10 }, (_, index) => `Twitter · ${index + 1}/15`),
-  );
-  assert.deepEqual(
-    card!.embeds.map((embed) => embed.image!.url),
-    photos.slice(0, 10).map((photo) => photo.url),
-  );
-});
-
-test('a twenty-photo post keeps ten embeds and attaches the tail', async () => {
-  // X now allows twenty pictures. Discord holds ten embeds and ten files in
-  // one message, so the eleventh to the twentieth ride as attachments.
-  const photos = Array.from({ length: 20 }, (_, index) => ({
-    type: 'photo',
-    url: `https://pbs.twimg.com/media/newphoto${index + 1}.jpg?name=orig`,
+    url: `https://pbs.twimg.com/media/galleryphoto${index + 1}.jpg?name=orig`,
   }));
   const payload = {
     ...X_TWO_PHOTOS,
     tweet: { ...X_TWO_PHOTOS.tweet, quote: null, media: { all: photos } },
   };
   const routes: [string, unknown][] = [['https://api.fxtwitter.com/', payload]];
-  for (let index = 11; index <= 20; index += 1) {
+  for (let index = 1; index <= 5; index += 1) {
     routes.push([
-      `https://pbs.twimg.com/media/newphoto${index}.jpg`,
+      `https://pbs.twimg.com/media/galleryphoto${index}.jpg`,
       new Response(Buffer.from([index]), { status: 200, headers: { 'content-type': 'image/jpeg' } }),
     ]);
   }
@@ -256,36 +226,60 @@ test('a twenty-photo post keeps ten embeds and attaches the tail', async () => {
     fetchImpl: impl,
   });
 
-  assert.equal(card!.embeds.length, 10);
-  assert.deepEqual(
-    card!.embeds.map((embed) => embed.image!.url),
-    photos.slice(0, 10).map((photo) => photo.url),
-  );
+  assert.ok(card, 'a five-picture post still gets a card');
+  assert.equal(card!.gallery, true);
+  assert.equal(card!.embeds.length, 1, 'one card embed, no image embeds');
+  assert.equal(card!.embeds[0]!.image, undefined);
   assert.deepEqual(
     card!.files.map((file) => file.name),
-    Array.from({ length: 10 }, (_, index) => `photo${index + 11}.jpg`),
+    ['photo1.jpg', 'photo2.jpg', 'photo3.jpg', 'photo4.jpg', 'photo5.jpg'],
   );
   assert.deepEqual(
     card!.files.map((file) => file.attachment[0]),
-    Array.from({ length: 10 }, (_, index) => index + 11),
+    [1, 2, 3, 4, 5],
     'attachments keep the post order',
   );
 });
 
-test('the attachment tail stops where the byte budget runs out', async () => {
+test('twenty pictures stay in one gallery', async () => {
   const photos = Array.from({ length: 20 }, (_, index) => ({
     type: 'photo',
-    url: `https://pbs.twimg.com/media/bigphoto${index + 1}.jpg?name=orig`,
+    url: `https://pbs.twimg.com/media/manyphoto${index + 1}.jpg?name=orig`,
   }));
   const payload = {
     ...X_TWO_PHOTOS,
     tweet: { ...X_TWO_PHOTOS.tweet, quote: null, media: { all: photos } },
   };
   const routes: [string, unknown][] = [['https://api.fxtwitter.com/', payload]];
-  for (let index = 11; index <= 20; index += 1) {
+  for (let index = 1; index <= 20; index += 1) {
+    routes.push([`https://pbs.twimg.com/media/manyphoto${index}.jpg`, imageResponse()]);
+  }
+  const { impl } = fakeFetch(routes);
+  const [card] = await buildCards('https://x.com/KuriUni0/status/2121051101927788715', {
+    fetchImpl: impl,
+  });
+
+  assert.equal(card!.gallery, true);
+  assert.equal(card!.embeds.length, 1);
+  assert.equal(card!.files.length, 20);
+  assert.equal(card!.files[0]!.name, 'photo1.jpg');
+  assert.equal(card!.files.at(-1)!.name, 'photo20.jpg');
+});
+
+test('a picture past the two-message byte budget ends the gallery', async () => {
+  const photos = Array.from({ length: 20 }, (_, index) => ({
+    type: 'photo',
+    url: `https://pbs.twimg.com/media/heavyphoto${index + 1}.jpg?name=orig`,
+  }));
+  const payload = {
+    ...X_TWO_PHOTOS,
+    tweet: { ...X_TWO_PHOTOS.tweet, quote: null, media: { all: photos } },
+  };
+  const routes: [string, unknown][] = [['https://api.fxtwitter.com/', payload]];
+  for (let index = 1; index <= 20; index += 1) {
     routes.push([
-      `https://pbs.twimg.com/media/bigphoto${index}.jpg`,
-      new Response(Buffer.alloc(1_000_000, 0xff), {
+      `https://pbs.twimg.com/media/heavyphoto${index}.jpg`,
+      new Response(Buffer.alloc(2_000_000, 0xff), {
         status: 200,
         headers: { 'content-type': 'image/jpeg' },
       }),
@@ -296,9 +290,9 @@ test('the attachment tail stops where the byte budget runs out', async () => {
     fetchImpl: impl,
   });
 
-  // Nine megabytes fit the 9.5 MB message budget; the tenth would not.
+  // Two messages hold 19 MB; the tenth 2 MB picture no longer fits.
   assert.equal(card!.files.length, 9);
-  assert.equal(card!.files.at(-1)!.name, 'photo19.jpg');
+  assert.equal(card!.files.at(-1)!.name, 'photo9.jpg');
 });
 
 test('a quote tweet\'s photos join the card, after the main tweet\'s', async () => {

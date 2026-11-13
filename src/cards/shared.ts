@@ -42,6 +42,12 @@ export type Playback =
 export type BuiltCard = Playback & {
   embeds: CardEmbed[];
   files: CardFile[];
+  /**
+   * The files go out after the reply, in batches of ten, and these embeds ride
+   * with the last batch. A message shows ten files and ten embeds, and mixing
+   * the two in one message would put the pictures out of post order.
+   */
+  gallery?: boolean;
   degraded?: boolean;
   url?: string;
 };
@@ -388,31 +394,25 @@ export async function downloadMedia(urls: string | string[], options: CardOption
 }
 
 /**
- * The pictures past the embed limit, as attachments.
+ * A gallery's pictures, as attachments in post order.
  *
- * One message carries ten embeds and ten files, so the twenty pictures a post
- * can now hold fit in one message once the tail rides as files. Every picture
- * is fetched at once, one timeout each, and the tail is taken in order: the
- * first picture that fails or no longer fits ends it, because skipping one
- * would misnumber the rest. Each file keeps its position in its name, so a
- * reader can match it against the embed labels.
+ * Ten files ride in one message, so the reply layer splits these into batches
+ * and puts the card on the last one. Two messages cover the twenty pictures a
+ * post can hold; a picture that fails or no longer fits that byte budget ends
+ * the gallery, because skipping one would misnumber the rest. Each file keeps
+ * its position in its name.
  */
-export async function tailFiles(
-  images: string[],
-  first: number,
-  options: CardOptions = {},
-): Promise<CardFile[]> {
-  const filesLeft = Math.min(MAX_FILES, options.budget?.files ?? MAX_FILES);
-  const bytesLeft = Math.min(MAX_ATTACH_BYTES, options.budget?.bytes ?? MAX_ATTACH_BYTES);
-  const picked = images.slice(0, Math.max(0, filesLeft));
-  const buffers = await Promise.all(picked.map((url) => getBytes(url, options, bytesLeft)));
-
+export async function galleryFiles(images: string[], options: CardOptions = {}): Promise<CardFile[]> {
+  const limit = MAX_FILES * 2;
+  const totalBudget = MAX_ATTACH_BYTES * 2;
   const files: CardFile[] = [];
   let total = 0;
-  for (const [index, buffer] of buffers.entries()) {
-    if (!buffer || total + buffer.length > bytesLeft) break;
+  for (const [index, url] of images.slice(0, limit).entries()) {
+    if (total >= totalBudget) break;
+    const buffer = await getBytes(url, options, Math.min(MAX_ATTACH_BYTES, totalBudget - total));
+    if (!buffer) break;
     total += buffer.length;
-    files.push({ name: `photo${first + index}.${extensionOf(picked[index]!)}`, attachment: buffer });
+    files.push({ name: `photo${index + 1}.${extensionOf(url)}`, attachment: buffer });
   }
   return files;
 }

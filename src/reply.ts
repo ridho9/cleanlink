@@ -4,7 +4,8 @@
 
 import type { MessageCreateOptions, MessageReplyOptions } from 'discord.js';
 import type { Card } from './cards/index.ts';
-import type { CardEmbed } from './cards/shared.ts';
+import { MAX_ATTACH_BYTES, MAX_FILES } from './cards/shared.ts';
+import type { CardEmbed, CardFile } from './cards/shared.ts';
 import type { CleanedLink } from './clean.ts';
 import { note } from './trace.ts';
 
@@ -71,8 +72,11 @@ export async function sendReply<T>(
     ...lines.filter(({ from }) => !carded.has(from)).map(({ to }) => to),
   ]).join('\n');
 
-  const files = cards.flatMap((card) => card.files ?? []);
-  const embeds = cards.flatMap((card) => card.embeds);
+  // A gallery's files and card do not ride in the reply: they follow as their
+  // own messages, pictures first and the card on the last batch.
+  const replyCards = cards.filter((card) => !card.gallery);
+  const files = replyCards.flatMap((card) => card.files ?? []);
+  const embeds = replyCards.flatMap((card) => card.embeds);
 
   const full: MessageReplyOptions = { content, allowedMentions: { parse: [] } };
   if (embeds.length > 0) full.embeds = embeds;
@@ -102,7 +106,63 @@ export async function sendReply<T>(
     }
   }
 
+  await sendGalleries(message, cards, onSent);
   await sendFollowUps(message, cards, onSent);
+}
+
+/** Split a gallery into messages: ten files and 9.5 MB each. */
+export function batchFiles(files: CardFile[]): CardFile[][] {
+  const batches: CardFile[][] = [];
+  let current: CardFile[] = [];
+  let bytes = 0;
+  for (const file of files) {
+    if (current.length === MAX_FILES || bytes + file.attachment.length > MAX_ATTACH_BYTES) {
+      batches.push(current);
+      current = [];
+      bytes = 0;
+    }
+    current.push(file);
+    bytes += file.attachment.length;
+  }
+  if (current.length > 0) batches.push(current);
+  return batches;
+}
+
+/**
+ * Send a gallery's pictures after the reply, ten per message, and put its card
+ * on the last batch so the pictures stay in post order.
+ *
+ * The card is the point and the pictures are decoration: a rejected batch
+ * costs only its own pictures, and the last batch falls back to the card alone.
+ */
+async function sendGalleries<T>(message: ReplyTarget<T>, cards: Card[], onSent: (sent: T) => Promise<unknown>) {
+  for (const card of cards.filter((item) => item.gallery)) {
+    const batches = batchFiles(card.files);
+    if (batches.length === 0) {
+      try {
+        await onSent(await message.channel.send({ embeds: card.embeds, allowedMentions: { parse: [] } }));
+      } catch (error) {
+        note(`[reply] gallery card failed: ${(error as Error).message}`);
+      }
+      continue;
+    }
+    for (const [index, files] of batches.entries()) {
+      const last = index === batches.length - 1;
+      const payload: MessageCreateOptions = { files, allowedMentions: { parse: [] } };
+      if (last) payload.embeds = card.embeds;
+      try {
+        await onSent(await message.channel.send(payload));
+      } catch (error) {
+        note(`[reply] gallery batch ${index + 1}/${batches.length} failed: ${(error as Error).message}`);
+        if (!last) continue;
+        try {
+          await onSent(await message.channel.send({ embeds: card.embeds, allowedMentions: { parse: [] } }));
+        } catch (again) {
+          note(`[reply] gallery card failed: ${(again as Error).message}`);
+        }
+      }
+    }
+  }
 }
 
 /** At most this many follow-up messages, so a five-link message stays a reply. */

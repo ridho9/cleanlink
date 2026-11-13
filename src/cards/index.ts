@@ -272,7 +272,10 @@ export async function buildCards(text: string, { cleaned = [], fetchImpl = fetch
       // broken, and Discord rejects the whole message past ten embeds or 6000
       // characters of embed text.
       const chars = card.embeds.reduce((total, embed) => total + embedChars(embed), 0);
-      if (card.embeds.length > embedsLeft || card.files.length > filesLeft || chars > charsLeft) {
+      // A gallery's files ride in messages of their own, so only its one card
+      // embed spends this message's budget.
+      const filesFit = card.gallery === true || card.files.length <= filesLeft;
+      if (card.embeds.length > embedsLeft || !filesFit || chars > charsLeft) {
         note(`[card] ${site.id} skipped: message budget spent`);
         mark('card', `${site.id}:budget`);
         return;
@@ -282,9 +285,11 @@ export async function buildCards(text: string, { cleaned = [], fetchImpl = fetch
       mark('card', site.id);
       mark('media', mediaOf(card));
       embedsLeft -= card.embeds.length;
-      filesLeft -= card.files.length;
       charsLeft -= chars;
-      bytesLeft -= card.files.reduce((total, file) => total + file.attachment.length, 0);
+      if (card.gallery !== true) {
+        filesLeft -= card.files.length;
+        bytesLeft -= card.files.reduce((total, file) => total + file.attachment.length, 0);
+      }
     } catch (error) {
       // A card is decoration, so the reply still goes out — but a swallowed
       // error is invisible in the log, so it is reported here.
