@@ -13,8 +13,10 @@ import {
   videoLinks,
   imageEmbeds,
   metaContent,
+  metaContents,
   toField,
   FACEBOOK_BLUE,
+  TIMEOUT_MS,
   UNFURL_UA,
 } from './shared.ts';
 import type { BuiltCard, CardEmbed, CardInput, CardOptions } from './shared.ts';
@@ -409,8 +411,11 @@ function hasContent(card: BuiltCard | null): boolean {
  * It is read for its tags, not trusted as the link: the message keeps the clean
  * Facebook URL, so a reader never clicks through a third party.
  */
-async function fromFacebed(href: string, options: CardOptions): Promise<BuiltCard | null> {
-  const mirrored = await facebedPage(href, options);
+async function fromFacebed(
+  href: string,
+  options: CardOptions,
+  mirrored: MirrorPage | null,
+): Promise<BuiltCard | null> {
   if (!mirrored) return null;
   const { page, mirror, embed } = mirrored;
 
@@ -418,8 +423,6 @@ async function fromFacebed(href: string, options: CardOptions): Promise<BuiltCar
   // the upload budget (a 17 s reel measured 24 MB).
   const video = metaContent(page.html, 'og:video');
   const media = video ? await downloadMedia(video, options) : { files: null, refused: [] };
-  const image = metaContent(page.html, 'og:image');
-  if (!media.files && media.refused.length === 0 && image) embed.image = { url: image };
 
   // The file answered but would not fit, and the CDN URL does not unfurl when
   // posted alone (measured: no embed). The page does, so the page is the link
@@ -428,11 +431,21 @@ async function fromFacebed(href: string, options: CardOptions): Promise<BuiltCar
     return { url: mirror.href, embeds: [], files: [], video: 'unfurl' };
   }
 
-  return media.files ? { embeds: [embed], files: media.files, video: 'attached' } : { embeds: [embed], files: [] };
+  if (media.files) return { embeds: [embed], files: media.files, video: 'attached' };
+
+  // A post with several pictures names each in its own `og:image`, in post order.
+  const images = metaContents(page.html, 'og:image');
+  if (images[0]) embed.image = { url: images[0] };
+  return { embeds: [embed, ...imageEmbeds(href, FACEBOOK_BLUE, embed.footer, images.slice(1))], files: [] };
 }
 
-/** Fetch the facebed page and build the text part of a card from its tags. */
-async function facebedPage(href: string, options: CardOptions) {
+/**
+ * Fetch the facebed page and build the text part of a card from its tags.
+ *
+ * The mirror fetches the post on our behalf, which measured 1-7 s: by default
+ * a budget of its own, so the fallback is not cut off mid-fetch.
+ */
+async function facebedPage(href: string, options: CardOptions, timeout = 15_000): Promise<MirrorPage | null> {
   const url = new URL(href);
   if (!/(^|\.)facebook\.com$/.test(url.hostname)) return null;
 
@@ -442,12 +455,10 @@ async function facebedPage(href: string, options: CardOptions) {
   // Facebed only serves its tags to a link crawler; to a browser it bounces
   // straight back to Facebook, and the wall's tags are the generic ones. This
   // is the agent of the consumer the tags are for.
-  // The mirror fetches the post on our behalf, which measured 1-7 s: a budget
-  // of its own, so the fallback is not cut off mid-fetch.
   const page = await getHtml(mirror.href, {
     ...options,
     headers: { 'user-agent': UNFURL_UA },
-    timeout: 15_000,
+    timeout,
   });
   if (!page) return null;
 
@@ -475,22 +486,25 @@ async function facebedPage(href: string, options: CardOptions) {
  * wall covers a page's posts, not a public group's. Measured 2026-11-07:
  * `og:title` is the post text plus " | Facebook", `og:description` is the text
  * alone, and the `<title>` is "<group> | <post text>".
+ *
+ * The page names one `og:image` however many pictures the post has (measured
+ * 2026-11-16: one of two), and nothing on it says there are more. The mirror
+ * names them all, so the caller asks it at the same time as the page: the
+ * mirror's list is used when it is the longer one.
  */
-async function fromGroupPage(href: string, options: CardOptions): Promise<BuiltCard | null> {
-  const page = await getHtml(href, options);
-  if (!page) return null;
-
-  const name = metaContent(page.html, 'og:title');
-  const text = metaContent(page.html, 'og:description');
+function groupCard(html: string, href: string, mirrored: MirrorPage | null): BuiltCard | null {
+  const name = metaContent(html, 'og:title');
+  const text = metaContent(html, 'og:description');
   // The wall has no description, and its title is just "Facebook".
   if (!name || !text || /^Facebook$/.test(name)) return null;
 
-  const group = /^(.+?) \| /.exec(/<title>([^<]*)<\/title>/i.exec(page.html)?.[1] ?? '')?.[1] ?? null;
+  const group = /^(.+?) \| /.exec(/<title>([^<]*)<\/title>/i.exec(html)?.[1] ?? '')?.[1] ?? null;
   const slug = /^\/groups\/([^/]+)\//.exec(new URL(href).pathname)?.[1];
+  const footer = { text: 'Facebook' };
   const embed: CardEmbed = {
     url: href,
     color: FACEBOOK_BLUE,
-    footer: { text: 'Facebook' },
+    footer,
     description: toField(text, 4096),
   };
   if (group) {
@@ -498,17 +512,41 @@ async function fromGroupPage(href: string, options: CardOptions): Promise<BuiltC
       url: slug && `https://www.facebook.com/groups/${slug}/`,
     });
   }
-  const image = metaContent(page.html, 'og:image');
-  if (image) embed.image = { url: image };
-  return { embeds: [embed], files: [] };
+  const own = metaContents(html, 'og:image');
+  const pictures = mirrored ? metaContents(mirrored.page.html, 'og:image') : [];
+  const images = pictures.length > own.length ? pictures : own;
+  if (images[0]) embed.image = { url: images[0] };
+  return { embeds: [embed, ...imageEmbeds(href, FACEBOOK_BLUE, footer, images.slice(1))], files: [] };
+}
+
+/** The mirror's page, its address, and the card text built from its tags. */
+interface MirrorPage {
+  page: { status: number; html: string };
+  mirror: URL;
+  embed: CardEmbed;
 }
 
 async function buildFacebookCard(input: CardInput, options: CardOptions): Promise<BuiltCard | null> {
   // A group post is the one layout the embed iframe never answers: it says
-  // "Unavailable" for every public group post. The page itself does answer.
+  // "Unavailable" for every public group post. The page itself does answer,
+  // and the mirror is asked at once for the pictures the page leaves out - in
+  // the usual request budget, so a slow mirror costs the other pictures, not
+  // the card. A post that turns out to be walled reuses that answer below.
+  let mirrored: MirrorPage | null | undefined;
+  /** The mirror is asked at most once per post: every branch shares its answer. */
+  const mirrorOnce = async (): Promise<MirrorPage | null> => {
+    if (mirrored === undefined) mirrored = await facebedPage(input.href, options);
+    return mirrored;
+  };
+
   if (/^\/groups\//.test(new URL(input.href).pathname)) {
-    const group = await fromGroupPage(input.href, options);
-    if (hasContent(group)) return group;
+    const [page, mirror] = await Promise.all([
+      getHtml(input.href, options),
+      facebedPage(input.href, options, TIMEOUT_MS),
+    ]);
+    mirrored = mirror;
+    const group = page && groupCard(page.html, input.href, mirror);
+    if (group && hasContent(group)) return group;
   }
 
   const card = await fromEmbedPage(input, options);
@@ -521,8 +559,8 @@ async function buildFacebookCard(input: CardInput, options: CardOptions): Promis
     // both, so they fill in the text; our file stays the player.
     const [embed] = card.embeds;
     if (embed && !embed.author && !embed.description) {
-      const mirrored = await facebedPage(input.href, options);
-      if (mirrored) card.embeds[0] = { ...mirrored.embed, ...embed, ...pick(mirrored.embed) };
+      const fromMirror = await mirrorOnce();
+      if (fromMirror) card.embeds[0] = { ...fromMirror.embed, ...embed, ...pick(fromMirror.embed) };
     }
     return card;
   }
@@ -530,8 +568,8 @@ async function buildFacebookCard(input: CardInput, options: CardOptions): Promis
   // A card that only describes a video it could not play is the weaker answer;
   // ask the mirror before settling for it.
   if (!card || card.degraded || !hasContent(card)) {
-    const mirrored = await fromFacebed(input.href, options);
-    if (mirrored) return mirrored;
+    const fallback = await fromFacebed(input.href, options, await mirrorOnce());
+    if (fallback) return fallback;
   }
 
   // A mirror that cannot fetch the post either leaves an empty embed, which is

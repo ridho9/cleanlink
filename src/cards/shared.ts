@@ -125,7 +125,7 @@ function run(
 }
 
 const BROWSER_UA = 'Mozilla/5.0';
-const TIMEOUT_MS = 6000;
+export const TIMEOUT_MS = 6000;
 // A media file is read to the end before the reply goes out, and measured
 // 0.5-5 s for 0.5-6.6 MB from the CDNs the cards use. Ten seconds is that
 // with margin and half the old 20 s worst case; a slower file is dropped and
@@ -500,13 +500,18 @@ export function decodeEntities(text: unknown): string {
     .replace(/&amp;/g, '&');
 }
 
+const metaPattern = (property: string, flags: string) =>
+  new RegExp(`<meta[^>]+(?:property|name)="${property}"[^>]+content="([^"]*)"`, flags);
+
 /** Pull one meta tag out of a page. */
 export function metaContent(html: string, property: string): string | null {
-  const match = new RegExp(
-    `<meta[^>]+(?:property|name)="${property}"[^>]+content="([^"]*)"`,
-    'i',
-  ).exec(html);
+  const match = metaPattern(property, 'i').exec(html);
   return match ? decodeEntities(match[1]) : null;
+}
+
+/** Every meta tag of one property, in page order: a page may repeat `og:image`. */
+export function metaContents(html: string, property: string): string[] {
+  return [...html.matchAll(metaPattern(property, 'gi'))].map((match) => decodeEntities(match[1]));
 }
 
 /**

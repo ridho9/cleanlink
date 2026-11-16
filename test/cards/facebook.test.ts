@@ -187,6 +187,27 @@ test('a post the plugin refuses is carded from facebed instead', async () => {
   );
 });
 
+test('a facebed card shows every picture the mirror names', async () => {
+  const twoPictures = FACEBED_POST.replace(
+    '</head>',
+    '<meta property="og:image" content="https://scontent.fhan5-10.fna.fbcdn.net/v/t39.99422-6/886082638_2_n.jpg"/></head>',
+  );
+  const { impl } = fakeFetch([
+    ['https://www.facebook.com/plugins/post.php', '<html>tidak tersedia lagi</html>'],
+    ['https://www.facebed.com/', twoPictures],
+  ]);
+
+  const [card] = await buildCards('https://www.facebook.com/100064442061829/posts/1603794385111948/', {
+    fetchImpl: impl,
+  });
+
+  assert.ok(card);
+  assert.deepEqual(
+    card.embeds.map((embed) => embed.image!.url.split('/').pop()),
+    ['886082637_1679750246913158_n.jpg', '886082638_2_n.jpg'],
+  );
+});
+
 const FACEBED_REEL = `<html><head>
 <meta property="og:title" content="Diarycoffee Jktt"/>
 <meta property="og:description" content="Baru tau di dekat Jakarta ada tempat seseru ini"/>
@@ -359,19 +380,69 @@ test('Facebook card is skipped for a post that forbids embedding', async () => {
 test('Facebook card reads a public group post from the page itself', async () => {
   const GROUP_HTML = fixtureText('facebook-group.html');
   const url = 'https://www.facebook.com/groups/gocarbandungdriver/permalink/2394478257624763/';
-  // The iframe says "Unavailable" for a group post, so it is never asked.
+  // The iframe says "Unavailable" for a group post, so it is never asked. The
+  // mirror is asked for the other pictures; here it fails, so the page's own
+  // picture stays.
   const { impl, calls } = fakeFetch([[url, GROUP_HTML]]);
   const [card] = await buildCards(url, { fetchImpl: impl });
 
   assert.ok(card);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, url);
+  assert.ok(calls.some((call) => call.url === url));
+  assert.ok(!calls.some((call) => call.url.startsWith('https://www.facebook.com/plugins/')));
+  assert.equal(card.embeds.length, 1);
   const embed = card.embeds[0];
   assert.equal(embed.author!.name, 'GOCAR BANDUNG DRIVER');
   assert.equal(embed.author!.url, 'https://www.facebook.com/groups/gocarbandungdriver/');
   assert.equal(embed.description, 'Naon eta eui di mekarwangi. Meni edan gitu🤣');
   assert.ok(embed.image!.url.startsWith('https://scontent.'));
   assert.equal(embed.footer!.text, 'Facebook');
+});
+
+test('a group post shows every picture the mirror names', async () => {
+  // Measured 2026-11-16: the group page names one og:image for a post with
+  // two pictures; facebed names both, in post order.
+  const url = 'https://www.facebook.com/groups/programmerhandal/permalink/1804788450744330/';
+  const { impl } = fakeFetch([
+    [url, fixtureText('facebook-group-album.html')],
+    ['https://www.facebed.com/', fixtureText('facebed-group-album.html')],
+  ]);
+  const [card] = await buildCards(url, { fetchImpl: impl });
+
+  assert.ok(card);
+  assert.deepEqual(
+    card.embeds.map((embed) => /\/(\d+)_\d+_\d+_n\.jpg/.exec(embed.image!.url)?.[1]),
+    ['905989849', '903504006'],
+  );
+  // The text and the author are the group page's: the mirror's title names the
+  // poster and the group in one string.
+  assert.equal(card.embeds[0].author!.name, 'Ingin Menjadi Programmer Handal, Namun Enggan Ngoding');
+  assert.equal(card.embeds[0].description, '"terlalu ribet, kaya gitu masuknya fitur premium" 🗿');
+});
+
+test('a walled group post is carded from the one mirror answer', async () => {
+  // The group page shows the login wall, and the iframe says "Unavailable".
+  // The mirror, asked at the start of the group path, is the only source left:
+  // asking it a second time would spend another budget on the same answer.
+  const wall = `<html><head><meta property="og:title" content="Log in or sign up to view"/></head></html>`;
+  const url = 'https://www.facebook.com/groups/programmerhandal/permalink/1804788450744330/';
+  const { impl, calls } = fakeFetch([
+    [url, wall],
+    ['https://www.facebook.com/plugins/post.php', '<html>tidak tersedia lagi</html>'],
+    ['https://www.facebed.com/', fixtureText('facebed-group-album.html')],
+  ]);
+
+  const [card] = await buildCards(url, { fetchImpl: impl });
+
+  assert.ok(card);
+  assert.equal(
+    calls.filter((call) => call.url.startsWith('https://www.facebed.com/')).length,
+    1,
+    'the mirror is asked once',
+  );
+  assert.deepEqual(
+    card.embeds.map((embed) => /\/(\d+)_\d+_\d+_n\.jpg/.exec(embed.image!.url)?.[1]),
+    ['905989849', '903504006'],
+  );
 });
 
 test('Facebook card matches a group post by permalink or by posts path', async () => {
