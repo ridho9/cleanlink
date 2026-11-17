@@ -167,11 +167,22 @@ export const REDDIT_ORANGE = 0xff4500;
 /**
  * Neutralise Discord markdown in text we did not write.
  *
+ * A URL is left as it is: Discord auto-links it, and a backslash would either
+ * change the target or stop the link forming (a YouTube id carries `_`).
  * Escaping runs before clipping so a truncated string can never end on a lone
  * backslash that would swallow the character after it.
  */
 export function escapeMarkdown(text: unknown): string {
+  // Odd indices are the URLs the split kept, even ones the text around them.
   return String(text ?? '')
+    .split(/(https?:\/\/[^\s<>]+)/)
+    .map((part, index) => (index % 2 === 1 ? part : escapeProse(part)))
+    .join('');
+}
+
+/** Escape the markdown characters of one run of text that is not a URL. */
+function escapeProse(text: string): string {
+  return text
     .replace(/([\\`*_~|[])/g, '\\$1')
     .replace(/^(\s*)([>#+-])/gm, '$1\\$2')
     .replace(/^(\s*)(\d+)\./gm, '$1$2\\.');

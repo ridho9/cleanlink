@@ -12,6 +12,20 @@ test('escapeMarkdown neutralises Discord markdown', () => {
   assert.equal(escapeMarkdown(undefined), '');
 });
 
+test('escapeMarkdown leaves a URL as it is, because a backslash breaks the link', () => {
+  // A YouTube id carries `_`: escaped, the link points at no video.
+  assert.equal(
+    escapeMarkdown('📺https://youtu.be/Y_I_NOHVwzI'),
+    '📺https://youtu.be/Y_I_NOHVwzI',
+  );
+  assert.equal(
+    escapeMarkdown('see https://en.wikipedia.org/wiki/Foo_(bar) *now*'),
+    'see https://en.wikipedia.org/wiki/Foo_(bar) \\*now\\*',
+  );
+  // A URL that opens a line is not a blockquote or a list either.
+  assert.equal(escapeMarkdown('https://x.com/a_b\n> next'), 'https://x.com/a_b\n\\> next');
+});
+
 test('decodeEntities handles numeric and named entities', () => {
   assert.equal(decodeEntities('Yoan (&#064;phodhipo)'), 'Yoan (@phodhipo)');
   assert.equal(decodeEntities('a &amp; b &lt;c&gt; &quot;d&quot; &#39;e&#39;'), "a & b <c> \"d\" 'e'");

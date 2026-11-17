@@ -164,6 +164,30 @@ test('X card escapes markdown in the tweet text', async () => {
   );
 });
 
+test('X card keeps a link inside a quote clickable', async () => {
+  // Reported 2026-11-16: the quoted post names its video, and the card escaped
+  // the underscores of the YouTube id into `Y\_I\_NOHVwzI`, which is no link.
+  const quote = {
+    ...X_TEXT,
+    tweet: {
+      ...X_TEXT.tweet,
+      quote: {
+        text: '『メタモルフォーゼ』\n\n📺https://youtu.be/Y_I_NOHVwzI',
+        author: { name: '学園アイドルマスター／学マス【公式】', screen_name: 'gkmas_official' },
+      },
+    },
+  };
+  const { impl } = fakeFetch([['https://api.fxtwitter.com/', quote]]);
+  const [card] = await buildCards('https://x.com/alphafluxx_/status/2122320997374431545', {
+    fetchImpl: impl,
+  });
+
+  assert.ok(card);
+  assert.ok(card.embeds[0]!.description!.includes('> 📺https://youtu.be/Y_I_NOHVwzI'));
+  // The handle is prose and keeps its escape; the URL does not.
+  assert.ok(!card.embeds[0]!.description!.includes('Y\\_I'));
+});
+
 test('X card gives each photo its own full-size embed', async () => {
   const { impl } = fakeFetch([['https://api.fxtwitter.com/', X_TWO_PHOTOS]]);
   const [card] = await buildCards('https://x.com/EspokunCity/status/2117605067968930228', {
