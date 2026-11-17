@@ -20,10 +20,11 @@ import { note } from '../trace.ts';
 /** Pages per work: SaucyBot's cap, so a long manga stays one predictable card. */
 const MAX_PAGES = 5;
 
-/** A page is a media file, not a page fetch: 1.9 MB measured 7-18 s, and the
- *  mirror took 21 s on a cold entry. The card budget is seconds, so one slow
- *  page is dropped, not waited for. */
-const PAGE_TIMEOUT_MS = 20_000;
+/** A page is a media file: 1.3 MB measured 0.5-1.3 s from i.pximg.net. Two
+ *  attempts of ten seconds keep the worst case at the old twenty, and a stall
+ *  that passes costs ten seconds instead of the whole card (measured
+ *  2026-11-17: one page timed out and the only picture was lost). */
+const PAGE_TIMEOUT_MS = 10_000;
 
 type PixivIllustResponse = {
   error?: boolean;
@@ -40,6 +41,25 @@ type PixivIllustResponse = {
 type PixivPagesResponse = {
   body?: ({ urls?: { regular?: string } | null } | null)[] | null;
 };
+
+/**
+ * One page, asked again once when the attempt timed out.
+ *
+ * `request()` never retries a deadline, because a slow server asked twice only
+ * doubles the wait. A picture that usually arrives in a second is different: a
+ * stalled connection costs the card's only picture, so one more attempt is
+ * worth the ten seconds.
+ */
+async function pageBytes(url: string, options: CardOptions, cap: number): Promise<Buffer | null> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await getBytes(url, { ...options, timeout: PAGE_TIMEOUT_MS }, cap);
+    } catch (error) {
+      const name = (error as Error).name;
+      if (attempt === 1 || (name !== 'TimeoutError' && name !== 'AbortError')) throw error;
+    }
+  }
+}
 
 async function buildPixivCard({ match, href }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
   const [, id] = match;
@@ -106,7 +126,7 @@ async function buildPixivCard({ match, href }: CardInput, options: CardOptions):
   const buffers = await Promise.all(
     sources.map(async (url) => {
       try {
-        return await getBytes(url, { ...options, ...(needsPixivSession(url) ? { headers: apiHeaders } : {}), timeout: PAGE_TIMEOUT_MS }, byteCap);
+        return await pageBytes(url, needsPixivSession(url) ? { ...options, headers: apiHeaders } : options, byteCap);
       } catch (error) {
         note(`[card] pixiv page failed: ${(error as Error).message}`);
         return null;

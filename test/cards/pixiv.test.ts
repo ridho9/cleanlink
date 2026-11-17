@@ -99,6 +99,52 @@ test('Pixiv card spoils restricted works and caps the page count', async () => {
   assert.equal(calls.filter((call) => call.url.startsWith('https://i.pximg.net/')).length, 5);
 });
 
+test('a pixiv page that stalls is asked again, not dropped', async () => {
+  // Measured 2026-11-17 on artwork 152175626: the API answered, the one page
+  // hit its deadline, and the card was lost with no file to attach. The same
+  // file answered in 0.5-1.3 s once the stall passed.
+  const answers = [
+    ['https://www.pixiv.net/ajax/illust/151616953/pages', { body: [{ urls: { regular: 'https://i.pximg.net/one_master1200.jpg' } }] }],
+    ['https://www.pixiv.net/ajax/illust/151616953', { ...PIXIV, body: { ...PIXIV.body, pageCount: 1 } }],
+  ] as [string, unknown][];
+  const { impl: base } = fakeFetch([...answers, ['https://i.pximg.net/', imageResponse()]]);
+  let attempts = 0;
+  const impl: typeof fetch = async (url, init) => {
+    if (String(url).startsWith('https://i.pximg.net/') && attempts++ === 0) {
+      throw Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
+    }
+    return base(url, init);
+  };
+
+  const [card] = await buildCards('https://www.pixiv.net/artworks/151616953', { fetchImpl: impl });
+
+  assert.ok(card, 'the second attempt answers');
+  assert.deepEqual(card.files.map((file) => file.name), ['p0.jpg']);
+  assert.equal(attempts, 2);
+});
+
+test('a pixiv page that stalls twice still costs only that page', async () => {
+  const { impl: base } = fakeFetch([
+    ['https://www.pixiv.net/ajax/illust/151616953/pages', PIXIV_PAGES],
+    ['https://www.pixiv.net/ajax/illust/151616953', PIXIV],
+    ['https://i.pximg.net/', imageResponse()],
+  ]);
+  let attempts = 0;
+  const impl: typeof fetch = async (url, init) => {
+    // Both pages stall every time, so one retry each and no more.
+    if (String(url).startsWith('https://i.pximg.net/')) {
+      attempts += 1;
+      throw Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
+    }
+    return base(url, init);
+  };
+
+  const cards = await buildCards('https://www.pixiv.net/artworks/151616953', { fetchImpl: impl });
+
+  assert.deepEqual(cards, []);
+  assert.equal(attempts, 4, 'two pages, two attempts each');
+});
+
 test('Pixiv card is skipped when no image can be fetched', async () => {
   const { impl } = fakeFetch([
     ['https://www.pixiv.net/ajax/illust/151616953/pages', PIXIV_PAGES],
