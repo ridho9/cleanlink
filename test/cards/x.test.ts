@@ -508,7 +508,7 @@ test('a link that asks for a language carries the post translation', async () =>
   const translation = fixture('x-korean-translation.json').tweet.translation.text;
   // The translation leads: a reader asked for this post in their language.
   assert.ok(
-    description.indexOf('🌐 **Translated from Korean**') < description.indexOf(korean.tweet.text),
+    description.indexOf('🌐 **English translation**') < description.indexOf('**Original (Korean)**'),
     description,
   );
   assert.ok(description.includes(translation));
@@ -533,7 +533,7 @@ test('the fixupx language path is repaired and translated', async () => {
   });
 
   assert.equal(card!.url, 'https://x.com/tokubechunaa/status/2122667654649667856');
-  assert.ok(card!.embeds[0]!.description!.startsWith('🌐 **Translated from Korean**'));
+  assert.ok(card!.embeds[0]!.description!.startsWith('🌐 **English translation**'));
 });
 
 test('a link that names no language asks for no translation', async () => {
@@ -548,12 +548,29 @@ test('a link that names no language asks for no translation', async () => {
   assert.ok(calls.every(({ url }) => url.endsWith('/2122667654649667856')), 'no language segment');
 });
 
-test('a translation in another language is not shown', async () => {
-  const stale = structuredClone(fixture('x-korean-translation.json'));
-  stale.tweet.translation.target_lang = 'ja';
-  const { impl } = fakeFetch([['https://api.fxtwitter.com/', stale]]);
+test('an aliased language code gets its translation', async () => {
+  // The endpoint answers its own spelling: `jp` comes back as `ja` (measured
+  // 2026-11-18), and comparing it with the request dropped every alias.
+  const aliased = structuredClone(fixture('x-korean-translation.json'));
+  aliased.tweet.translation.target_lang = 'ja';
+  aliased.tweet.translation.text = '今日、チューナの外見ダイス100回振ったの？';
+  const { impl } = fakeFetch([['https://api.fxtwitter.com/', aliased]]);
 
-  const [card] = await buildCards('https://x.com/tokubechunaa/status/2122667654649667856?en', {
+  const [card] = await buildCards('https://x.com/tokubechunaa/status/2122667654649667856/jp', {
+    fetchImpl: impl,
+  });
+
+  const description = card!.embeds[0]!.description!;
+  assert.ok(description.includes('🌐 **Japanese translation**'), description);
+  assert.ok(description.includes('今日、チューナの外見ダイス'));
+});
+
+test('a code no language claims is refused', async () => {
+  const bogus = structuredClone(fixture('x-korean-translation.json'));
+  bogus.tweet.translation.target_lang = 'xx';
+  const { impl } = fakeFetch([['https://api.fxtwitter.com/', bogus]]);
+
+  const [card] = await buildCards('https://x.com/tokubechunaa/status/2122667654649667856?xx', {
     fetchImpl: impl,
   });
 
@@ -576,6 +593,53 @@ test('a translation that repeats the original is not shown', async () => {
   assert.ok(!card.embeds[0]!.description!.includes('🌐'));
 });
 
+// DeepL answers this instead of a translation when its upstream is stale,
+// in several languages at once (seen 2026-11-18 on a quote).
+const NOTICE =
+  "You're using an older version of DeepL. To continue using the app, please update to the latest version." +
+  '\n\nSie verwenden eine ältere Version von DeepL. Bitte aktualisieren Sie die App.';
+
+function noticeAnswer(base: Record<string, any>) {
+  const payload = structuredClone(base);
+  payload.tweet.translation.text = NOTICE;
+  payload.tweet.translation.provider = 'deepl';
+  return payload;
+}
+
+const json = (value: unknown) =>
+  new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } });
+
+test('a provider notice is asked again, and the good answer is used', async () => {
+  const korean = fixture('x-korean-translation.json');
+  const notice = noticeAnswer(korean);
+  let served = 0;
+  const { impl, calls } = fakeFetch([
+    ['https://api.fxtwitter.com/', () => json(served++ === 0 ? notice : korean)],
+  ]);
+
+  const [card] = await buildCards('https://x.com/tokubechunaa/status/2122667654649667856?en', {
+    fetchImpl: impl,
+  });
+
+  assert.equal(calls.length, 2, 'the notice costs one more ask');
+  const description = card!.embeds[0]!.description!;
+  assert.ok(!description.includes('DeepL'), description);
+  assert.ok(description.includes('🌐 **English translation**'));
+});
+
+test('a provider notice that persists drops the translation, not the card', async () => {
+  const notice = noticeAnswer(fixture('x-korean-translation.json'));
+  const { impl, calls } = fakeFetch([['https://api.fxtwitter.com/', json(notice)]]);
+
+  const [card] = await buildCards('https://x.com/tokubechunaa/status/2122667654649667856?en', {
+    fetchImpl: impl,
+  });
+
+  assert.equal(calls.length, 2, 'one retry, no more');
+  assert.ok(!card.embeds[0]!.description!.includes('🌐'));
+  assert.ok(card.embeds[0]!.description!.includes(fixture('x-korean.json').tweet.text));
+});
+
 test('a quoted post arrives translated, above its original', async () => {
   const { impl } = fakeFetch([['https://api.fxtwitter.com/', fixture('x-quote-translation.json')]]);
 
@@ -587,7 +651,8 @@ test('a quoted post arrives translated, above its original', async () => {
   const quote = fixture('x-quote-translation.json').tweet.quote;
   const translated = quote.translation.text;
   assert.ok(description.includes('> **Quoting morite2toeic (@morite2toeic)**'), description);
-  assert.ok(description.includes('> 🌐 **Translated from Japanese**'));
+  assert.ok(description.includes('> 🌐 **English translation**'));
+  assert.ok(description.includes('> **Original (Japanese)**'));
   // Both texts are blockquoted, so compare their first lines.
   const firstLine = (text: string) => text.split('\n')[0]!;
   assert.ok(

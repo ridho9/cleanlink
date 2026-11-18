@@ -103,30 +103,74 @@ function languageName(code: string | undefined): string | null {
  * names the source in `provider`, `grok` or `bing`. A two-letter tail is what
  * fixupx and `?lang=` both mean. Measured 2026-11-18.
  */
+/**
+ * DeepL answers its own update notice instead of a translation when its
+ * upstream is stale. Seen 2026-11-18: the notice arrives in several languages
+ * at once, always naming DeepL, and the same link flipped between it and a
+ * good Grok answer request after request.
+ */
+const PROVIDER_NOTICE = /DeepL/i;
+
+function staleTranslation(translation: XTranslation | null | undefined) {
+  return Boolean(translation?.text && PROVIDER_NOTICE.test(translation.text));
+}
+
 function matching(
   translation: XTranslation | null | undefined,
   language: string | null,
   original: string | undefined,
 ) {
   if (!language || !translation?.text) return null;
-  // A stale answer for another language is not what the link asked for.
-  const target = (translation.target_lang ?? '').split('-')[0]!.toLowerCase();
-  if (target !== language) return null;
+  // The endpoint answers its own spelling of the language: `jp` comes back as
+  // `ja` and `kr` as `ko` (measured 2026-11-18), so the answer names the
+  // language, not the request — requiring our own spelling dropped every
+  // alias. A code no language claims is still refused.
+  if (!languageName(translation.target_lang)) return null;
+  if (PROVIDER_NOTICE.test(translation.text)) return null;
   // An unknown language code comes back as the source text unchanged: the
   // provider has no translation, and the copy is not worth printing twice.
   return translation.text.trim() === (original ?? '').trim() ? null : translation;
 }
 
+/**
+ * The translated passage with its own label.
+ *
+ * The label names the language the translation is in — "English translation"
+ * — not the one it came from: the pair then reads "🌐 English translation"
+ * and "Original (Korean)", and each block says what it is. A language X does
+ * not name falls back to the bare word.
+ */
+/**
+ * The source passage. It gets a label only beside a translation: a card with
+ * one block of text has nothing to tell apart.
+ */
+function originalBlock(text: string, language: string | undefined, labelled: boolean) {
+  const body = escapeMarkdown(text);
+  if (!labelled) return body;
+  const name = languageName(language);
+  return `${name ? `**Original (${name})**` : '**Original**'}\n${body}`;
+}
+
+function translatedBlock(translation: XTranslation) {
+  const target = languageName(translation.target_lang);
+  const head = target ? `🌐 **${target} translation**` : '🌐 **Translation**';
+  return `${head}\n${escapeMarkdown(translation.text!)}`;
+}
+
 async function buildXCard({ match, raw }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
   const [, handle, id] = match;
   const asked = askedLanguage(raw);
-  const data = await getJson<XResponse>(
-    `https://api.fxtwitter.com/${handle}/status/${id}${asked ? `/${asked}` : ''}`,
-    options,
-  );
-  if (data?.code !== 200 || !data.tweet) return null;
+  const url = `https://api.fxtwitter.com/${handle}/status/${id}${asked ? `/${asked}` : ''}`;
+  const first = await getJson<XResponse>(url, options);
+  if (first?.code !== 200 || !first.tweet) return null;
+  let tweet = first.tweet;
 
-  const tweet = data.tweet;
+  // The notice is not stable: one more ask usually returns the real text, so
+  // a stale upstream costs a second request, not the translation.
+  if (asked && [tweet.translation, tweet.quote?.translation].some(staleTranslation)) {
+    const again = await getJson<XResponse>(url, options);
+    if (again?.code === 200 && again.tweet) tweet = again.tweet;
+  }
   const author = tweet.author ?? {};
 
   // The video is fetched before the images are chosen, because a successful
@@ -144,17 +188,13 @@ async function buildXCard({ match, raw }: CardInput, options: CardOptions): Prom
   const images = [...mainImages, ...quoteImages];
 
   // The translation first: a reader asked for this post in their language, so
-  // it is the copy to read, and the original follows as the source. The label
-  // names the source language, so the two lines are not mistaken for each
-  // other when they look alike.
+  // it is the copy to read. Both passages are labelled, because two blocks of
+  // text in different scripts still leave a reader guessing which is which
+  // (seen in a live card, 2026-11-18).
   const parts = [];
   const translated = matching(tweet.translation, asked, tweet.text);
-  if (translated) {
-    const source = languageName(translated.source_lang ?? tweet.lang);
-    const body = escapeMarkdown(translated.text!);
-    parts.push(source ? `🌐 **Translated from ${source}**\n${body}` : `🌐 ${body}`);
-  }
-  if (tweet.text) parts.push(escapeMarkdown(tweet.text));
+  if (translated) parts.push(translatedBlock(translated));
+  if (tweet.text) parts.push(originalBlock(tweet.text, tweet.lang, Boolean(translated)));
   // A quote gets the same treatment, and the same order, inside its block: a
   // quoted post in another language arrives translated when the API has it
   // (measured 2026-11-18 on a Japanese quote), and the original follows.
@@ -165,12 +205,8 @@ async function buildXCard({ match, raw }: CardInput, options: CardOptions): Prom
       .join(' ');
     const quoteTranslation = matching(tweet.quote.translation, asked, tweet.quote.text);
     const blocks = [];
-    if (quoteTranslation) {
-      const source = languageName(quoteTranslation.source_lang ?? tweet.quote.lang);
-      const body = escapeMarkdown(quoteTranslation.text!);
-      blocks.push(source ? `🌐 **Translated from ${source}**\n${body}` : `🌐 ${body}`);
-    }
-    blocks.push(escapeMarkdown(tweet.quote.text));
+    if (quoteTranslation) blocks.push(translatedBlock(quoteTranslation));
+    blocks.push(originalBlock(tweet.quote.text, tweet.quote.lang, Boolean(quoteTranslation)));
     const body = blocks
       .join('\n\n')
       .split('\n')
