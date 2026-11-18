@@ -207,10 +207,13 @@ async function buildXCard({ match, raw }: CardInput, options: CardOptions): Prom
     const blocks = [];
     if (quoteTranslation) blocks.push(translatedBlock(quoteTranslation));
     blocks.push(originalBlock(tweet.quote.text, tweet.quote.lang, Boolean(quoteTranslation)));
+    // A blank line inside a blockquote keeps its marker and the space after
+    // it. A bare `>` ends the quote where it stands, which split the quoted
+    // block in two live (seen 2026-11-18).
     const body = blocks
       .join('\n\n')
       .split('\n')
-      .map((line) => (line ? `> ${line}` : '>'))
+      .map((line) => `> ${line}`)
       .join('\n');
     parts.push(`> **Quoting ${escapeMarkdown(who)}**\n${body}`);
   }

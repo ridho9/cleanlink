@@ -662,6 +662,8 @@ test('a quoted post arrives translated, above its original', async () => {
   // Every line of the quote is quoted, the blank spacer included, so Discord
   // keeps it as one block.
   const quoted = description.slice(description.indexOf('> **Quoting')).split('\n\n')[0]!;
-  assert.ok(quoted.split('\n').every((line) => line.startsWith('>')), quoted);
+  // Every line carries the marker and the space after it: a bare `>` ends the
+  // blockquote in Discord and split the quoted block in two (seen 2026-11-18).
+  assert.ok(quoted.split('\n').every((line) => line.startsWith('> ')), quoted);
 });
 
