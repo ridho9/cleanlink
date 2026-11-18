@@ -1,0 +1,35 @@
+{
+  "code": 200,
+  "message": "OK",
+  "tweet": {
+    "id": "2122667654649667856",
+    "url": "https://x.com/tokubechunaa/status/2122667654649667856",
+    "text": "오늘 츄나 외모주사위100 찍으셧고 졸귀수준 진짜미쳣음",
+    "lang": "ko",
+    "author": {
+      "name": "ムンイ",
+      "screen_name": "tokubechunaa",
+      "url": "https://x.com/tokubechunaa",
+      "avatar_url": "https://pbs.twimg.com/profile_images/2117295582633234438/MGCknJmn_200x200.jpg",
+      "id": "2039320833718652928"
+    },
+    "media": {
+      "all": [
+        {
+          "type": "photo",
+          "id": "2122667641643180032",
+          "url": "https://pbs.twimg.com/media/HXU6-URboAAOtnI.jpg?name=orig",
+          "width": 750,
+          "height": 1000
+        }
+      ]
+    },
+    "replies": 1,
+    "retweets": 40,
+    "likes": 623,
+    "views": 9368,
+    "created_timestamp": 1794918380,
+    "quote": null,
+    "possibly_sensitive": null
+  }
+}

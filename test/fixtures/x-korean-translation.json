@@ -1,0 +1,17 @@
+{
+  "code": 200,
+  "message": "OK",
+  "status": {
+    "type": "status",
+    "id": "2122667654649667856",
+    "url": "https://x.com/tokubechunaa/status/2122667654649667856",
+    "lang": "ko",
+    "translation": {
+      "text": "Chuna rolled a 100 on the appearance dice today and looked so insanely cute",
+      "source_lang": "ko",
+      "target_lang": "en",
+      "source_lang_en": "Korean",
+      "provider": "grok"
+    }
+  }
+}

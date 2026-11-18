@@ -20,6 +20,10 @@ export interface CardOptions {
 export interface CardInput {
   href: string;
   match: (string | null)[];
+  // The URL as the message wrote it. The cleaner drops the parameters that
+  // carry no identity, and one of them is a request: `?en` asks for the post
+  // in English. A builder reads such a hint here, never from `href`.
+  raw?: string;
 }
 
 export interface CardFile {

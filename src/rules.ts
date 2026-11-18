@@ -7,6 +7,11 @@
 // shorten:   exact hosts that are pure redirectors (never the final URL).
 // drop:      query parameters to remove (regex, tested against the name).
 //            Common trackers (utm_*, fbclid, ...) are dropped for every site.
+// keepOnly:  a URL shape whose identity is one named parameter, e.g.
+//            YouTube's `watch?v=`. Every other parameter is dropped.
+// dropAllOn: paths where the whole query is decoration.
+// pathRewrite: a path form that means the same page but is not the canonical
+//            one. The first group replaces the path.
 // ua:        optional override of the request user agent. The engine default
 //            is the bare "Mozilla/5.0", which is what these sites hand a
 //            redirect to.
@@ -25,6 +30,9 @@ export interface Rule {
   shorten?: string[];
   dropAllOn?: RegExp;
   keepOnly?: { path: RegExp; keep: RegExp[] };
+  // rewrite:   a path form that means the same page but is not the canonical
+  //            one. The first group replaces the path.
+  pathRewrite?: RegExp;
   ua?: string;
   failure?: RegExp[];
 }
@@ -81,6 +89,10 @@ export const RULES: Rule[] = [
     // `s`, `t` and `a` are per-share tokens; the list only matters for
     // non-permalink URLs, since status links drop the whole query.
     dropAllOn: /\/status\/\d+/i,
+    // `/status/<id>/en` is a fixupx and vxtwitter path; x.com answers 404 for
+    // any two-letter tail (measured 2026-11-18), and the card reads the
+    // language from the posted URL before the tail is cut.
+    pathRewrite: /^(\/.*\/status\/\d+)\/[a-z]{2}$/i,
     drop: [/^s$/i, /^t$/i, /^a$/i, /^ref_src$/i, /^ref_url$/i],
   },
   {

@@ -32,6 +32,7 @@ type XMedia = {
 type XTweet = {
   id?: string;
   text?: string;
+  lang?: string;
   author?: XAuthor | null;
   media?: { all?: XMedia[] } | null;
   quote?: XTweet | null;
@@ -44,9 +45,88 @@ type XTweet = {
 
 type XResponse = { code?: number; tweet?: XTweet | null };
 
-async function buildXCard({ match }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
+type XTranslation = {
+  text?: string;
+  source_lang?: string;
+  target_lang?: string;
+};
+
+type XTranslationResponse = {
+  code?: number;
+  status?: { lang?: string; translation?: XTranslation | null } | null;
+};
+
+// fixupx and the vxtwitter hosts take `/status/<id>/<language>`, X takes
+// `?lang=<language>`, and people type `?<language>`. A two-letter code is the
+// only form all three produce.
+const LANGUAGE_TAIL = /\/status\/\d+\/([a-z]{2})$/i;
+const LANGUAGE_CODE = /^[a-z]{2}$/i;
+
+/** The language the posted URL asks for, if it asks for one. */
+function askedLanguage(raw: string | undefined): string | null {
+  if (!raw) return null;
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  const tail = LANGUAGE_TAIL.exec(url.pathname)?.[1];
+  if (tail) return tail.toLowerCase();
+  const named = url.searchParams.get('lang');
+  if (named && LANGUAGE_CODE.test(named)) return named.toLowerCase();
+  // `?en` puts the language in the name, with an empty value.
+  for (const name of url.searchParams.keys()) {
+    if (LANGUAGE_CODE.test(name)) return name.toLowerCase();
+  }
+  return null;
+}
+
+const languageNames = new Intl.DisplayNames(['en'], { type: 'language' });
+
+/** "Korean" for `ko`; null when the code names no language. */
+function languageName(code: string | undefined): string | null {
+  const base = (code ?? '').split('-')[0]!.toLowerCase();
+  if (!LANGUAGE_CODE.test(base)) return null;
+  let name;
+  try {
+    name = languageNames.of(base);
+  } catch {
+    return null;
+  }
+  // An unknown code comes back unchanged, and a bare code is no label.
+  return name && name.toLowerCase() !== base ? name : null;
+}
+
+/**
+ * The post in the language the link asked for.
+ *
+ * This is the same translation X shows behind its own "Show translation"
+ * button: the payload names the source in `provider`, `grok` or `bing`. The
+ * API is the one already in use, and measured 2026-11-18 the v1 status path
+ * ignores `?lang` while `/2/status/<id>` answers it.
+ */
+async function translate(id: string, language: string, options: CardOptions) {
+  const data = await getJson<XTranslationResponse>(
+    `https://api.fxtwitter.com/2/status/${id}?lang=${language}`,
+    options,
+  );
+  const found = data?.status?.translation;
+  if (!found?.text) return null;
+  // A stale answer for another language is not what the link asked for.
+  const target = (found.target_lang ?? '').split('-')[0]!.toLowerCase();
+  return target === language ? found : null;
+}
+
+async function buildXCard({ match, raw }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
   const [, handle, id] = match;
-  const data = await getJson<XResponse>(`https://api.fxtwitter.com/${handle}/status/${id}`, options);
+  const asked = askedLanguage(raw);
+  // In parallel: the translation is one more request to the same API, and the
+  // whole reply has a six-second budget.
+  const [data, translated] = await Promise.all([
+    getJson<XResponse>(`https://api.fxtwitter.com/${handle}/status/${id}`, options),
+    asked && id ? translate(id, asked, options) : null,
+  ]);
   if (data?.code !== 200 || !data.tweet) return null;
 
   const tweet = data.tweet;
@@ -68,6 +148,14 @@ async function buildXCard({ match }: CardInput, options: CardOptions): Promise<B
 
   const parts = [];
   if (tweet.text) parts.push(escapeMarkdown(tweet.text));
+  // The translation follows the text it translates, above the quote. The
+  // label names the source language, so a reader knows which text is which
+  // even when the two lines look alike.
+  if (translated?.text) {
+    const source = languageName(translated.source_lang ?? tweet.lang);
+    const body = escapeMarkdown(translated.text);
+    parts.push(source ? `🌐 **Translated from ${source}**\n${body}` : `🌐 ${body}`);
+  }
   if (tweet.quote?.text) {
     const quoted = tweet.quote.author ?? {};
     const who = [quoted.name, quoted.screen_name ? `(@${quoted.screen_name})` : '']

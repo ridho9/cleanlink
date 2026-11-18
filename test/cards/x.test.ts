@@ -494,3 +494,90 @@ test('yt-dlp renditions keep only complete files, best first', () => {
   assert.deepEqual(progressiveUrls(info), ['https://a/hd.mp4', 'https://a/sd.mp4']);
   assert.deepEqual(progressiveUrls({}), []);
 });
+
+test('a link that asks for a language carries the post translation', async () => {
+  const translation = fixture('x-korean-translation.json');
+  const korean = fixture('x-korean.json');
+  const { impl, calls } = fakeFetch([
+    ['https://api.fxtwitter.com/2/', translation],
+    ['https://api.fxtwitter.com/', korean],
+  ]);
+
+  const [card] = await buildCards(
+    'https://x.com/tokubechunaa/status/2122667654649667856?en',
+    { fetchImpl: impl },
+  );
+
+  const description = card!.embeds[0]!.description!;
+  assert.ok(description.includes(korean.tweet.text), 'the original stays');
+  assert.ok(description.includes('🌐 **Translated from Korean**'), description);
+  assert.ok(description.includes(translation.status.translation.text));
+  // The text, then its translation: a reader meets the post before the gloss.
+  assert.ok(
+    description.indexOf(korean.tweet.text) < description.indexOf('🌐'),
+    'the translation follows the original',
+  );
+  assert.ok(
+    calls.some(({ url }) => url === 'https://api.fxtwitter.com/2/status/2122667654649667856?lang=en'),
+    'the language is asked of the translation endpoint',
+  );
+});
+
+test('the fixupx language path is repaired and translated', async () => {
+  const from = 'https://x.com/tokubechunaa/status/2122667654649667856/en';
+  const { impl } = fakeFetch([
+    ['https://api.fxtwitter.com/2/', fixture('x-korean-translation.json')],
+    ['https://api.fxtwitter.com/', fixture('x-korean.json')],
+  ]);
+
+  const [card] = await buildCards(`<${from}>`, {
+    fetchImpl: impl,
+    cleaned: [{ from, to: 'https://x.com/tokubechunaa/status/2122667654649667856' }],
+  });
+
+  assert.equal(card!.url, 'https://x.com/tokubechunaa/status/2122667654649667856');
+  assert.ok(card!.embeds[0]!.description!.includes('🌐 **Translated from Korean**'));
+});
+
+test('a link that names no language asks for no translation', async () => {
+  const { impl, calls } = fakeFetch([['https://api.fxtwitter.com/', fixture('x-korean.json')]]);
+
+  const [card] = await buildCards('https://x.com/tokubechunaa/status/2122667654649667856', {
+    fetchImpl: impl,
+  });
+
+  assert.ok(card, 'expected a card');
+  assert.ok(!card.embeds[0]!.description!.includes('🌐'));
+  assert.ok(calls.every(({ url }) => !url.includes('/2/status/')), 'one request per post');
+});
+
+test('a translation into another language is not shown', async () => {
+  const stale = structuredClone(fixture('x-korean-translation.json'));
+  stale.status.translation.target_lang = 'ja';
+  const { impl } = fakeFetch([
+    ['https://api.fxtwitter.com/2/', stale],
+    ['https://api.fxtwitter.com/', fixture('x-korean.json')],
+  ]);
+
+  const [card] = await buildCards('https://x.com/tokubechunaa/status/2122667654649667856?en', {
+    fetchImpl: impl,
+  });
+
+  assert.ok(card);
+  assert.ok(!card.embeds[0]!.description!.includes('🌐'));
+});
+
+test('a translation that fails leaves the card as it was', async () => {
+  const { impl } = fakeFetch([
+    ['https://api.fxtwitter.com/2/', new Response('gone', { status: 404 })],
+    ['https://api.fxtwitter.com/', fixture('x-korean.json')],
+  ]);
+
+  const [card] = await buildCards('https://x.com/tokubechunaa/status/2122667654649667856?en', {
+    fetchImpl: impl,
+  });
+
+  assert.ok(card, 'the card does not depend on the translation');
+  assert.ok(card.embeds[0]!.description!.includes(fixture('x-korean.json').tweet.text));
+  assert.ok(!card.embeds[0]!.description!.includes('🌐'));
+});

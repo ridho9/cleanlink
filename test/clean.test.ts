@@ -315,6 +315,24 @@ test('drops the X per-share token but keeps nothing else', async () => {
   );
 });
 
+test('drops the fixupx language tail, which x.com answers with 404', async () => {
+  const fetchImpl = stubFetch();
+  // `?en` is a request the card reads before the query is dropped; the path
+  // form has no meaning on x.com at all (404 for any two-letter tail,
+  // measured 2026-11-18).
+  assert.equal(
+    await cleanUrl('https://x.com/user/status/123/en', { fetchImpl }),
+    'https://x.com/user/status/123',
+  );
+  assert.equal(
+    await cleanUrl('https://x.com/user/status/123/en?s=20', { fetchImpl }),
+    'https://x.com/user/status/123',
+  );
+  // A photo index is a real segment and stays, as does anything longer.
+  assert.equal(await cleanUrl('https://x.com/user/status/123/photo/1', { fetchImpl }), null);
+  assert.equal(await cleanUrl('https://x.com/user/status/123/analytics', { fetchImpl }), null);
+});
+
 // Fixtures below are real links, with the exact redirect targets observed live.
 
 test('real link: Instagram share tokens mdxt/psln', async () => {

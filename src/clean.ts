@@ -118,6 +118,10 @@ function needsResolve(url: URL, rule: Rule) {
 function stripTracking(url: URL, rule: Rule) {
   const out = new URL(url.href);
 
+  // A path form that is not the canonical one, e.g. fixupx's
+  // `/status/<id>/en`, which x.com answers with 404.
+  if (rule.pathRewrite) out.pathname = out.pathname.replace(rule.pathRewrite, '$1');
+
   // On a permalink, every query parameter is decoration: X's `a`/`s`/`t`,
   // Instagram's `mdxt`/`psln`, TikTok's `_t`. Dropping the whole query there
   // is future-proof against tokens that did not exist when the rule was

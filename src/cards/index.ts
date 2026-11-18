@@ -257,7 +257,7 @@ export async function buildCards(text: string, { cleaned = [], fetchImpl = fetch
     // Notes and marks made while this card is built are filed under its URL.
     await withUrl(raw, async () => { try {
       const card = await site.build(
-        { match, href: url.href },
+        { match, href: url.href, raw },
         { fetchImpl, budget: { files: filesLeft, bytes: bytesLeft } },
       );
       if (!card) {
