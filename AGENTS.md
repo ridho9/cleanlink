@@ -2,6 +2,8 @@
 
 Discord bot that strips trackers from share links and builds preview cards. `README.md` is the full reference.
 
+The bot is **Linky** (`Linky#1348` when it logs in). An unrelated bot at `linkybot.dev` (source `LLRHook/linky`) has the same name and is a different project: its docs and code say nothing about this bot. Read this repo for behavior, never that one.
+
 The bot runs on the bot host, named by `BOT_HOST` in the gitignored `mise.local.toml`, from the deploy worktree `~/.local/share/cleanlink` — never from this checkout. Do not edit the worktree. Check `hostname` first: on the bot host, run commands directly, not over `ssh` (it may have no key for itself). `mise run review`, `mise run deploy` and `mise run rollback` handle both cases.
 
 ## Daily review
