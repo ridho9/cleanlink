@@ -3,6 +3,7 @@
 
 import {
   authorBlock,
+  blockquote,
   clip,
   attachMedia,
   galleryFiles,
@@ -46,7 +47,6 @@ type XTweet = {
 
 type XTranslation = {
   text?: string;
-  source_lang?: string;
   target_lang?: string;
 };
 
@@ -95,15 +95,6 @@ function languageName(code: string | undefined): string | null {
 }
 
 /**
- * The translation in the language the link asked for, when the payload has it.
- *
- * The endpoint takes the language as a path segment — `/<handle>/status/<id>/en`
- * — and answers with the post plus its `translation`, in one request. That is
- * the same text X shows behind its own "Show translation" button: the payload
- * names the source in `provider`, `grok` or `bing`. A two-letter tail is what
- * fixupx and `?lang=` both mean. Measured 2026-11-18.
- */
-/**
  * DeepL answers its own update notice instead of a translation when its
  * upstream is stale. Seen 2026-11-18: the notice arrives in several languages
  * at once, always naming DeepL, and the same link flipped between it and a
@@ -115,31 +106,32 @@ function staleTranslation(translation: XTranslation | null | undefined) {
   return Boolean(translation?.text && PROVIDER_NOTICE.test(translation.text));
 }
 
-function matching(
+/**
+ * The translation in the language the link asked for, when the payload has it.
+ *
+ * The endpoint takes the language as a path segment — `/<handle>/status/<id>/en`
+ * — and answers with the post plus its `translation`, in one request. That is
+ * the same text X shows behind its own "Show translation" button: the payload
+ * names the source in `provider`, `grok` or `bing`. A two-letter tail is what
+ * fixupx and `?lang=` both mean. Measured 2026-11-18.
+ */
+function translationIn(
   translation: XTranslation | null | undefined,
-  language: string | null,
+  asked: string | null,
   original: string | undefined,
 ) {
-  if (!language || !translation?.text) return null;
+  if (!asked || !translation?.text) return null;
   // The endpoint answers its own spelling of the language: `jp` comes back as
   // `ja` and `kr` as `ko` (measured 2026-11-18), so the answer names the
   // language, not the request — requiring our own spelling dropped every
   // alias. A code no language claims is still refused.
   if (!languageName(translation.target_lang)) return null;
-  if (PROVIDER_NOTICE.test(translation.text)) return null;
+  if (staleTranslation(translation)) return null;
   // An unknown language code comes back as the source text unchanged: the
   // provider has no translation, and the copy is not worth printing twice.
   return translation.text.trim() === (original ?? '').trim() ? null : translation;
 }
 
-/**
- * The translated passage with its own label.
- *
- * The label names the language the translation is in — "English translation"
- * — not the one it came from: the pair then reads "🌐 English translation"
- * and "Original (Korean)", and each block says what it is. A language X does
- * not name falls back to the bare word.
- */
 /**
  * The source passage. It gets a label only beside a translation: a card with
  * one block of text has nothing to tell apart.
@@ -151,6 +143,14 @@ function originalBlock(text: string, language: string | undefined, labelled: boo
   return `${name ? `**Original (${name})**` : '**Original**'}\n${body}`;
 }
 
+/**
+ * The translated passage with its own label.
+ *
+ * The label names the language the translation is in — "English translation"
+ * — not the one it came from: the pair then reads "🌐 English translation"
+ * and "Original (Korean)", and each block says what it is. A language X does
+ * not name falls back to the bare word.
+ */
 function translatedBlock(translation: XTranslation) {
   const target = languageName(translation.target_lang);
   const head = target ? `🌐 **${target} translation**` : '🌐 **Translation**';
@@ -191,8 +191,8 @@ async function buildXCard({ match, raw }: CardInput, options: CardOptions): Prom
   // it is the copy to read. Both passages are labelled, because two blocks of
   // text in different scripts still leave a reader guessing which is which
   // (seen in a live card, 2026-11-18).
-  const parts = [];
-  const translated = matching(tweet.translation, asked, tweet.text);
+  const parts: string[] = [];
+  const translated = translationIn(tweet.translation, asked, tweet.text);
   if (translated) parts.push(translatedBlock(translated));
   if (tweet.text) parts.push(originalBlock(tweet.text, tweet.lang, Boolean(translated)));
   // A quote gets the same treatment, and the same order, inside its block: a
@@ -203,18 +203,11 @@ async function buildXCard({ match, raw }: CardInput, options: CardOptions): Prom
     const who = [quoted.name, quoted.screen_name ? `(@${quoted.screen_name})` : '']
       .filter(Boolean)
       .join(' ');
-    const quoteTranslation = matching(tweet.quote.translation, asked, tweet.quote.text);
-    const blocks = [];
+    const quoteTranslation = translationIn(tweet.quote.translation, asked, tweet.quote.text);
+    const blocks: string[] = [];
     if (quoteTranslation) blocks.push(translatedBlock(quoteTranslation));
     blocks.push(originalBlock(tweet.quote.text, tweet.quote.lang, Boolean(quoteTranslation)));
-    // A blank line inside a blockquote keeps its marker and the space after
-    // it. A bare `>` ends the quote where it stands, which split the quoted
-    // block in two live (seen 2026-11-18).
-    const body = blocks
-      .join('\n\n')
-      .split('\n')
-      .map((line) => `> ${line}`)
-      .join('\n');
+    const body = blockquote(blocks.join('\n\n').split('\n'));
     parts.push(`> **Quoting ${escapeMarkdown(who)}**\n${body}`);
   }
 

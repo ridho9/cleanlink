@@ -7,6 +7,7 @@
 import {
   attachMedia,
   authorBlock,
+  blockquote,
   clip,
   escapeMarkdown,
   getHtml,
@@ -178,7 +179,7 @@ function contextBlock(label: string, user: ThreadsUser | null | undefined, post:
   const head = `> **${label} ${escapeMarkdown(who(user) || 'a post')}**`;
   const text = post?.caption?.text;
   if (!text) return head;
-  const body = text.split('\n').map((line) => `> ${escapeMarkdown(line)}`).join('\n');
+  const body = blockquote(text.split('\n').map(escapeMarkdown));
   return `${head}\n${body}`;
 }
 

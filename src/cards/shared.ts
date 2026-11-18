@@ -206,6 +206,18 @@ export function clip(text: string, max: number): string {
   return `${cut.endsWith('\\') ? cut.slice(0, -1) : cut}…`;
 }
 
+/**
+ * The lines as one blockquote.
+ *
+ * Every line carries the marker and the space after it, blank lines included:
+ * a bare `>` ends the quote where it stands, so the blank line between a
+ * quoted post's translation and its original split the quoted block in two
+ * (seen live 2026-11-18).
+ */
+export function blockquote(lines: string[]): string {
+  return lines.map((line) => `> ${line}`).join('\n');
+}
+
 /** Escape free text from a third party, then fit it into a field. */
 export function toField(text: unknown, max: number): string {
   return clip(escapeMarkdown(text), max);

@@ -22,13 +22,17 @@ export function fakeFetch(routes: [string, unknown][]) {
     if (typeof value === 'function') return value();
     if (value instanceof Response) return value.clone();
     if (typeof value === 'string') return new Response(value, { status: 200 });
-    return new Response(JSON.stringify(value), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
+    return jsonResponse(value);
   };
   return { impl, calls };
 }
+
+/** A JSON body with the header the API sends, for a factory route or a test. */
+export const jsonResponse = (value: unknown) =>
+  new Response(JSON.stringify(value), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
 
 export const IMAGE_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
 

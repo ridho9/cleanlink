@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { buildCards } from '../../src/cards/index.ts';
 import { progressiveUrls } from '../../src/cards/shared.ts';
-import { fakeFetch, fixture, imageResponse } from '../../test-support/harness.ts';
+import { fakeFetch, fixture, imageResponse, jsonResponse } from '../../test-support/harness.ts';
 
 const X_VIDEO = fixture('x-video.json');
 const X_TEXT = fixture('x-text.json');
@@ -548,6 +548,17 @@ test('a link that names no language asks for no translation', async () => {
   assert.ok(calls.every(({ url }) => url.endsWith('/2122667654649667856')), 'no language segment');
 });
 
+test('the lang parameter asks the same way the path does', async () => {
+  const { impl, calls } = fakeFetch([['https://api.fxtwitter.com/', fixture('x-korean-translation.json')]]);
+
+  const [card] = await buildCards('https://x.com/tokubechunaa/status/2122667654649667856?lang=en', {
+    fetchImpl: impl,
+  });
+
+  assert.equal(calls[0]!.url, 'https://api.fxtwitter.com/tokubechunaa/status/2122667654649667856/en');
+  assert.ok(card!.embeds[0]!.description!.startsWith('🌐 **English translation**'));
+});
+
 test('an aliased language code gets its translation', async () => {
   // The endpoint answers its own spelling: `jp` comes back as `ja` (measured
   // 2026-11-18), and comparing it with the request dropped every alias.
@@ -606,15 +617,12 @@ function noticeAnswer(base: Record<string, any>) {
   return payload;
 }
 
-const json = (value: unknown) =>
-  new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } });
-
 test('a provider notice is asked again, and the good answer is used', async () => {
   const korean = fixture('x-korean-translation.json');
   const notice = noticeAnswer(korean);
   let served = 0;
   const { impl, calls } = fakeFetch([
-    ['https://api.fxtwitter.com/', () => json(served++ === 0 ? notice : korean)],
+    ['https://api.fxtwitter.com/', () => jsonResponse(served++ === 0 ? notice : korean)],
   ]);
 
   const [card] = await buildCards('https://x.com/tokubechunaa/status/2122667654649667856?en', {
@@ -629,7 +637,7 @@ test('a provider notice is asked again, and the good answer is used', async () =
 
 test('a provider notice that persists drops the translation, not the card', async () => {
   const notice = noticeAnswer(fixture('x-korean-translation.json'));
-  const { impl, calls } = fakeFetch([['https://api.fxtwitter.com/', json(notice)]]);
+  const { impl, calls } = fakeFetch([['https://api.fxtwitter.com/', notice]]);
 
   const [card] = await buildCards('https://x.com/tokubechunaa/status/2122667654649667856?en', {
     fetchImpl: impl,
