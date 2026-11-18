@@ -69,10 +69,18 @@ function withoutHidden(html: string): string {
   }
 }
 
+/**
+ * The message div carries Facebook's own "see the full post" link, labelled in
+ * the viewer's language ("Lihat lebih banyak", "See more"). A text scrape ends
+ * the card with it, as if it were the author's last words (seen live
+ * 2026-11-18), so it is cut by class, not by wording.
+ */
+const SEE_MORE_LINK = /<a\b[^>]*\bsee_more_link\b[^>]*>[\s\S]*?<\/a>/gi;
+
 /** Turn the post body's paragraphs and links into plain text. */
 function htmlToText(fragment: string): string {
   return decodeEntities(
-    withoutHidden(fragment)
+    withoutHidden(fragment.replace(SEE_MORE_LINK, ''))
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/p>/gi, '\n\n')
       .replace(/<[^>]+>/g, ''),

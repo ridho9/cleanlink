@@ -12,6 +12,7 @@ const FACEBOOK_ALBUM = fixtureText('facebook-album.html');
 const FACEBOOK_REEL = fixtureText('facebook-reel.html');
 const FACEBOOK_FEED = fixtureText('facebook-feed.html');
 const FACEBOOK_BLOCKED = fixtureText('facebook-video-blocked.html');
+const FACEBOOK_SEE_MORE = fixtureText('facebook-post-see-more.html');
 
 // No test in this file may reach the real yt-dlp: a live download depends on a
 // third party's answer and made one test pass or fail with the network. Tests
@@ -48,6 +49,22 @@ test('Facebook card reads the public embed iframe, not the login-walled page', a
   assert.ok(card.embeds[0].image!.url.startsWith('https://scontent'));
   assert.ok(!card.embeds[0].image!.url.includes('s40x40'), 'the avatar is not the post image');
   assert.equal(card.embeds[0].footer!.text, 'Facebook');
+});
+
+test('the post text ends with the post, not with Facebook\'s see-more link', async () => {
+  // The message div carries a link labelled in the viewer's language, and a
+  // text scrape ended the card with "Lihat lebih banyak" as if the author wrote
+  // it (seen live 2026-11-18).
+  const { impl } = fakeFetch([['https://www.facebook.com/plugins/post.php', FACEBOOK_SEE_MORE]]);
+  const [card] = await buildCards(
+    'https://www.facebook.com/permalink.php?story_fbid=pfbid0ExampleSeeMore000000000000000000000000000&id=61592133540348',
+    { fetchImpl: impl },
+  );
+
+  const description = card!.embeds[0]!.description!;
+  assert.ok(description.endsWith('Percakapan berakhir di depan pintu.'), description);
+  assert.ok(!/lihat lebih banyak|see more|selengkapnya/i.test(description), description);
+  assert.equal(card.embeds[0].author!.name, 'Penulis Contoh');
 });
 
 test('Facebook card embeds the uploaded picture, not the grid thumbnail', async () => {
