@@ -1,0 +1,45 @@
+{
+  "code": 200,
+  "message": "OK",
+  "tweet": {
+    "id": "2122471597214986551",
+    "url": "https://x.com/morite2toeic_child/status/2122471597214986551",
+    "text": "This is like if a Japanese language test expected you to pick which boke line would go best before the tsukkomi said \"nandeyanen\" in a manzai routine.",
+    "lang": "en",
+    "author": {
+      "name": "morite2toeic",
+      "screen_name": "morite2toeic_child",
+      "url": "https://x.com/morite2toeic_child",
+      "avatar_url": "https://pbs.twimg.com/profile_images/1/avatar_200x200.jpg",
+      "id": "1"
+    },
+    "media": null,
+    "replies": 3,
+    "retweets": 12,
+    "likes": 240,
+    "views": 15000,
+    "created_timestamp": 1794872800,
+    "quote": {
+      "id": "2122470000000000001",
+      "url": "https://x.com/morite2toeic/status/2122470000000000001",
+      "text": "今年の明治大学全学部の問題\nめっちゃ悪問だと思うんだけど正解わかりますか？",
+      "lang": "ja",
+      "author": {
+        "name": "morite2toeic",
+        "screen_name": "morite2toeic",
+        "url": "https://x.com/morite2toeic",
+        "avatar_url": "https://pbs.twimg.com/profile_images/2/avatar_200x200.jpg",
+        "id": "2"
+      },
+      "media": null,
+      "translation": {
+        "text": "This year’s Meiji University entrance exam question for all faculties\nI think it’s a really bad question, but do you know the correct answer?",
+        "source_lang": "ja",
+        "target_lang": "en",
+        "source_lang_en": "Japanese",
+        "provider": "grok"
+      }
+    },
+    "possibly_sensitive": null
+  }
+}

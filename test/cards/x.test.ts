@@ -496,12 +496,8 @@ test('yt-dlp renditions keep only complete files, best first', () => {
 });
 
 test('a link that asks for a language carries the post translation', async () => {
-  const translation = fixture('x-korean-translation.json');
   const korean = fixture('x-korean.json');
-  const { impl, calls } = fakeFetch([
-    ['https://api.fxtwitter.com/2/', translation],
-    ['https://api.fxtwitter.com/', korean],
-  ]);
+  const { impl, calls } = fakeFetch([['https://api.fxtwitter.com/', fixture('x-korean-translation.json')]]);
 
   const [card] = await buildCards(
     'https://x.com/tokubechunaa/status/2122667654649667856?en',
@@ -509,26 +505,27 @@ test('a link that asks for a language carries the post translation', async () =>
   );
 
   const description = card!.embeds[0]!.description!;
-  assert.ok(description.includes(korean.tweet.text), 'the original stays');
-  assert.ok(description.includes('🌐 **Translated from Korean**'), description);
-  assert.ok(description.includes(translation.status.translation.text));
-  // The text, then its translation: a reader meets the post before the gloss.
+  const translation = fixture('x-korean-translation.json').tweet.translation.text;
+  // The translation leads: a reader asked for this post in their language.
   assert.ok(
-    description.indexOf(korean.tweet.text) < description.indexOf('🌐'),
-    'the translation follows the original',
+    description.indexOf('🌐 **Translated from Korean**') < description.indexOf(korean.tweet.text),
+    description,
   );
-  assert.ok(
-    calls.some(({ url }) => url === 'https://api.fxtwitter.com/2/status/2122667654649667856?lang=en'),
-    'the language is asked of the translation endpoint',
+  assert.ok(description.includes(translation));
+  assert.ok(description.indexOf(translation) < description.indexOf(korean.tweet.text));
+
+  // The language rides on the same request: the endpoint takes it as a path
+  // segment, so a translation costs no second call.
+  assert.equal(calls.length, 1, 'one request per post');
+  assert.equal(
+    calls[0]!.url,
+    'https://api.fxtwitter.com/tokubechunaa/status/2122667654649667856/en',
   );
 });
 
 test('the fixupx language path is repaired and translated', async () => {
   const from = 'https://x.com/tokubechunaa/status/2122667654649667856/en';
-  const { impl } = fakeFetch([
-    ['https://api.fxtwitter.com/2/', fixture('x-korean-translation.json')],
-    ['https://api.fxtwitter.com/', fixture('x-korean.json')],
-  ]);
+  const { impl } = fakeFetch([['https://api.fxtwitter.com/', fixture('x-korean-translation.json')]]);
 
   const [card] = await buildCards(`<${from}>`, {
     fetchImpl: impl,
@@ -536,7 +533,7 @@ test('the fixupx language path is repaired and translated', async () => {
   });
 
   assert.equal(card!.url, 'https://x.com/tokubechunaa/status/2122667654649667856');
-  assert.ok(card!.embeds[0]!.description!.includes('🌐 **Translated from Korean**'));
+  assert.ok(card!.embeds[0]!.description!.startsWith('🌐 **Translated from Korean**'));
 });
 
 test('a link that names no language asks for no translation', async () => {
@@ -548,16 +545,13 @@ test('a link that names no language asks for no translation', async () => {
 
   assert.ok(card, 'expected a card');
   assert.ok(!card.embeds[0]!.description!.includes('🌐'));
-  assert.ok(calls.every(({ url }) => !url.includes('/2/status/')), 'one request per post');
+  assert.ok(calls.every(({ url }) => url.endsWith('/2122667654649667856')), 'no language segment');
 });
 
-test('a translation into another language is not shown', async () => {
+test('a translation in another language is not shown', async () => {
   const stale = structuredClone(fixture('x-korean-translation.json'));
-  stale.status.translation.target_lang = 'ja';
-  const { impl } = fakeFetch([
-    ['https://api.fxtwitter.com/2/', stale],
-    ['https://api.fxtwitter.com/', fixture('x-korean.json')],
-  ]);
+  stale.tweet.translation.target_lang = 'ja';
+  const { impl } = fakeFetch([['https://api.fxtwitter.com/', stale]]);
 
   const [card] = await buildCards('https://x.com/tokubechunaa/status/2122667654649667856?en', {
     fetchImpl: impl,
@@ -567,17 +561,42 @@ test('a translation into another language is not shown', async () => {
   assert.ok(!card.embeds[0]!.description!.includes('🌐'));
 });
 
-test('a translation that fails leaves the card as it was', async () => {
-  const { impl } = fakeFetch([
-    ['https://api.fxtwitter.com/2/', new Response('gone', { status: 404 })],
-    ['https://api.fxtwitter.com/', fixture('x-korean.json')],
-  ]);
+test('a translation that repeats the original is not shown', async () => {
+  // An unknown language code comes back as the source text (measured
+  // 2026-11-18), and printing it twice says nothing.
+  const echo = structuredClone(fixture('x-korean-translation.json'));
+  echo.tweet.translation.text = echo.tweet.text;
+  const { impl } = fakeFetch([['https://api.fxtwitter.com/', echo]]);
 
-  const [card] = await buildCards('https://x.com/tokubechunaa/status/2122667654649667856?en', {
+  const [card] = await buildCards('https://x.com/tokubechunaa/status/2122667654649667856?xx', {
     fetchImpl: impl,
   });
 
-  assert.ok(card, 'the card does not depend on the translation');
-  assert.ok(card.embeds[0]!.description!.includes(fixture('x-korean.json').tweet.text));
+  assert.ok(card);
   assert.ok(!card.embeds[0]!.description!.includes('🌐'));
 });
+
+test('a quoted post arrives translated, above its original', async () => {
+  const { impl } = fakeFetch([['https://api.fxtwitter.com/', fixture('x-quote-translation.json')]]);
+
+  const [card] = await buildCards('https://x.com/morite2toeic_child/status/2122471597214986551?en', {
+    fetchImpl: impl,
+  });
+
+  const description = card!.embeds[0]!.description!;
+  const quote = fixture('x-quote-translation.json').tweet.quote;
+  const translated = quote.translation.text;
+  assert.ok(description.includes('> **Quoting morite2toeic (@morite2toeic)**'), description);
+  assert.ok(description.includes('> 🌐 **Translated from Japanese**'));
+  // Both texts are blockquoted, so compare their first lines.
+  const firstLine = (text: string) => text.split('\n')[0]!;
+  assert.ok(
+    description.indexOf(firstLine(translated)) < description.indexOf(firstLine(quote.text)),
+    'the translation comes first',
+  );
+  // Every line of the quote is quoted, the blank spacer included, so Discord
+  // keeps it as one block.
+  const quoted = description.slice(description.indexOf('> **Quoting')).split('\n\n')[0]!;
+  assert.ok(quoted.split('\n').every((line) => line.startsWith('>')), quoted);
+});
+

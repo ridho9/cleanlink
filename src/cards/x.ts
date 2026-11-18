@@ -41,9 +41,8 @@ type XTweet = {
   retweets?: unknown;
   likes?: unknown;
   views?: unknown;
+  translation?: XTranslation | null;
 };
-
-type XResponse = { code?: number; tweet?: XTweet | null };
 
 type XTranslation = {
   text?: string;
@@ -51,10 +50,7 @@ type XTranslation = {
   target_lang?: string;
 };
 
-type XTranslationResponse = {
-  code?: number;
-  status?: { lang?: string; translation?: XTranslation | null } | null;
-};
+type XResponse = { code?: number; tweet?: XTweet | null };
 
 // fixupx and the vxtwitter hosts take `/status/<id>/<language>`, X takes
 // `?lang=<language>`, and people type `?<language>`. A two-letter code is the
@@ -99,34 +95,35 @@ function languageName(code: string | undefined): string | null {
 }
 
 /**
- * The post in the language the link asked for.
+ * The translation in the language the link asked for, when the payload has it.
  *
- * This is the same translation X shows behind its own "Show translation"
- * button: the payload names the source in `provider`, `grok` or `bing`. The
- * API is the one already in use, and measured 2026-11-18 the v1 status path
- * ignores `?lang` while `/2/status/<id>` answers it.
+ * The endpoint takes the language as a path segment — `/<handle>/status/<id>/en`
+ * — and answers with the post plus its `translation`, in one request. That is
+ * the same text X shows behind its own "Show translation" button: the payload
+ * names the source in `provider`, `grok` or `bing`. A two-letter tail is what
+ * fixupx and `?lang=` both mean. Measured 2026-11-18.
  */
-async function translate(id: string, language: string, options: CardOptions) {
-  const data = await getJson<XTranslationResponse>(
-    `https://api.fxtwitter.com/2/status/${id}?lang=${language}`,
-    options,
-  );
-  const found = data?.status?.translation;
-  if (!found?.text) return null;
+function matching(
+  translation: XTranslation | null | undefined,
+  language: string | null,
+  original: string | undefined,
+) {
+  if (!language || !translation?.text) return null;
   // A stale answer for another language is not what the link asked for.
-  const target = (found.target_lang ?? '').split('-')[0]!.toLowerCase();
-  return target === language ? found : null;
+  const target = (translation.target_lang ?? '').split('-')[0]!.toLowerCase();
+  if (target !== language) return null;
+  // An unknown language code comes back as the source text unchanged: the
+  // provider has no translation, and the copy is not worth printing twice.
+  return translation.text.trim() === (original ?? '').trim() ? null : translation;
 }
 
 async function buildXCard({ match, raw }: CardInput, options: CardOptions): Promise<BuiltCard | null> {
   const [, handle, id] = match;
   const asked = askedLanguage(raw);
-  // In parallel: the translation is one more request to the same API, and the
-  // whole reply has a six-second budget.
-  const [data, translated] = await Promise.all([
-    getJson<XResponse>(`https://api.fxtwitter.com/${handle}/status/${id}`, options),
-    asked && id ? translate(id, asked, options) : null,
-  ]);
+  const data = await getJson<XResponse>(
+    `https://api.fxtwitter.com/${handle}/status/${id}${asked ? `/${asked}` : ''}`,
+    options,
+  );
   if (data?.code !== 200 || !data.tweet) return null;
 
   const tweet = data.tweet;
@@ -146,24 +143,38 @@ async function buildXCard({ match, raw }: CardInput, options: CardOptions): Prom
   const quoteImages = stills(tweet.quote?.media?.all, playing);
   const images = [...mainImages, ...quoteImages];
 
+  // The translation first: a reader asked for this post in their language, so
+  // it is the copy to read, and the original follows as the source. The label
+  // names the source language, so the two lines are not mistaken for each
+  // other when they look alike.
   const parts = [];
-  if (tweet.text) parts.push(escapeMarkdown(tweet.text));
-  // The translation follows the text it translates, above the quote. The
-  // label names the source language, so a reader knows which text is which
-  // even when the two lines look alike.
-  if (translated?.text) {
+  const translated = matching(tweet.translation, asked, tweet.text);
+  if (translated) {
     const source = languageName(translated.source_lang ?? tweet.lang);
-    const body = escapeMarkdown(translated.text);
+    const body = escapeMarkdown(translated.text!);
     parts.push(source ? `🌐 **Translated from ${source}**\n${body}` : `🌐 ${body}`);
   }
+  if (tweet.text) parts.push(escapeMarkdown(tweet.text));
+  // A quote gets the same treatment, and the same order, inside its block: a
+  // quoted post in another language arrives translated when the API has it
+  // (measured 2026-11-18 on a Japanese quote), and the original follows.
   if (tweet.quote?.text) {
     const quoted = tweet.quote.author ?? {};
     const who = [quoted.name, quoted.screen_name ? `(@${quoted.screen_name})` : '']
       .filter(Boolean)
       .join(' ');
-    const body = tweet.quote.text
+    const quoteTranslation = matching(tweet.quote.translation, asked, tweet.quote.text);
+    const blocks = [];
+    if (quoteTranslation) {
+      const source = languageName(quoteTranslation.source_lang ?? tweet.quote.lang);
+      const body = escapeMarkdown(quoteTranslation.text!);
+      blocks.push(source ? `🌐 **Translated from ${source}**\n${body}` : `🌐 ${body}`);
+    }
+    blocks.push(escapeMarkdown(tweet.quote.text));
+    const body = blocks
+      .join('\n\n')
       .split('\n')
-      .map((line) => `> ${escapeMarkdown(line)}`)
+      .map((line) => (line ? `> ${line}` : '>'))
       .join('\n');
     parts.push(`> **Quoting ${escapeMarkdown(who)}**\n${body}`);
   }
