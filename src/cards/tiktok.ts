@@ -13,6 +13,10 @@ import {
 } from './shared.ts';
 import type { BuiltCard, CardEmbed, CardInput, CardOptions } from './shared.ts';
 
+/** tikwm is slower than the other card sources: measured 2.0-10.2 s for one
+ *  video on 2026-11-19, and the shared 6 s deadline lost the card. */
+const TIKWM_TIMEOUT_MS = 12_000;
+
 type TikTokResponse = {
   code?: number;
   data?: {
@@ -36,7 +40,7 @@ async function buildTikTokCard({ match, href }: CardInput, options: CardOptions)
   // caption: TikTok's own oEmbed returns an iframe and nothing else.
   const data = await getJson<TikTokResponse>(
     `https://www.tikwm.com/api/?url=${encodeURIComponent(canonical)}`,
-    options,
+    { ...options, timeout: TIKWM_TIMEOUT_MS },
   );
   if (data?.code !== 0 || !data.data) return null;
 

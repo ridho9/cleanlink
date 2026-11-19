@@ -65,6 +65,32 @@ test('TikTok card is skipped when tikwm reports a failure', async () => {
   assert.deepEqual(cards, []);
 });
 
+test('a tikwm answer slower than the usual 6 s still makes a card', async (t) => {
+  // Measured 2026-11-19 for one video: tikwm answered in 2.0-10.2 s, and the
+  // 6 s deadline lost the card. The deadline is simulated: each request's
+  // signal records the time it was given, and tikwm "answers" after 10 s.
+  const ANSWER_MS = 10_000;
+  const deadlines = new WeakMap<AbortSignal, number>();
+  t.mock.method(AbortSignal, 'timeout', (ms: number) => {
+    const signal = new AbortController().signal;
+    deadlines.set(signal, ms);
+    return signal;
+  });
+  const { impl: base } = fakeFetch([['https://www.tikwm.com/api/', TIKWM]]);
+  const impl: typeof fetch = async (url, init) => {
+    const deadline = init?.signal ? deadlines.get(init.signal) : undefined;
+    if (String(url).startsWith('https://www.tikwm.com/') && (deadline ?? 0) < ANSWER_MS) {
+      throw Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
+    }
+    return base(url, init);
+  };
+
+  const [card] = await buildCards('https://www.tiktok.com/@tiktok/video/7666123874932722974', { fetchImpl: impl });
+
+  assert.ok(card, 'tikwm answered inside its deadline');
+  assert.equal(card.embeds[0]!.author!.name, 'TikTok (@tiktok)');
+});
+
 test('the TikTok video is attached, and the cover is not repeated', async () => {
   const { impl } = fakeFetch([
     ['https://www.tikwm.com/api/', TIKWM],
