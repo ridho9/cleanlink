@@ -69,6 +69,8 @@ No quotes, no spaces, no `Bearer`, one line. If the token has spaces in it, you 
 
 `PIXIV_COOKIE` is optional and empty by default. An R-18 pixiv work is listed to anyone, but its files are named only to a viewer with a session; without this, the pages are read from the `pixiv.re` mirror instead. Set it to read those works from pixiv itself: open a logged-in `pixiv.net` tab, copy the value of its `cookie:` request header, and put it after `=` in one line. Treat it like the token: it is a session.
 
+`GATEWAY_DISPATCH_TIMEOUT_SECONDS` is optional. Set it to a positive integer in seconds (default: `14400`, or 4 hours). If a ready shard receives no dispatches for that long but still gets heartbeat acknowledgements, the bot logs the reason and exits with code 1. Any gateway dispatch resets the timer for its shard, even if it is not a message. The systemd service restarts the bot after 5 seconds. With `pnpm start` outside systemd, start the bot again yourself.
+
 ## 6. Install and start
 
 ```sh
@@ -80,6 +82,7 @@ mise run start    # or: pnpm start
 A healthy start looks like:
 
 ```
+[gateway] 2026-11-26T10:37:00.000Z shardReady shard=0
 logged in as cleanlink#1234
 DM the bot a link to get the clean one back.
 ```

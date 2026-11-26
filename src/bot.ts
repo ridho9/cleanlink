@@ -2,6 +2,7 @@ import { setDefaultResultOrder } from 'node:dns';
 
 import { Client, Events, GatewayIntentBits, Partials } from 'discord.js';
 import { handleMessage } from './handler.ts';
+import { watchGateway } from './gateway-watchdog.ts';
 import { originalDeleted } from './replies.ts';
 import { logError } from './trace.ts';
 
@@ -18,6 +19,11 @@ const token = process.env.DISCORD_TOKEN;
 if (!token) {
   console.error('DISCORD_TOKEN is not set. Paste your bot token into .env (DISCORD_TOKEN=...).');
   process.exit(1);
+}
+
+const dispatchTimeoutSeconds = Number(process.env.GATEWAY_DISPATCH_TIMEOUT_SECONDS ?? 4 * 60 * 60);
+if (!Number.isSafeInteger(dispatchTimeoutSeconds) || dispatchTimeoutSeconds <= 0) {
+  throw new Error('GATEWAY_DISPATCH_TIMEOUT_SECONDS must be a positive integer.');
 }
 
 const client = new Client({
@@ -42,6 +48,25 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message],
 });
 
+function logGateway(event: string, shardId: number, details = '') {
+  console.log(`[gateway] ${new Date().toISOString()} ${event} shard=${shardId}${details}`);
+}
+
+client.on(Events.ShardDisconnect, ({ code }, shardId) => logGateway('shardDisconnect', shardId, ` code=${code}`));
+client.on(Events.ShardReconnecting, (shardId) => logGateway('shardReconnecting', shardId));
+client.on(Events.ShardResume, (shardId, replayed) => logGateway('shardResume', shardId, ` replayed=${replayed}`));
+client.on(Events.ShardReady, (shardId) => logGateway('shardReady', shardId));
+client.on(Events.ShardError, (error, shardId) => logError('gateway', error, { at: new Date().toISOString(), shardId }));
+
+watchGateway(client, dispatchTimeoutSeconds * 1_000, (shardId, silentMs) => {
+  const seconds = Math.floor(silentMs / 1_000);
+  // Wait for stdout to write the reason before exiting for systemd to restart us.
+  process.stdout.write(
+    `[gateway-watchdog] ${new Date().toISOString()} shard=${shardId} no dispatch for ${seconds}s with heartbeat ACKs; exiting with code 1\n`,
+    () => process.exit(1),
+  );
+});
+
 client.once(Events.ClientReady, (ready) => {
   console.log(`logged in as ${ready.user.tag}`);
   console.log('DM the bot a link, or post one in a channel, to get the clean one back.');
@@ -57,21 +82,23 @@ client.once(Events.ClientReady, (ready) => {
   }
 });
 
-if (process.env.DEBUG) {
-  client.on(Events.Raw, (packet) => console.log(`[raw] ${packet.t}`));
-  client.on(Events.Debug, (msg) => {
-    if (/heartbeat|identify|session|resume|zombie|close|reconnect/i.test(msg)) {
-      console.log(`[debug] ${msg}`);
-    }
-  });
-}
+// discord.js 14 reports the Invalid Session opcode only through Events.Debug.
+client.on(Events.Debug, (msg) => {
+  const invalid = /^\[WS => Shard (\d+)\] Invalid session; will attempt to resume: (true|false)$/.exec(msg);
+  if (invalid) {
+    logGateway('invalidSession', Number(invalid[1]), ` resumable=${invalid[2]}`);
+  } else if (process.env.DEBUG && /heartbeat|identify|session|resume|zombie|close|reconnect/i.test(msg)) {
+    console.log(`[debug] ${msg}`);
+  }
+});
+if (process.env.DEBUG) client.on(Events.Raw, (packet) => console.log(`[raw] ${packet.t}`));
 
 client.on(Events.Warn, (msg) => console.log(`[warn] ${msg}`));
 
 client.on(Events.MessageCreate, (message) => handleMessage(message));
 client.on(Events.MessageDelete, (message) => originalDeleted(message.id));
 
-client.on(Events.Error, (error) => logError('gateway', error));
+client.on(Events.Error, (error) => logError('gateway', error, { at: new Date().toISOString() }));
 
 process.on('unhandledRejection', (error) => logError('unhandled_rejection', error));
 
