@@ -241,8 +241,9 @@ The journal on this host is persistent (`/var/log/journal` exists), so logs surv
 Facebook refuses some videos to anonymous requests but not to yt-dlp. Instagram no longer needs it — its own embed payload carries the video URL. If `yt-dlp` is on the service's `PATH`:
 
 - a Facebook video is downloaded and attached (Discord plays the attachment);
+- if tikwm cannot make a TikTok card, yt-dlp can supply an MP4 or an author, title and cover card.
 
-Without it, both fall back: the Facebook card keeps its author line, the Instagram post keeps its poster frame. It is optional and not a package dependency.
+Without it, the TikTok fallback is not available. The cleaned link still goes out if no card is available. The Docker image includes yt-dlp; for a service outside Docker, it is optional and not a package dependency.
 
 ```sh
 command -v yt-dlp || nix profile install nixpkgs#yt-dlp
