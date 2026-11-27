@@ -3,7 +3,7 @@ FROM node:26-bookworm-slim@sha256:0042e17d232a87a2cd485be1da7900fca4d10a4ad11b29
 
 FROM base AS deps
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
+COPY --chown=0:0 --chmod=0644 package.json pnpm-lock.yaml ./
 RUN npm install --global corepack@0.36.0 \
     && corepack pnpm install --frozen-lockfile --prod
 
@@ -17,7 +17,7 @@ ADD --checksum=sha256:e8665ed64d6b9172773e812f891fb707a0cb1ee8d9ef4fc1acb00cabee
 ENV NODE_ENV=production XDG_CACHE_HOME=/tmp
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json ./
-COPY src/ ./src/
+COPY --chown=0:0 --chmod=0644 package.json ./
+COPY --chown=0:0 --chmod=u=rwX,go=rX src/ ./src/
 USER node
 CMD ["node", "src/bot.ts"]
