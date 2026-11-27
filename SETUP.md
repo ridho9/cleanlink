@@ -299,3 +299,35 @@ systemd.services.cleanlink = {
 ```
 
 Then `journalctl -u cleanlink` without `--user`. Do not run both units at once.
+
+## Docker (racknerd-nyc)
+
+Use Docker Compose 2.30 or later. Run the commands from the cleanlink checkout
+as root on the VPS. This is an alternative to the systemd service above.
+
+Keep `/run/agenix/cleanlink-env` root-only. Set `DISCORD_TOKEN` in that file.
+Optional settings are `GATEWAY_DISPATCH_TIMEOUT_SECONDS` (a positive integer,
+in seconds), `PIXIV_COOKIE`, and `DEBUG` (`1` to enable). Use one `KEY=value`
+per line without quotes. Compose passes values as written. Never commit the
+file or its values. For local tests, set `CLEANLINK_ENV_FILE` to an absolute
+path to a separate test file.
+
+Only one instance may use a token at a time. Before starting this container
+with the production token, stop and disable the old systemd service.
+
+```sh
+# Build and start the first release.
+docker compose up -d --build
+
+# Update from the release branch.
+git pull --ff-only && docker compose up -d --build
+
+# Roll back to a previous commit that includes the Compose setup.
+git switch --detach <previous-commit> && docker compose up -d --build
+
+# Read service logs.
+docker compose logs
+```
+
+After a rollback, switch back to the release branch before the next update.
+
