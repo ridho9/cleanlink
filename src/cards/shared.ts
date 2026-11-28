@@ -2,7 +2,7 @@
 // the text and embed helpers, and the optional yt-dlp downloader.
 
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { APIEmbed } from 'discord.js';
@@ -14,6 +14,7 @@ export interface CardOptions {
   fetchImpl?: typeof fetch;
   headers?: Record<string, string>;
   timeout?: number;
+  signal?: AbortSignal;
   budget?: { files?: number; bytes?: number };
 }
 
@@ -83,14 +84,14 @@ type VideoInfo = { formats?: VideoFormat[] };
 function run(
   command: string,
   args: string[],
-  { timeout, maxBuffer = 1024 * 1024 }: { timeout: number; maxBuffer?: number },
+  { timeout, signal, maxBuffer = 1024 * 1024 }: { timeout?: number; signal?: AbortSignal; maxBuffer?: number },
 ): Promise<{ stdout: string; stderr: string }> {
+  signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
-    let settled = false;
-    let timer: NodeJS.Timeout;
+    let failure: Error | undefined;
 
     const killGroup = () => {
       if (!child.pid) return;
@@ -100,30 +101,36 @@ function run(
         // No member of the group is left.
       }
     };
-    const finish = (error?: Error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      if (error) {
-        killGroup();
-        reject(error);
-      } else {
-        resolve({ stdout, stderr });
-      }
+    const stop = (error: Error) => {
+      if (failure) return;
+      failure = error;
+      killGroup();
     };
-
-    timer = setTimeout(() => finish(new Error(`${command} took longer than ${timeout / 1000} s`)), timeout);
+    const abort = () => stop(new Error(`${command} reached the deadline`));
+    const timer = timeout === undefined ? undefined
+      : setTimeout(() => stop(new Error(`${command} took longer than ${timeout / 1000} s`)), timeout);
+    signal?.addEventListener('abort', abort, { once: true });
     child.stdout.on('data', (chunk: Buffer) => {
+      if (failure) return;
       stdout += chunk;
-      if (stdout.length > maxBuffer) finish(new Error(`${command} wrote more than ${maxBuffer} bytes`));
+      if (stdout.length > maxBuffer) stop(new Error(`${command} wrote more than ${maxBuffer} bytes`));
     });
     child.stderr.on('data', (chunk: Buffer) => {
+      if (failure) return;
       stderr += chunk;
-      if (stderr.length > maxBuffer) finish(new Error(`${command} wrote more than ${maxBuffer} bytes`));
+      if (stderr.length > maxBuffer) stop(new Error(`${command} wrote more than ${maxBuffer} bytes`));
     });
-    child.on('error', (error) => finish(error));
+    child.on('error', stop);
     child.on('close', (code) => {
-      finish(code === 0 ? undefined : new Error(`${command} exited with ${code}: ${stderr.split('\n')[0]}`));
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+      // Wait for the pipes to close before the caller removes the temp files.
+      if (failure) reject(failure);
+      else if (code === 0) resolve({ stdout, stderr });
+      else {
+        killGroup();
+        reject(new Error(`${command} exited with ${code}: ${stderr.split('\n')[0]}`));
+      }
     });
   });
 }
@@ -230,7 +237,7 @@ export function toField(text: unknown, max: number): string {
  * because a dropped connection there costs the whole card. An HTTP error status
  * is not retried: that is an answer, not a hiccup.
  */
-async function request(url: string, { fetchImpl = fetch, accept, method, headers = {}, timeout = TIMEOUT_MS }: RequestOptions = {}): Promise<Response> {
+async function request(url: string, { fetchImpl = fetch, accept, method, headers = {}, timeout, signal }: RequestOptions = {}): Promise<Response> {
   const init = {
     ...(method ? { method } : {}),
     headers: {
@@ -242,16 +249,17 @@ async function request(url: string, { fetchImpl = fetch, accept, method, headers
 
   for (let attempt = 0; ; attempt += 1) {
     try {
-      // A deadline per attempt: one signal for both attempts is already
-      // aborted when the first one timed out, so the retry never had a chance.
-      return await fetchImpl(url, { ...init, signal: AbortSignal.timeout(timeout) });
+      // A caller's deadline survives retries. An explicit per-attempt limit
+      // still applies (for example, the media read limit).
+      const deadline = timeout === undefined && signal ? signal : AbortSignal.timeout(timeout ?? TIMEOUT_MS);
+      return await fetchImpl(url, { ...init, signal: signal && deadline !== signal ? AbortSignal.any([signal, deadline]) : deadline });
     } catch (error) {
       // A retry is for a connect error that may not repeat. A deadline that
       // passed says the other side is slow, and asking again only doubles the
       // wait.
       const name = (error as Error).name;
       const timedOut = name === 'TimeoutError' || name === 'AbortError';
-      if (attempt === 1 || timedOut) {
+      if (attempt === 1 || timedOut || signal?.aborted) {
         note(`[card] ${new URL(url).host} ${timedOut ? 'timed out' : 'failed twice'}: ${(error as Error).message}`);
         throw error;
       }
@@ -662,37 +670,66 @@ export function progressiveUrls(info: VideoInfo | null | undefined): string[] {
  * HLS source (Reddit) has no such rendition and names its own.
  */
 export async function downloadVideo(href: string, options: CardOptions = {}, format = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best'): Promise<CardFile[] | null> {
-  const budget = options.budget ?? {};
-  if ((budget.files ?? 1) <= 0) return null;
-
-  const cap = Math.min(MAX_ATTACH_BYTES, budget.bytes ?? MAX_ATTACH_BYTES);
-  const dir = await mkdtemp(join(tmpdir(), 'cleanlink-'));
-  const file = join(dir, 'video.mp4');
   try {
-    await run('yt-dlp', [
-      '--no-warnings',
-      '--no-playlist',
-      '--max-filesize', String(cap),
-      '-f', format,
-      '--merge-output-format', 'mp4',
-      '-o', file,
-      href,
-    ], { timeout: DOWNLOAD_TIMEOUT_MS });
-
-    let buffer;
-    try {
-      buffer = await readFile(file);
-    } catch {
-      // yt-dlp exits successfully when it skips a file bigger than
-      // --max-filesize, leaving nothing behind.
+    const { files } = await extractVideo(href, options, format);
+    if (!files && (options.budget?.files ?? 1) > 0 && (options.budget?.bytes ?? 1) > 0) {
       note(`[card] video skipped for ${new URL(href).host}: over the attachment budget`);
-      return null;
     }
-    if (buffer.length === 0 || buffer.length > cap) return null;
-    return [{ attachment: buffer, name: 'video.mp4' }];
+    return files;
   } catch (error) {
     note(`[card] video via yt-dlp failed for ${new URL(href).host}: ${((error as Error & { shortMessage?: string }).shortMessage ?? (error as Error).message).split('\n')[0]}`);
     return null;
+  }
+}
+
+type VideoMetadata = { title?: string; channel?: string; uploader?: string; thumbnail?: string };
+
+/** Extract metadata before the transfer, so a refused or stalled video can keep its cover. */
+export function downloadVideoWithMetadata(href: string, options: CardOptions & { signal: AbortSignal }, format: string) {
+  return extractVideo(href, options, format, true);
+}
+
+async function extractVideo(href: string, { budget, signal }: CardOptions, format: string, metadata = false) {
+  signal?.throwIfAborted();
+  const cap = Math.min(MAX_ATTACH_BYTES, budget?.bytes ?? MAX_ATTACH_BYTES);
+  const download = (budget?.files ?? 1) > 0 && cap > 0;
+  let files: CardFile[] | null = null;
+  let info: VideoMetadata | null = null;
+  if (!download && !metadata) return { files, info };
+
+  const dir = await mkdtemp(join(tmpdir(), 'cleanlink-'));
+  const file = join(dir, 'video.mp4');
+  const infoFile = join(dir, 'info.json');
+  try {
+    let failure: unknown;
+    try {
+      await run('yt-dlp', [
+        '--no-warnings', '--no-playlist',
+        ...(metadata ? [
+          '--ignore-config', '--no-cache-dir', '--no-simulate', '--no-progress',
+          '--socket-timeout', '5', '--retries', '0', '--extractor-retries', '0',
+          // Print before format selection, including when there is no progressive MP4.
+          '--print-to-file', 'after_filter:%(.{title,channel,uploader,thumbnail})j', infoFile,
+        ] : []),
+        ...(download ? [
+          '--max-filesize', String(cap), '-f', format, '--merge-output-format', 'mp4', '-o', file,
+        ] : ['--skip-download']),
+        '--', href,
+      ], signal ? { signal } : { timeout: DOWNLOAD_TIMEOUT_MS });
+      if (download) {
+        // A size-less response can get past yt-dlp's Content-Length check.
+        const size = (await stat(file).catch(() => null))?.size;
+        if (size && size <= cap) files = [{ attachment: await readFile(file, { signal }), name: 'video.mp4' }];
+      }
+    } catch (error) {
+      failure = error;
+    }
+    if (metadata) {
+      const size = (await stat(infoFile).catch(() => null))?.size;
+      if (size && size <= 64 * 1024) info = JSON.parse(await readFile(infoFile, 'utf8')) as VideoMetadata;
+    }
+    if (failure && !info) throw failure;
+    return { files, info };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

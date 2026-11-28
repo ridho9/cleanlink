@@ -1,13 +1,66 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { watch } from 'node:fs';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import test, { after, before } from 'node:test';
+import type { TestContext } from 'node:test';
 
 import { buildCards } from '../../src/cards/index.ts';
+import { cleanMessage } from '../../src/clean.ts';
+import { sendReply } from '../../src/reply.ts';
 import { fakeFetch, fixture } from '../../test-support/harness.ts';
 
 const TIKWM = fixture('tikwm-video.json');
 const MP4_BYTES = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]);
+const LINK = 'https://www.tiktok.com/@tiktok/video/7666123874932722974';
+const TIKWM_API = 'https://www.tikwm.com/api/';
+const METADATA = { channel: 'Example Creator', uploader: 'tiktok', title: 'Example title', thumbnail: 'https://example.com/cover.jpg' };
 
-test('TikTok card uses tikwm for a real caption, author and cover', async () => {
+// Never run the real extractor, even in tests that do not expect a fallback.
+let stub: string;
+const path = process.env.PATH;
+before(async () => {
+  stub = await mkdtemp(join(tmpdir(), 'cleanlink-test-'));
+  process.env.PATH = stub;
+});
+after(async () => {
+  if (path === undefined) delete process.env.PATH;
+  else process.env.PATH = path;
+  await rm(stub, { recursive: true, force: true });
+});
+
+async function stubYtDlp(t: TestContext, transfer: string) {
+  const argsFile = join(stub, 'args.json');
+  const executable = join(stub, 'yt-dlp');
+  await writeFile(executable, `#!${process.execPath}
+const { writeFileSync, truncateSync } = require('node:fs');
+const args = process.argv.slice(2);
+const file = args[args.indexOf('-o') + 1];
+writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify(args));
+const metadata = () => writeFileSync(args[args.indexOf('--print-to-file') + 2], ${JSON.stringify(JSON.stringify(METADATA))});
+const video = () => writeFileSync(file, Buffer.from('${MP4_BYTES.toString('hex')}', 'hex'));
+${transfer}
+`, { mode: 0o755 });
+  t.after(async () => {
+    await rm(executable, { force: true });
+    await rm(argsFile, { force: true });
+  });
+  return argsFile;
+}
+
+function tikwmUnavailable() {
+  return fakeFetch([[TIKWM_API, new Response(null, { status: 502 })]]).impl;
+}
+
+async function assertDownloadCleaned(argsFile: string) {
+  const args = JSON.parse(await readFile(argsFile, 'utf8')) as string[];
+  const output = args[args.indexOf('-o') + 1]!;
+  await assert.rejects(access(dirname(output)), { code: 'ENOENT' });
+}
+
+test('TikTok uses a successful tikwm card without starting yt-dlp', async (t) => {
+  const argsFile = await stubYtDlp(t, 'metadata(); video();');
   // No `play` route: the media fetch fails, so the cover stays.
   const { impl } = fakeFetch([['https://www.tikwm.com/api/', TIKWM]]);
   const [card] = await buildCards(
@@ -37,6 +90,7 @@ test('TikTok card uses tikwm for a real caption, author and cover', async () => 
   assert.equal(card.embeds[0]!.fields, undefined, 'no field per number');
   assert.equal(card.embeds[0]!.footer!.text, 'TikTok');
   assert.equal(card.embeds[0]!.timestamp, new Date(TIKWM.data.create_time * 1000).toISOString());
+  await assert.rejects(access(argsFile), { code: 'ENOENT' });
 });
 
 test('TikTok card finds the video behind a short link', async () => {
@@ -57,31 +111,113 @@ test('TikTok card finds the video behind a short link', async () => {
   assert.match(calls[0]!.url, /url=https%3A%2F%2Fwww.tiktok.com%2F%40tiktok%2Fvideo%2F7666123874932722974/);
 });
 
-test('TikTok card is skipped when tikwm reports a failure', async () => {
-  const { impl } = fakeFetch([['https://www.tikwm.com/api/', { code: -1, msg: 'Url parsing is failed' }]]);
-  const cards = await buildCards('https://www.tiktok.com/@tiktok/video/7666123874932722974', {
-    fetchImpl: impl,
+test('TikTok attaches the fallback MP4 when tikwm returns HTTP 502', async (t) => {
+  const argsFile = await stubYtDlp(t, 'metadata(); video();');
+  const [card] = await buildCards(LINK, { fetchImpl: tikwmUnavailable() });
+
+  assert.equal(card?.video, 'attached');
+  assert.deepEqual(card.files, [{ attachment: MP4_BYTES, name: 'video.mp4' }]);
+  assert.equal(card.embeds[0]?.description, METADATA.title);
+  assert.equal(card.embeds[0]?.image, undefined);
+  await assertDownloadCleaned(argsFile);
+});
+
+test('TikTok keeps fallback metadata when tikwm times out and the video transfer fails', async (t) => {
+  const argsFile = await stubYtDlp(t, 'metadata(); video(); process.exit(1);');
+  const tikwm = new AbortController();
+  const timeout = AbortSignal.timeout.bind(AbortSignal);
+  t.mock.method(AbortSignal, 'timeout', (ms: number) => ms === 12_000 ? tikwm.signal : timeout(ms));
+  let requestAborted = false;
+  const fetchImpl: typeof fetch = async (_url, init) => {
+    tikwm.abort(new DOMException('timed out', 'TimeoutError'));
+    requestAborted = init?.signal?.aborted === true;
+    throw tikwm.signal.reason;
+  };
+  const [card] = await buildCards(LINK, { fetchImpl });
+
+  assert.ok(requestAborted, 'the request uses the tikwm deadline');
+  assert.ok(card);
+  assert.deepEqual(card.files, []);
+  assert.equal(card.embeds[0]?.author?.name, 'Example Creator (@tiktok)');
+  assert.equal(card.embeds[0]?.description, METADATA.title);
+  assert.equal(card.embeds[0]?.image?.url, METADATA.thumbnail);
+  await assertDownloadCleaned(argsFile);
+});
+
+test('TikTok keeps the cover when an extractor output exceeds the upload cap', async (t) => {
+  const argsFile = await stubYtDlp(t, 'metadata(); video(); truncateSync(file, 9_500_001);');
+  const [card] = await buildCards(LINK, { fetchImpl: tikwmUnavailable() });
+
+  assert.ok(card);
+  assert.deepEqual(card.files, []);
+  assert.equal(card.embeds[0]?.image?.url, METADATA.thumbnail);
+  await assertDownloadCleaned(argsFile);
+});
+
+test('TikTok replies with the cleaned link when both sources fail', async (t) => {
+  const argsFile = await stubYtDlp(t, 'process.exit(1);');
+  const { impl } = fakeFetch([[TIKWM_API, { code: -1, msg: 'Url parsing is failed' }]]);
+  const input = `${LINK}?_t=abc`;
+  const lines = await cleanMessage(input, { fetchImpl: impl });
+  const cards = await buildCards(input, { cleaned: lines, fetchImpl: impl });
+  const replies: unknown[] = [];
+  await sendReply({
+    reply: async (payload) => { replies.push(payload); },
+    channel: { send: async () => assert.fail('no follow-up expected') },
+  }, { lines, cards });
+
+  assert.deepEqual(replies, [{ content: LINK, allowedMentions: { parse: [] } }]);
+  await assertDownloadCleaned(argsFile);
+});
+
+test('TikTok returns no card if yt-dlp is not installed', async () => {
+  assert.deepEqual(await buildCards(LINK, { fetchImpl: tikwmUnavailable() }), []);
+});
+
+test('the total TikTok deadline stops a running extractor and removes the partial file', { timeout: 5_000 }, async (t) => {
+  // The marker drives the abort. The wait limit only prevents a leaked test process on failure.
+  const argsFile = await stubYtDlp(t, `video(); writeFileSync(${JSON.stringify(join(stub, 'started'))}, ''); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 6_000);`);
+  const budget = new AbortController();
+  const timeout = AbortSignal.timeout.bind(AbortSignal);
+  t.mock.method(AbortSignal, 'timeout', (ms: number) => ms === 18_000 ? budget.signal : timeout(ms));
+  const watcher = watch(stub, (_event, name) => {
+    if (name === 'started') budget.abort(new DOMException('timed out', 'TimeoutError'));
   });
-  assert.deepEqual(cards, []);
+  try {
+    assert.deepEqual(await buildCards(LINK, { fetchImpl: tikwmUnavailable() }), []);
+    assert.ok(budget.signal.aborted);
+    await assertDownloadCleaned(argsFile);
+  } finally {
+    watcher.close();
+    budget.abort();
+  }
+});
+
+test('the total TikTok deadline prevents starting yt-dlp after tikwm', async (t) => {
+  const argsFile = await stubYtDlp(t, 'metadata(); video();');
+  const budget = new AbortController();
+  const timeout = AbortSignal.timeout.bind(AbortSignal);
+  t.mock.method(AbortSignal, 'timeout', (ms: number) => ms === 18_000 ? budget.signal : timeout(ms));
+  let requestAborted = false;
+  const fetchImpl: typeof fetch = async (_url, init) => {
+    budget.abort(new DOMException('timed out', 'TimeoutError'));
+    requestAborted = init?.signal?.aborted === true;
+    throw budget.signal.reason;
+  };
+
+  assert.deepEqual(await buildCards(LINK, { fetchImpl }), []);
+  assert.ok(requestAborted, 'the request also uses the total deadline');
+  await assert.rejects(access(argsFile), { code: 'ENOENT' });
 });
 
 test('a tikwm answer slower than the usual 6 s still makes a card', async (t) => {
-  // Measured 2026-11-19 for one video: tikwm answered in 2.0-10.2 s, and the
-  // 6 s deadline lost the card. The deadline is simulated: each request's
-  // signal records the time it was given, and tikwm "answers" after 10 s.
-  const ANSWER_MS = 10_000;
-  const deadlines = new WeakMap<AbortSignal, number>();
-  t.mock.method(AbortSignal, 'timeout', (ms: number) => {
-    const signal = new AbortController().signal;
-    deadlines.set(signal, ms);
-    return signal;
-  });
-  const { impl: base } = fakeFetch([['https://www.tikwm.com/api/', TIKWM]]);
+  // Pretend that deadlines shorter than a 10 s tikwm answer have expired.
+  const timeout = AbortSignal.timeout.bind(AbortSignal);
+  t.mock.method(AbortSignal, 'timeout', (ms: number) => ms < 10_000
+    ? AbortSignal.abort(new DOMException('timed out', 'TimeoutError')) : timeout(ms));
+  const { impl: base } = fakeFetch([[TIKWM_API, TIKWM]]);
   const impl: typeof fetch = async (url, init) => {
-    const deadline = init?.signal ? deadlines.get(init.signal) : undefined;
-    if (String(url).startsWith('https://www.tikwm.com/') && (deadline ?? 0) < ANSWER_MS) {
-      throw Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
-    }
+    if (String(url).startsWith(TIKWM_API)) init?.signal?.throwIfAborted();
     return base(url, init);
   };
 
